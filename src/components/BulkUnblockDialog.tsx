@@ -157,6 +157,14 @@ export function BulkUnblockDialog({ open, onOpenChange, selected, onApply }: Pro
           your growth buffer.
         </DialogDescription>
 
+        <div className="flex items-start gap-2 text-xs mb-3 p-3 rounded-md border border-blue-300 dark:border-blue-700/60 bg-blue-50 dark:bg-blue-950/30">
+          <Warning size={16} weight="duotone" className="text-blue-600 dark:text-blue-300 mt-0.5 shrink-0" />
+          <p className="text-blue-900 dark:text-blue-100">
+            This only raises individual ULBs. Cost center and enterprise budgets can still
+            block these users before they reach their new ULB ceiling.
+          </p>
+        </div>
+
         {/* Projection inputs */}
         <div className="grid sm:grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-xs text-neutral-600 dark:text-neutral-300 mb-3 p-3 rounded-md bg-neutral-100 dark:bg-neutral-800/60">
           <span className="text-neutral-500">Days elapsed</span>
