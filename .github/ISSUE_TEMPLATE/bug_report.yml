@@ -1,0 +1,96 @@
+name: Bug report
+description: Report a bug or unexpected behavior
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug! Please fill out the sections below.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Describe the bug
+      description: A clear and concise description of what the bug is.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Steps to reproduce the behavior.
+      placeholder: |
+        1. Go to '...'
+        2. Click on '...'
+        3. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What you expected to happen.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Connection mode
+      description: Were you using demo mode or connected to a live enterprise?
+      options:
+        - Demo mode (?demo=N)
+        - Connected to live enterprise
+    validations:
+      required: true
+
+  - type: input
+    id: scale
+    attributes:
+      label: Roughly how many individual ULBs were loaded?
+      description: e.g. 7, 200, 9800
+      placeholder: e.g. 200
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which area is the bug in?
+      options:
+        - Summary cards / histogram
+        - Table (sort / filter / search / pagination)
+        - Add / Edit / Delete dialog
+        - Bulk "Unblock for month" dialog
+        - Import panel / connection
+        - Theme / dark mode
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: browser
+    attributes:
+      label: Browser
+      options:
+        - Chrome
+        - Firefox
+        - Safari
+        - Edge
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots
+      description: If applicable, add screenshots to help explain the issue.
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: |
+        Any other context about the problem (console errors, network errors, environment details).
+        **Do not paste personal access tokens or other credentials.**
