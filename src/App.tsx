@@ -30,13 +30,22 @@ export function App() {
   const summary = useMemo(() => summarize(budgets), [budgets])
 
   const handleEdit = async (newAmount: number) => {
-    if (!apiFetch || !editing) return
+    if (!editing) return
+    if (credentials?.base === 'demo://') {
+      toast.info(`Demo mode: would update ${editing.user} to $${newAmount}`)
+      return
+    }
+    if (!apiFetch) return
     await apiPatchUserBudget(apiFetch, editing.id, newAmount)
     toast.success(`Updated ${editing.user} to $${newAmount}`)
     await refresh()
   }
 
   const handleCreate = async (username: string, amount: number) => {
+    if (credentials?.base === 'demo://') {
+      toast.info(`Demo mode: would create budget for ${username}`)
+      return
+    }
     if (!apiFetch) return
     await apiCreateUserBudget(apiFetch, username, amount)
     toast.success(`Created budget for ${username}`)
@@ -44,7 +53,12 @@ export function App() {
   }
 
   const handleDelete = async () => {
-    if (!apiFetch || !deleting) return
+    if (!deleting) return
+    if (credentials?.base === 'demo://') {
+      toast.info(`Demo mode: would delete budget for ${deleting.user}`)
+      return
+    }
+    if (!apiFetch) return
     await apiDeleteUserBudget(apiFetch, deleting.id)
     toast.success(`Deleted budget for ${deleting.user}`)
     await refresh()
