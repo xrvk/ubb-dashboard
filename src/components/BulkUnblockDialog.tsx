@@ -286,9 +286,9 @@ export function BulkUnblockDialog({ open, onOpenChange, selected, onApply }: Pro
           {error ? <p className="text-red-600 dark:text-red-400">{error}</p> : null}
         </div>
 
-        <div className="flex items-start gap-2 text-xs mt-3 p-3 rounded-md border border-blue-300 dark:border-blue-700/60 bg-blue-50 dark:bg-blue-950/30">
-          <Warning size={16} weight="duotone" className="text-blue-600 dark:text-blue-300 mt-0.5 shrink-0" />
-          <p className="text-blue-900 dark:text-blue-100">
+        <div className="flex items-start gap-2 text-xs mt-3 p-3 rounded-md border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800/50">
+          <Warning size={16} weight="duotone" className="text-neutral-500 dark:text-neutral-400 mt-0.5 shrink-0" />
+          <p className="text-neutral-700 dark:text-neutral-200">
             This only raises individual ULBs. Cost center and enterprise budgets can still
             block these users before they reach their new ULB ceiling.
           </p>
