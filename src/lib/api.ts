@@ -25,9 +25,19 @@ export class ApiError extends Error {
 
 export type ApiFetch = (path: string, init?: RequestInit) => Promise<unknown>
 
+/**
+ * Build a path under the enterprise. Paths starting with `/copilot` (or any
+ * non-`settings/billing` enterprise endpoint) should pass `enterpriseScoped: true`
+ * via the init.headers (we read it from a custom header below). For ergonomics,
+ * a path can also start with `enterprise:` to skip the billing prefix.
+ */
 export function createApiFetch(creds: Credentials): ApiFetch {
   return async (path: string, init?: RequestInit) => {
-    const url = `${creds.base}/enterprises/${creds.ent}/settings/billing${path}`
+    const useEnterpriseRoot = path.startsWith('enterprise:')
+    const cleanPath = useEnterpriseRoot ? path.slice('enterprise:'.length) : path
+    const url = useEnterpriseRoot
+      ? `${creds.base}/enterprises/${creds.ent}${cleanPath}`
+      : `${creds.base}/enterprises/${creds.ent}/settings/billing${cleanPath}`
     const res = await fetch(url, {
       ...init,
       headers: {
@@ -190,4 +200,60 @@ export async function createUserBudget(
 
 export async function deleteUserBudget(apiFetch: ApiFetch, budgetId: string): Promise<void> {
   await apiFetch(`/budgets/${budgetId}`, { method: 'DELETE' })
+}
+
+// --- Copilot seats (used as the source of truth for "add ULB" autocomplete) ---
+
+export interface CopilotSeat {
+  login: string
+  orgLogin: string | null
+  lastActivityAt: string | null
+  planType: string | null
+}
+
+interface RawSeat {
+  assignee?: { login?: string }
+  organization?: { login?: string }
+  last_activity_at?: string | null
+  plan_type?: string | null
+}
+
+interface SeatsResponse {
+  total_seats?: number
+  seats?: RawSeat[]
+}
+
+/**
+ * Fetch every Copilot seat in the enterprise. Used to power the username
+ * autocomplete in the "Add ULB" dialog so admins don't have to remember
+ * GitHub handles.
+ */
+export async function fetchAllCopilotSeats(apiFetch: ApiFetch): Promise<CopilotSeat[]> {
+  const all: RawSeat[] = []
+  let page = 1
+  let totalSeats: number | undefined
+  while (page <= 1500) {
+    const data = (await apiFetch(`enterprise:/copilot/billing/seats?per_page=100&page=${page}`)) as SeatsResponse
+    const list = data?.seats ?? []
+    if (typeof data?.total_seats === 'number') totalSeats = data.total_seats
+    if (list.length === 0) break
+    all.push(...list)
+    if (totalSeats !== undefined && all.length >= totalSeats) break
+    page += 1
+  }
+  // Dedupe by login (the API can return the same user across multiple orgs)
+  const seen = new Set<string>()
+  const out: CopilotSeat[] = []
+  for (const s of all) {
+    const login = s.assignee?.login
+    if (!login || seen.has(login)) continue
+    seen.add(login)
+    out.push({
+      login,
+      orgLogin: s.organization?.login ?? null,
+      lastActivityAt: s.last_activity_at ?? null,
+      planType: s.plan_type ?? null,
+    })
+  }
+  return out
 }

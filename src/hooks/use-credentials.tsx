@@ -2,17 +2,20 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   createApiFetch,
+  fetchAllCopilotSeats,
   fetchUserBudgets,
   parseEnterpriseUrl,
   type ApiFetch,
+  type CopilotSeat,
   type Credentials,
   type UserBudget,
 } from '@/lib/api'
-import { generateDemoBudgets, readDemoCountFromUrl } from '@/lib/demo'
+import { generateDemoBudgets, generateDemoSeats, readDemoCountFromUrl } from '@/lib/demo'
 
 interface CredentialsContextValue {
   credentials: Credentials | null
   budgets: UserBudget[]
+  seats: CopilotSeat[]
   loading: boolean
   loadProgress: { loaded: number; total: number | undefined } | null
   error: string | null
@@ -27,6 +30,7 @@ const Ctx = createContext<CredentialsContextValue | null>(null)
 export function CredentialsProvider({ children }: { children: ReactNode }) {
   const [credentials, setCredentials] = useState<Credentials | null>(null)
   const [budgets, setBudgets] = useState<UserBudget[]>([])
+  const [seats, setSeats] = useState<CopilotSeat[]>([])
   const [loading, setLoading] = useState(false)
   const [loadProgress, setLoadProgress] = useState<{ loaded: number; total: number | undefined } | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -40,6 +44,7 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
     if (credentials?.base === 'demo://') {
       const demoCount = readDemoCountFromUrl() ?? 0
       setBudgets(generateDemoBudgets(demoCount, Math.floor(Math.random() * 100_000)))
+      setSeats(generateDemoSeats(demoCount))
       return
     }
     if (!apiFetch) return
@@ -47,10 +52,14 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
     setLoadProgress({ loaded: 0, total: undefined })
     setError(null)
     try {
-      const list = await fetchUserBudgets(apiFetch, (loaded, total) =>
-        setLoadProgress({ loaded, total }),
-      )
+      const [list, seatList] = await Promise.all([
+        fetchUserBudgets(apiFetch, (loaded, total) =>
+          setLoadProgress({ loaded, total }),
+        ),
+        fetchAllCopilotSeats(apiFetch).catch(() => [] as CopilotSeat[]),
+      ])
       setBudgets(list)
+      setSeats(seatList)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -70,11 +79,16 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
     setLoadProgress({ loaded: 0, total: undefined })
     setError(null)
     try {
-      const list = await fetchUserBudgets(createApiFetch(creds), (loaded, total) =>
-        setLoadProgress({ loaded, total }),
-      )
+      const fetcher = createApiFetch(creds)
+      const [list, seatList] = await Promise.all([
+        fetchUserBudgets(fetcher, (loaded, total) =>
+          setLoadProgress({ loaded, total }),
+        ),
+        fetchAllCopilotSeats(fetcher).catch(() => [] as CopilotSeat[]),
+      ])
       setCredentials(creds)
       setBudgets(list)
+      setSeats(seatList)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -86,6 +100,7 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
   const disconnect = useCallback(() => {
     setCredentials(null)
     setBudgets([])
+    setSeats([])
     setError(null)
   }, [])
 
@@ -97,11 +112,10 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
     const demoCount = readDemoCountFromUrl()
     if (demoCount !== null) {
       autoConnectRef.current = true
-      // Defer to break out of the synchronous effect call chain so setState
-      // doesn't happen during the effect's microtask.
       void Promise.resolve().then(() => {
         setCredentials({ base: 'demo://', ent: `demo-${demoCount}`, token: 'demo' })
         setBudgets(generateDemoBudgets(demoCount))
+        setSeats(generateDemoSeats(demoCount))
       })
       return
     }
@@ -116,6 +130,7 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
   const value: CredentialsContextValue = {
     credentials,
     budgets,
+    seats,
     loading,
     loadProgress,
     error,

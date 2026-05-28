@@ -2,21 +2,24 @@ import { useState } from 'react'
 import { Dialog, DialogContent, DialogTitle, DialogDescription, DialogClose } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { UserCombobox } from '@/components/ui/user-combobox'
+import type { CopilotSeat } from '@/lib/api'
 
 interface Props {
   open: boolean
   onOpenChange: (open: boolean) => void
   onSubmit: (username: string, amount: number) => Promise<void>
+  seats: CopilotSeat[]
+  existingUsernames: Set<string>
 }
 
-export function CreateBudgetDialog({ open, onOpenChange, onSubmit }: Props) {
+export function CreateBudgetDialog({ open, onOpenChange, onSubmit, seats, existingUsernames }: Props) {
   const [username, setUsername] = useState('')
   const [amount, setAmount] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [prevOpen, setPrevOpen] = useState(false)
 
-  // State-during-render: clear form when dialog transitions to open.
   if (open && !prevOpen) {
     setPrevOpen(true)
     setUsername('')
@@ -25,6 +28,13 @@ export function CreateBudgetDialog({ open, onOpenChange, onSubmit }: Props) {
   } else if (!open && prevOpen) {
     setPrevOpen(false)
   }
+
+  const options = seats.map(s => ({
+    login: s.login,
+    orgLogin: s.orgLogin,
+    disabled: existingUsernames.has(s.login),
+    disabledReason: 'already has ULB',
+  }))
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -38,7 +48,11 @@ export function CreateBudgetDialog({ open, onOpenChange, onSubmit }: Props) {
             e.preventDefault()
             const n = Number(amount)
             if (!username.trim()) {
-              setError('Enter a username.')
+              setError('Pick a Copilot user.')
+              return
+            }
+            if (existingUsernames.has(username.trim())) {
+              setError(`${username.trim()} already has an individual ULB. Edit it from the table.`)
               return
             }
             if (!Number.isFinite(n) || n < 0) {
@@ -59,12 +73,36 @@ export function CreateBudgetDialog({ open, onOpenChange, onSubmit }: Props) {
           className="grid gap-3"
         >
           <label className="text-sm grid gap-1">
-            <span className="text-neutral-600 dark:text-neutral-400">GitHub username</span>
-            <Input value={username} onChange={e => setUsername(e.target.value)} placeholder="octocat" autoFocus />
+            <span className="text-neutral-600 dark:text-neutral-400">
+              Copilot user
+              {seats.length > 0 ? (
+                <span className="ml-1 text-xs text-neutral-400">
+                  ({seats.length.toLocaleString()} seat{seats.length === 1 ? '' : 's'})
+                </span>
+              ) : null}
+            </span>
+            <UserCombobox
+              options={options}
+              value={username}
+              onChange={setUsername}
+              placeholder={seats.length > 0 ? 'Search Copilot users…' : 'Type a GitHub username'}
+              emptyMessage={
+                seats.length === 0
+                  ? 'No seat list loaded. Type the username manually.'
+                  : 'No matching Copilot users.'
+              }
+            />
           </label>
           <label className="text-sm grid gap-1">
             <span className="text-neutral-600 dark:text-neutral-400">Budget amount (USD)</span>
-            <Input type="number" min={0} step="1" value={amount} onChange={e => setAmount(e.target.value)} placeholder="50" />
+            <Input
+              type="text"
+              inputMode="decimal"
+              pattern="[0-9]*\.?[0-9]*"
+              value={amount}
+              onChange={e => setAmount(e.target.value.replace(/[^0-9.]/g, ''))}
+              placeholder="50"
+            />
           </label>
           {error ? <p className="text-sm text-red-600 dark:text-red-400">{error}</p> : null}
           <div className="flex justify-end gap-2 mt-2">

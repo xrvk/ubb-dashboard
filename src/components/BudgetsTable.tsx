@@ -75,7 +75,7 @@ function SortHeader({
 }
 
 export function BudgetsTable({ budgets, filters, onFiltersChange, onEdit, onDelete, onBulkUnblock }: Props) {
-  const [sortKey, setSortKey] = useState<SortKey>('consumedAmount')
+  const [sortKey, setSortKey] = useState<SortKey>('utilization')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [page, setPage] = useState(0)
   const [showAll, setShowAll] = useState(false)
