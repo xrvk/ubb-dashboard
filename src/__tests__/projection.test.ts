@@ -29,6 +29,13 @@ describe('projectMonthlyBudget', () => {
     expect(r.recommendedBudget).toBe(21)
   })
 
+  it('flags low confidence early in the month', () => {
+    const r3 = projectMonthlyBudget(5, 0.05, new Date(2025, 5, 3))
+    expect(r3.lowConfidence).toBe(true)
+    const r5 = projectMonthlyBudget(5, 0.05, new Date(2025, 5, 5))
+    expect(r5.lowConfidence).toBe(false)
+  })
+
   it('handles last day of month (zero days remaining)', () => {
     const now = new Date(2025, 5, 30) // June 30
     const r = projectMonthlyBudget(120, 0.1, now)
