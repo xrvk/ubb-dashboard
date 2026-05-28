@@ -100,7 +100,6 @@ interface BudgetsResponse {
   budgets?: RawBudget[]
   total_count?: number
 }
-
 export function isCopilotBudget(b: RawBudget): boolean {
   return b.budget_product_sku === 'ai_credits'
 }
@@ -121,12 +120,16 @@ export function toUserBudget(b: RawBudget): UserBudget {
 export async function fetchUserBudgets(apiFetch: ApiFetch): Promise<UserBudget[]> {
   const all: RawBudget[] = []
   let page = 1
+  let totalCount: number | undefined
   while (true) {
     const data = (await apiFetch(`/budgets?per_page=100&page=${page}`)) as BudgetsResponse | RawBudget[]
     const list = Array.isArray(data) ? data : (data?.budgets ?? [])
+    if (!Array.isArray(data) && typeof data?.total_count === 'number') {
+      totalCount = data.total_count
+    }
     if (list.length === 0) break
     all.push(...list)
-    if (list.length < 100) break
+    if (totalCount !== undefined && all.length >= totalCount) break
     page += 1
     if (page > 50) break // safety
   }
