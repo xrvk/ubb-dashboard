@@ -1,19 +1,27 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
   --color-success: oklch(0.72 0.16 145);
   --color-warning: oklch(0.78 0.17 75);
   --color-destructive: oklch(0.62 0.22 25);
 }
 
-@layer base {
-  :root {
-    color-scheme: light dark;
-  }
-  body {
-    @apply bg-neutral-50 text-neutral-900 antialiased;
-  }
-  .dark body {
-    @apply bg-neutral-950 text-neutral-100;
-  }
+html,
+body {
+  background-color: var(--color-neutral-50);
+  color: var(--color-neutral-900);
+  -webkit-font-smoothing: antialiased;
+}
+
+.dark,
+.dark body {
+  background-color: var(--color-neutral-950);
+  color: var(--color-neutral-100);
+  color-scheme: dark;
+}
+
+:root {
+  color-scheme: light;
 }

@@ -8,6 +8,7 @@ import {
   type Credentials,
   type UserBudget,
 } from '@/lib/api'
+import { generateDemoBudgets, readDemoCountFromUrl } from '@/lib/demo'
 
 interface CredentialsContextValue {
   credentials: Credentials | null
@@ -36,6 +37,11 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
   )
 
   const refresh = useCallback(async () => {
+    if (credentials?.base === 'demo://') {
+      const demoCount = readDemoCountFromUrl() ?? 0
+      setBudgets(generateDemoBudgets(demoCount, Math.floor(Math.random() * 100_000)))
+      return
+    }
     if (!apiFetch) return
     setLoading(true)
     setLoadProgress({ loaded: 0, total: undefined })
@@ -51,7 +57,7 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
       setLoading(false)
       setLoadProgress(null)
     }
-  }, [apiFetch])
+  }, [apiFetch, credentials])
 
   const connect = useCallback(async (enterpriseUrl: string, token: string) => {
     const parsed = parseEnterpriseUrl(enterpriseUrl)
@@ -87,12 +93,22 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
   const autoConnectRef = useRef(false)
   useEffect(() => {
     if (autoConnectRef.current || credentials) return
+    // Demo mode via ?demo=N query param bypasses the API entirely
+    const demoCount = readDemoCountFromUrl()
+    if (demoCount !== null) {
+      autoConnectRef.current = true
+      // Defer to break out of the synchronous effect call chain so setState
+      // doesn't happen during the effect's microtask.
+      void Promise.resolve().then(() => {
+        setCredentials({ base: 'demo://', ent: `demo-${demoCount}`, token: 'demo' })
+        setBudgets(generateDemoBudgets(demoCount))
+      })
+      return
+    }
     const url = import.meta.env.VITE_DEV_ENTERPRISE_URL as string | undefined
     const token = import.meta.env.VITE_DEV_PAT as string | undefined
     if (url && token) {
       autoConnectRef.current = true
-      // Defer to break out of the synchronous effect call chain so setState
-      // doesn't happen during the effect's microtask.
       void Promise.resolve().then(() => connect(url, token))
     }
   }, [connect, credentials])

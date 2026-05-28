@@ -18,6 +18,8 @@ interface Props {
 
 const STATUS_ORDER: Record<Status, number> = { over: 0, near: 1, ok: 2 }
 
+const ROW_CAP = 250
+
 function SortHeader({
   k,
   sortKey,
@@ -57,7 +59,7 @@ export function BudgetsTable({ budgets, onEdit, onDelete }: Props) {
   const [filter, setFilter] = useState<'all' | Status>('all')
   const [query, setQuery] = useState('')
 
-  const rows = useMemo(() => {
+  const allRows = useMemo(() => {
     const filtered = budgets.filter(b => {
       if (filter !== 'all' && classifyStatus(b) !== filter) return false
       if (query && !b.user.toLowerCase().includes(query.toLowerCase())) return false
@@ -90,6 +92,9 @@ export function BudgetsTable({ budgets, onEdit, onDelete }: Props) {
     return sorted
   }, [budgets, filter, query, sortKey, sortDir])
 
+  const rows = allRows.slice(0, ROW_CAP)
+  const hiddenCount = allRows.length - rows.length
+
   const toggleSort = (key: SortKey) => {
     if (sortKey === key) {
       setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))
@@ -105,7 +110,7 @@ export function BudgetsTable({ budgets, onEdit, onDelete }: Props) {
     <Card>
       <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <CardTitle className="text-base font-semibold text-neutral-900 dark:text-neutral-100">
-          Individual ULBs ({rows.length})
+          Individual ULBs ({allRows.length.toLocaleString()})
         </CardTitle>
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex gap-1 p-1 rounded-md bg-neutral-100 dark:bg-neutral-800">
@@ -203,6 +208,11 @@ export function BudgetsTable({ budgets, onEdit, onDelete }: Props) {
             )}
           </tbody>
         </table>
+        {hiddenCount > 0 ? (
+          <div className="px-3 py-3 border-t border-neutral-200 dark:border-neutral-800 text-xs text-neutral-500 text-center bg-neutral-50 dark:bg-neutral-900/50">
+            Showing {rows.length.toLocaleString()} of {allRows.length.toLocaleString()}. Use search or status filter to narrow results.
+          </div>
+        ) : null}
       </CardContent>
     </Card>
   )
