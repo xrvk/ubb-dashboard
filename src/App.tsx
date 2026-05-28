@@ -396,25 +396,42 @@ export function App() {
       />
 
       <footer className="border-t border-neutral-200 dark:border-neutral-800 mt-12">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 text-center text-xs text-neutral-500">
-          Developed by{' '}
-          <a
-            href="https://github.com/xrvk"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hover:text-neutral-900 dark:hover:text-neutral-100 hover:underline underline-offset-2 transition-colors"
-          >
-            @xrvk
-          </a>
-          {' · '}
-          <a
-            href="https://github.com/xrvk/ind-ulb-dashboard"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hover:text-neutral-900 dark:hover:text-neutral-100 hover:underline underline-offset-2 transition-colors"
-          >
-            Source
-          </a>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 space-y-3 text-center text-xs text-neutral-500">
+          <p className="leading-relaxed">
+            This is an independent, personal project by a GitHub Solutions Engineer.
+            It is not an official GitHub product and does not represent GitHub's views.
+            Provided "as is" for planning purposes only; not financial or billing advice.
+            Past usage patterns may not predict future usage. Always verify against{' '}
+            <a
+              href="https://docs.github.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline hover:text-neutral-900 dark:hover:text-neutral-100 transition-colors"
+            >
+              GitHub's official documentation
+            </a>{' '}
+            before applying changes.
+          </p>
+          <p>
+            Developed by{' '}
+            <a
+              href="https://github.com/xrvk"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-neutral-900 dark:hover:text-neutral-100 hover:underline underline-offset-2 transition-colors"
+            >
+              @xrvk
+            </a>
+            {' · '}
+            <a
+              href="https://github.com/xrvk/ind-ulb-dashboard"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-neutral-900 dark:hover:text-neutral-100 hover:underline underline-offset-2 transition-colors"
+            >
+              Source
+            </a>
+          </p>
         </div>
       </footer>
     </div>
