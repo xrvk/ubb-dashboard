@@ -20,7 +20,7 @@ import {
 } from '@/lib/api'
 
 export function App() {
-  const { credentials, budgets, loading, apiFetch, refresh } = useCredentials()
+  const { credentials, budgets, loading, loadProgress, apiFetch, refresh } = useCredentials()
   const { theme, setTheme } = useTheme()
 
   const [editing, setEditing] = useState<UserBudget | null>(null)
@@ -88,7 +88,13 @@ export function App() {
 
         {credentials ? (
           loading && budgets.length === 0 ? (
-            <div className="text-center text-sm text-neutral-500 py-12">Loading budgets…</div>
+            <div className="text-center text-sm text-neutral-500 py-12">
+              {loadProgress
+                ? loadProgress.total
+                  ? `Loading budgets… ${loadProgress.loaded} of ${loadProgress.total}`
+                  : `Loading budgets… ${loadProgress.loaded}`
+                : 'Loading budgets…'}
+            </div>
           ) : (
             <>
               <SummaryCards summary={summary} />
