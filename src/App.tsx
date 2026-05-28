@@ -5,7 +5,7 @@ import { useTheme } from 'next-themes'
 import { useCredentials } from '@/hooks/use-credentials'
 import { ImportPanel } from '@/components/ImportPanel'
 import { SummaryCards } from '@/components/SummaryCards'
-import { TopConsumersChart } from '@/components/TopConsumersChart'
+import { UtilizationHistogram } from '@/components/UtilizationHistogram'
 import { BudgetsTable } from '@/components/BudgetsTable'
 import { EditBudgetDialog } from '@/components/EditBudgetDialog'
 import { CreateBudgetDialog } from '@/components/CreateBudgetDialog'
@@ -113,18 +113,14 @@ export function App() {
             <>
               <SummaryCards summary={summary} />
               {budgets.length > 0 ? (
-                <div className="grid lg:grid-cols-5 gap-6">
-                  <div className="lg:col-span-2">
-                    <TopConsumersChart budgets={budgets} />
-                  </div>
-                  <div className="lg:col-span-3">
-                    <BudgetsTable
-                      budgets={budgets}
-                      onEdit={setEditing}
-                      onDelete={setDeleting}
-                    />
-                  </div>
-                </div>
+                <>
+                  <UtilizationHistogram budgets={budgets} />
+                  <BudgetsTable
+                    budgets={budgets}
+                    onEdit={setEditing}
+                    onDelete={setDeleting}
+                  />
+                </>
               ) : (
                 <div className="rounded-lg border border-dashed border-neutral-300 dark:border-neutral-700 p-12 text-center">
                   <p className="text-sm text-neutral-500">
