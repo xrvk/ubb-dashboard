@@ -160,8 +160,12 @@ export function BudgetsTable({ budgets, filters, onFiltersChange, onEdit, onDele
     : allRows.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
 
   const visibleIds = useMemo(() => rows.map(r => r.id), [rows])
+  const allIds = useMemo(() => allRows.map(r => r.id), [allRows])
   const allVisibleSelected = visibleIds.length > 0 && visibleIds.every(id => selected.has(id))
   const someVisibleSelected = visibleIds.some(id => selected.has(id))
+  const allMatchingSelected = allIds.length > 0 && allIds.every(id => selected.has(id))
+  const showAcrossPagesBanner =
+    allVisibleSelected && !showAll && allRows.length > rows.length && !allMatchingSelected
 
   const toggleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -190,6 +194,14 @@ export function BudgetsTable({ budgets, filters, onFiltersChange, onEdit, onDele
     })
   }
   const clearSelection = () => setSelected(new Set())
+
+  const selectAllMatching = () => {
+    setSelected(prev => {
+      const next = new Set(prev)
+      allIds.forEach(id => next.add(id))
+      return next
+    })
+  }
 
   const selectedItems = useMemo(
     () => budgets.filter(b => selected.has(b.id)),
@@ -291,24 +303,50 @@ export function BudgetsTable({ budgets, filters, onFiltersChange, onEdit, onDele
         </div>
 
         {selected.size > 0 ? (
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between p-2.5 rounded-md border border-emerald-300 dark:border-emerald-700/60 bg-emerald-50 dark:bg-emerald-950/30">
-            <div className="text-sm text-emerald-900 dark:text-emerald-100">
-              <strong>{selected.size}</strong> selected
-              {selectedOverItems.length > 0 ? (
-                <span className="text-emerald-700 dark:text-emerald-300 ml-2 text-xs">
-                  ({selectedOverItems.length} over budget)
-                </span>
-              ) : null}
+          <div className="flex flex-col gap-2 p-2.5 rounded-md border border-emerald-300 dark:border-emerald-700/60 bg-emerald-50 dark:bg-emerald-950/30">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div className="text-sm text-emerald-900 dark:text-emerald-100">
+                <strong>{selected.size.toLocaleString()}</strong> selected
+                {selectedOverItems.length > 0 ? (
+                  <span className="text-emerald-700 dark:text-emerald-300 ml-2 text-xs">
+                    ({selectedOverItems.length.toLocaleString()} over budget)
+                  </span>
+                ) : null}
+              </div>
+              <div className="flex gap-2">
+                <Button size="sm" onClick={() => onBulkUnblock(selectedItems)}>
+                  <LockOpen size={14} weight="duotone" />
+                  Unblock for month
+                </Button>
+                <Button size="sm" variant="ghost" onClick={clearSelection}>
+                  Clear
+                </Button>
+              </div>
             </div>
-            <div className="flex gap-2">
-              <Button size="sm" onClick={() => onBulkUnblock(selectedItems)}>
-                <LockOpen size={14} weight="duotone" />
-                Unblock for month
-              </Button>
-              <Button size="sm" variant="ghost" onClick={clearSelection}>
-                Clear
-              </Button>
-            </div>
+            {showAcrossPagesBanner ? (
+              <div className="text-xs text-emerald-800 dark:text-emerald-200">
+                All {rows.length.toLocaleString()} users on this page are selected.{' '}
+                <button
+                  type="button"
+                  onClick={selectAllMatching}
+                  className="font-medium underline hover:no-underline"
+                >
+                  Select all {allRows.length.toLocaleString()} users matching the current filter
+                </button>
+              </div>
+            ) : null}
+            {allMatchingSelected && allRows.length > PAGE_SIZE ? (
+              <div className="text-xs text-emerald-800 dark:text-emerald-200">
+                All {allRows.length.toLocaleString()} users matching the current filter are selected.{' '}
+                <button
+                  type="button"
+                  onClick={clearSelection}
+                  className="font-medium underline hover:no-underline"
+                >
+                  Clear selection
+                </button>
+              </div>
+            ) : null}
           </div>
         ) : null}
       </CardHeader>
