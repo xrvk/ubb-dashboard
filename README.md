@@ -68,6 +68,18 @@ Select any number of users (within a filter or across all matching pages) and ru
 - "Low confidence" tag on users where fewer than 5 days have elapsed (early-month projections are noisy).
 - An expandable **How is the recommendation calculated?** explainer in the dialog footer.
 - Clear disclaimer that this only raises individual ULBs — cost-center and enterprise budgets can still cause a block.
+- Late-cycle warning when the billing cycle is 7 days or fewer from resetting.
+
+### Snapshot, revert, JSON export/import
+
+Every successful bulk apply records a snapshot of the previous caps, persisted in `localStorage` per enterprise.
+
+- **Auto-downloaded JSON** of the snapshot at apply time, so you have an off-browser copy.
+- **"Revert (N)"** button in the header opens a row-by-row preview and restores the previous values via batch `PATCH`.
+- **"Import snapshot"** button accepts a JSON file (validated against the connected enterprise) so you can revert from a different machine or after `localStorage` was cleared.
+- **"Download JSON"** in the Revert dialog lets you re-export the current snapshot at any time.
+
+This solves the [mid-cycle persistence footgun](https://github.com/xrvk/copilot-budget-command-calculator/blob/main/docs/internal/space/billing-cycle-management.md): `budget_amount` survives cycle resets even though `consumed_amount` zeroes out, so a late-cycle bump silently becomes next month's baseline. With the snapshot, rolling back is a one-click action instead of a script-writing exercise.
 
 ### Scale & rate limits
 

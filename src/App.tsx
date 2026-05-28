@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react'
-import { Plus, Gauge, Moon, Sun, ArrowCounterClockwise } from '@phosphor-icons/react'
+import { Plus, Gauge, Moon, Sun, ArrowCounterClockwise, Upload } from '@phosphor-icons/react'
 import { Toaster, toast } from 'sonner'
 import { useTheme } from 'next-themes'
 import { useCredentials } from '@/hooks/use-credentials'
@@ -16,7 +16,7 @@ import { Button } from '@/components/ui/button'
 import { summarize } from '@/lib/status'
 import { createUserBudget as apiCreateUserBudget, deleteUserBudget as apiDeleteUserBudget, patchUserBudget as apiPatchUserBudget, type UserBudget } from '@/lib/api'
 import { runBatch, type BatchProgress } from '@/lib/batch'
-import { clearSnapshot, endOfMonth, loadSnapshot, saveSnapshot, type BulkApplySnapshot } from '@/lib/snapshot'
+import { clearSnapshot, downloadSnapshot, endOfMonth, loadSnapshot, parseSnapshot, saveSnapshot, type BulkApplySnapshot } from '@/lib/snapshot'
 
 export function App() {
   const { credentials, budgets, seats, loading, loadProgress, apiFetch, refresh } = useCredentials()
@@ -146,11 +146,11 @@ export function App() {
     const failed = results.filter(r => !r.ok).length
     const ok = results.length - failed
     if (failed === 0) {
-      toast.success(`Unblocked ${ok.toLocaleString()} users`)
+      toast.success(`Unblocked ${ok.toLocaleString()} users · snapshot downloaded`)
     } else if (ok === 0) {
       toast.error(`Failed to update ${failed.toLocaleString()} users`)
     } else {
-      toast.warning(`Updated ${ok.toLocaleString()}, failed ${failed.toLocaleString()}`)
+      toast.warning(`Updated ${ok.toLocaleString()}, failed ${failed.toLocaleString()} · snapshot downloaded`)
     }
 
     // Persist a snapshot of the successfully-applied updates.
@@ -168,9 +168,37 @@ export function App() {
       }
       saveSnapshot(snap)
       setSnapshot(snap)
+      // Auto-download a JSON copy so the admin has off-browser recovery.
+      try {
+        downloadSnapshot(snap)
+      } catch {
+        // Best-effort; users can re-download from the Revert dialog.
+      }
     }
 
     await refresh()
+  }
+
+  const handleImportSnapshot = (file: File) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const text = reader.result
+      if (typeof text !== 'string') {
+        toast.error('Could not read snapshot file.')
+        return
+      }
+      const result = parseSnapshot(text, credentials?.ent ?? undefined)
+      if (!result.ok) {
+        toast.error(result.error)
+        return
+      }
+      saveSnapshot(result.snapshot)
+      setSnapshot(result.snapshot)
+      setRevertCandidate(result.snapshot)
+      toast.success(`Imported snapshot of ${result.snapshot.entries.length.toLocaleString()} budgets`)
+    }
+    reader.onerror = () => toast.error('Could not read snapshot file.')
+    reader.readAsText(file)
   }
 
   const handleRevert = async (snap: BulkApplySnapshot) => {
@@ -223,22 +251,41 @@ export function App() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {snapshot ? (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setRevertCandidate(snapshot)}
-                title={`Revert the most recent bulk apply (${snapshot.entries.length} budgets)`}
-              >
-                <ArrowCounterClockwise size={14} weight="duotone" />
-                Revert last bulk apply ({snapshot.entries.length.toLocaleString()})
-              </Button>
-            ) : null}
             {credentials ? (
-              <Button onClick={() => setCreating(true)} size="sm">
-                <Plus size={16} weight="bold" />
-                Add ULB
-              </Button>
+              <>
+                <label
+                  className="inline-flex items-center gap-1 h-8 px-3 text-sm rounded-md border border-neutral-300 dark:border-neutral-700 hover:bg-neutral-100 dark:hover:bg-neutral-800 cursor-pointer"
+                  title="Import a snapshot JSON from another machine to enable revert"
+                >
+                  <Upload size={14} weight="duotone" />
+                  Import snapshot
+                  <input
+                    type="file"
+                    accept="application/json,.json"
+                    className="hidden"
+                    onChange={e => {
+                      const f = e.target.files?.[0]
+                      if (f) handleImportSnapshot(f)
+                      e.currentTarget.value = ''
+                    }}
+                  />
+                </label>
+                {snapshot ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setRevertCandidate(snapshot)}
+                    title={`Revert the most recent bulk apply (${snapshot.entries.length} budgets)`}
+                  >
+                    <ArrowCounterClockwise size={14} weight="duotone" />
+                    Revert ({snapshot.entries.length.toLocaleString()})
+                  </Button>
+                ) : null}
+                <Button onClick={() => setCreating(true)} size="sm">
+                  <Plus size={16} weight="bold" />
+                  Add ULB
+                </Button>
+              </>
             ) : null}
             <Button
               variant="ghost"
