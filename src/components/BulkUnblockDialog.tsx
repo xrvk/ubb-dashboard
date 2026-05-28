@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { LockOpen, Warning, Stop } from '@phosphor-icons/react'
+import { LockOpen, Warning, Stop, CalendarBlank } from '@phosphor-icons/react'
 import { Dialog, DialogContent, DialogTitle, DialogDescription, DialogClose } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { formatCurrency, cn } from '@/lib/utils'
 import { projectMonthlyBudget } from '@/lib/projection'
 import { estimateBatchDurationMs, PRIMARY_LIMIT_PER_HOUR, type BatchProgress } from '@/lib/batch'
+import { daysUntilCycleReset } from '@/lib/snapshot'
 import type { UserBudget } from '@/lib/api'
 
 interface Props {
@@ -84,6 +85,7 @@ export function BulkUnblockDialog({ open, onOpenChange, selected, onApply }: Pro
 
   const exceedsRateLimit = rows.length > PRIMARY_LIMIT_PER_HOUR
   const estimatedMs = estimateBatchDurationMs(rows.length)
+  const daysToReset = daysUntilCycleReset()
 
   const handleCancel = () => {
     abortRef.current?.abort()
@@ -198,6 +200,23 @@ export function BulkUnblockDialog({ open, onOpenChange, selected, onApply }: Pro
           <div className="text-xs mb-3 px-3 py-2 rounded-md border border-neutral-200 dark:border-neutral-800 text-neutral-600 dark:text-neutral-300">
             Estimated time: <strong>{formatDuration(estimatedMs)}</strong> at 5 in flight, 50ms
             spacing. The runner backs off automatically on 429s.
+          </div>
+        ) : null}
+
+        {/* Cycle-persistence warning when near month end */}
+        {daysToReset <= 7 && daysToReset > 0 ? (
+          <div className="flex items-start gap-2 text-xs mb-3 p-3 rounded-md border border-amber-300 dark:border-amber-700/60 bg-amber-50 dark:bg-amber-950/40">
+            <CalendarBlank size={16} weight="duotone" className="text-amber-600 mt-0.5 shrink-0" />
+            <div>
+              <strong className="text-amber-900 dark:text-amber-100">
+                Cycle resets in {daysToReset} day{daysToReset === 1 ? '' : 's'}.
+              </strong>
+              <p className="text-amber-800 dark:text-amber-200 mt-1">
+                These caps persist after reset. <code>consumed_amount</code> zeros out on day 1
+                but <code>budget_amount</code> does not. Plan to revert (or schedule a reset)
+                next cycle so users aren't running on inflated caps all month.
+              </p>
+            </div>
           </div>
         ) : null}
 
@@ -327,6 +346,13 @@ recommended   = ceil( projected × (1 + buffer / 100) )`}
               The <strong className="text-amber-700 dark:text-amber-300">low confidence</strong> tag appears
               when fewer than 5 days have elapsed, since short windows make the daily rate noisy.
               Review those rows before applying.
+            </p>
+            <p>
+              <strong>Cycle persistence:</strong> the new cap stays in effect across billing
+              cycle resets. <code>consumed_amount</code> resets to zero on day 1 of the next
+              cycle, but <code>budget_amount</code> and <code>prevent_further_usage</code> do not.
+              Use the table's "Revert last bulk apply" affordance after cycle reset if you
+              want to roll back to each user's prior cap.
             </p>
           </div>
         </details>

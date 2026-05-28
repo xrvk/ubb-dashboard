@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react'
-import { Plus, Gauge, Moon, Sun } from '@phosphor-icons/react'
+import { Plus, Gauge, Moon, Sun, ArrowCounterClockwise } from '@phosphor-icons/react'
 import { Toaster, toast } from 'sonner'
 import { useTheme } from 'next-themes'
 import { useCredentials } from '@/hooks/use-credentials'
@@ -11,10 +11,12 @@ import { EditBudgetDialog } from '@/components/EditBudgetDialog'
 import { CreateBudgetDialog } from '@/components/CreateBudgetDialog'
 import { DeleteConfirmDialog } from '@/components/DeleteConfirmDialog'
 import { BulkUnblockDialog } from '@/components/BulkUnblockDialog'
+import { RevertBulkDialog } from '@/components/RevertBulkDialog'
 import { Button } from '@/components/ui/button'
 import { summarize } from '@/lib/status'
 import { createUserBudget as apiCreateUserBudget, deleteUserBudget as apiDeleteUserBudget, patchUserBudget as apiPatchUserBudget, type UserBudget } from '@/lib/api'
 import { runBatch, type BatchProgress } from '@/lib/batch'
+import { clearSnapshot, endOfMonth, loadSnapshot, saveSnapshot, type BulkApplySnapshot } from '@/lib/snapshot'
 
 export function App() {
   const { credentials, budgets, seats, loading, loadProgress, apiFetch, refresh } = useCredentials()
@@ -24,11 +26,22 @@ export function App() {
   const [deleting, setDeleting] = useState<UserBudget | null>(null)
   const [creating, setCreating] = useState(false)
   const [bulkUnblock, setBulkUnblock] = useState<UserBudget[] | null>(null)
+  const [revertCandidate, setRevertCandidate] = useState<BulkApplySnapshot | null>(null)
+  const [snapshot, setSnapshot] = useState<BulkApplySnapshot | null>(null)
   const [filters, setFilters] = useState<TableFilters>(EMPTY_FILTERS)
   const tableRef = useRef<HTMLDivElement | null>(null)
 
   const summary = useMemo(() => summarize(budgets), [budgets])
   const existingUsernames = useMemo(() => new Set(budgets.map(b => b.user)), [budgets])
+
+  // Load the most recent snapshot for the connected enterprise.
+  // State-during-render keyed on credentials so we don't need useEffect.
+  const [snapshotFor, setSnapshotFor] = useState<string | null>(null)
+  const currentEnt = credentials?.ent ?? null
+  if (snapshotFor !== currentEnt) {
+    setSnapshotFor(currentEnt)
+    setSnapshot(currentEnt ? loadSnapshot(currentEnt) : null)
+  }
 
   const scrollToTable = () => {
     requestAnimationFrame(() => {
@@ -81,7 +94,6 @@ export function App() {
     handle: { signal: AbortSignal; onProgress: (p: BatchProgress) => void },
   ) => {
     if (credentials?.base === 'demo://') {
-      // Simulate progress for demo without hitting the API
       let done = 0
       for (let i = 0; i < updates.length; i += 1) {
         if (handle.signal.aborted) break
@@ -100,7 +112,23 @@ export function App() {
       toast.info(`Demo mode: would update ${updates.length.toLocaleString()} budgets`)
       return
     }
-    if (!apiFetch) return
+    if (!apiFetch || !credentials) return
+
+    // Capture pre-apply state so admin can revert after cycle reset.
+    const previousById = new Map(budgets.map(b => [b.id, b]))
+    const snapshotEntries = updates
+      .map(u => {
+        const prev = previousById.get(u.id)
+        if (!prev) return null
+        return {
+          budgetId: u.id,
+          user: u.user,
+          previousAmount: prev.budgetAmount,
+          newAmount: u.newAmount,
+        }
+      })
+      .filter((x): x is NonNullable<typeof x> => x !== null)
+
     const results = await runBatch(
       updates,
       async u => {
@@ -124,7 +152,60 @@ export function App() {
     } else {
       toast.warning(`Updated ${ok.toLocaleString()}, failed ${failed.toLocaleString()}`)
     }
+
+    // Persist a snapshot of the successfully-applied updates.
+    const succeededIds = new Set(
+      results.filter(r => r.ok).map(r => (r.item as { id: string }).id),
+    )
+    const succeededEntries = snapshotEntries.filter(e => succeededIds.has(e.budgetId))
+    if (succeededEntries.length > 0) {
+      const snap: BulkApplySnapshot = {
+        id: `snap-${Date.now()}`,
+        enterprise: credentials.ent,
+        appliedAt: Date.now(),
+        cycleEndsAt: endOfMonth().getTime(),
+        entries: succeededEntries,
+      }
+      saveSnapshot(snap)
+      setSnapshot(snap)
+    }
+
     await refresh()
+  }
+
+  const handleRevert = async (snap: BulkApplySnapshot) => {
+    if (credentials?.base === 'demo://') {
+      toast.info(`Demo mode: would revert ${snap.entries.length.toLocaleString()} budgets`)
+      clearSnapshot()
+      setSnapshot(null)
+      setRevertCandidate(null)
+      return
+    }
+    if (!apiFetch) return
+    const t = toast.loading(`Reverting ${snap.entries.length.toLocaleString()} budgets…`)
+    try {
+      const results = await runBatch(
+        snap.entries,
+        async e => {
+          await apiPatchUserBudget(apiFetch, e.budgetId, e.previousAmount)
+        },
+        { concurrency: 5, perTaskDelayMs: 50 },
+      )
+      const failed = results.filter(r => !r.ok).length
+      toast.dismiss(t)
+      if (failed === 0) {
+        toast.success(`Reverted ${snap.entries.length.toLocaleString()} budgets`)
+        clearSnapshot()
+        setSnapshot(null)
+      } else {
+        toast.warning(`Reverted ${snap.entries.length - failed}, failed ${failed}`)
+      }
+      setRevertCandidate(null)
+      await refresh()
+    } catch (e) {
+      toast.dismiss(t)
+      toast.error(e instanceof Error ? e.message : String(e))
+    }
   }
 
   return (
@@ -142,6 +223,17 @@ export function App() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {snapshot ? (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setRevertCandidate(snapshot)}
+                title={`Revert the most recent bulk apply (${snapshot.entries.length} budgets)`}
+              >
+                <ArrowCounterClockwise size={14} weight="duotone" />
+                Revert last bulk apply ({snapshot.entries.length.toLocaleString()})
+              </Button>
+            ) : null}
             {credentials ? (
               <Button onClick={() => setCreating(true)} size="sm">
                 <Plus size={16} weight="bold" />
@@ -240,6 +332,20 @@ export function App() {
         onOpenChange={open => !open && setBulkUnblock(null)}
         selected={bulkUnblock ?? []}
         onApply={handleBulkUnblock}
+      />
+
+      <RevertBulkDialog
+        snapshot={revertCandidate}
+        onCancel={() => setRevertCandidate(null)}
+        onConfirm={() => {
+          if (revertCandidate) return handleRevert(revertCandidate)
+        }}
+        onDiscard={() => {
+          clearSnapshot()
+          setSnapshot(null)
+          setRevertCandidate(null)
+          toast.info('Snapshot discarded')
+        }}
       />
 
       <footer className="border-t border-neutral-200 dark:border-neutral-800 mt-12">
