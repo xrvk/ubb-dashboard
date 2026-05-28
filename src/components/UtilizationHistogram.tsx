@@ -16,9 +16,9 @@ export const UTIL_BUCKETS: UtilBucket[] = [
   { id: 'b0-25', label: '0–25%', short: '0–25', min: 0, max: 0.25, color: '#10b981' },
   { id: 'b25-50', label: '25–50%', short: '25–50', min: 0.25, max: 0.5, color: '#10b981' },
   { id: 'b50-80', label: '50–80%', short: '50–80', min: 0.5, max: 0.8, color: '#22c55e' },
-  { id: 'b80-100', label: '80–100% (near)', short: '80–100', min: 0.8, max: 1, color: '#f59e0b' },
-  { id: 'b100-150', label: '100–150% (over)', short: '100–150', min: 1, max: 1.5, color: '#ef4444' },
-  { id: 'b150', label: '150%+ (over)', short: '>150', min: 1.5, max: Infinity, color: '#b91c1c' },
+  { id: 'b80-100', label: '80–100% (near limit)', short: '80–100', min: 0.8, max: 1, color: '#f59e0b' },
+  { id: 'b100-110', label: '100–110% (just over)', short: '100–110', min: 1, max: 1.1, color: '#ef4444' },
+  { id: 'b110', label: '110%+ (admin error?)', short: '>110', min: 1.1, max: Infinity, color: '#b91c1c' },
 ]
 
 export function bucketForBudget(b: UserBudget): UtilBucket {

@@ -17,7 +17,7 @@ import { createUserBudget as apiCreateUserBudget, deleteUserBudget as apiDeleteU
 import { runBatch, type BatchProgress } from '@/lib/batch'
 
 export function App() {
-  const { credentials, budgets, loading, loadProgress, apiFetch, refresh } = useCredentials()
+  const { credentials, budgets, seats, loading, loadProgress, apiFetch, refresh } = useCredentials()
   const { theme, setTheme } = useTheme()
 
   const [editing, setEditing] = useState<UserBudget | null>(null)
@@ -28,6 +28,7 @@ export function App() {
   const tableRef = useRef<HTMLDivElement | null>(null)
 
   const summary = useMemo(() => summarize(budgets), [budgets])
+  const existingUsernames = useMemo(() => new Set(budgets.map(b => b.user)), [budgets])
 
   const scrollToTable = () => {
     requestAnimationFrame(() => {
@@ -225,6 +226,8 @@ export function App() {
         open={creating}
         onOpenChange={setCreating}
         onSubmit={handleCreate}
+        seats={seats}
+        existingUsernames={existingUsernames}
       />
       <DeleteConfirmDialog
         budget={deleting}
@@ -238,6 +241,29 @@ export function App() {
         selected={bulkUnblock ?? []}
         onApply={handleBulkUnblock}
       />
+
+      <footer className="border-t border-neutral-200 dark:border-neutral-800 mt-12">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 text-center text-xs text-neutral-500">
+          Developed by{' '}
+          <a
+            href="https://github.com/xrvk"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-neutral-900 dark:hover:text-neutral-100 hover:underline underline-offset-2 transition-colors"
+          >
+            @xrvk
+          </a>
+          {' · '}
+          <a
+            href="https://github.com/xrvk/ind-ulb-dashboard"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-neutral-900 dark:hover:text-neutral-100 hover:underline underline-offset-2 transition-colors"
+          >
+            Source
+          </a>
+        </div>
+      </footer>
     </div>
   )
 }
