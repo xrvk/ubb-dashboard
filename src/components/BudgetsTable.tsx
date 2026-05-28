@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { CaretDown, CaretUp, PencilSimple, Trash, BellRinging, MagnifyingGlass } from '@phosphor-icons/react'
+import { CaretDown, CaretUp, PencilSimple, Trash, MagnifyingGlass, CaretLeft, CaretRight } from '@phosphor-icons/react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -18,7 +18,17 @@ interface Props {
 
 const STATUS_ORDER: Record<Status, number> = { over: 0, near: 1, ok: 2 }
 
-const ROW_CAP = 250
+const PAGE_SIZE = 50
+
+const TIERS = [
+  { id: 'all', label: 'Any budget', min: -Infinity, max: Infinity },
+  { id: 'micro', label: '< $10', min: 0, max: 10 },
+  { id: 'small', label: '$10–$100', min: 10, max: 100 },
+  { id: 'mid', label: '$100–$1k', min: 100, max: 1000 },
+  { id: 'large', label: '$1k+', min: 1000, max: Infinity },
+] as const
+
+type TierId = (typeof TIERS)[number]['id']
 
 function SortHeader({
   k,
@@ -57,12 +67,17 @@ export function BudgetsTable({ budgets, onEdit, onDelete }: Props) {
   const [sortKey, setSortKey] = useState<SortKey>('consumedAmount')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [filter, setFilter] = useState<'all' | Status>('all')
+  const [tier, setTier] = useState<TierId>('all')
   const [query, setQuery] = useState('')
+  const [page, setPage] = useState(0)
+  const [showAll, setShowAll] = useState(false)
 
   const allRows = useMemo(() => {
+    const tierDef = TIERS.find(t => t.id === tier)!
     const filtered = budgets.filter(b => {
       if (filter !== 'all' && classifyStatus(b) !== filter) return false
       if (query && !b.user.toLowerCase().includes(query.toLowerCase())) return false
+      if (b.budgetAmount < tierDef.min || b.budgetAmount >= tierDef.max) return false
       return true
     })
     const sorted = [...filtered].sort((a, b) => {
@@ -90,10 +105,19 @@ export function BudgetsTable({ budgets, onEdit, onDelete }: Props) {
       return sortDir === 'asc' ? cmp : -cmp
     })
     return sorted
-  }, [budgets, filter, query, sortKey, sortDir])
+  }, [budgets, filter, query, sortKey, sortDir, tier])
 
-  const rows = allRows.slice(0, ROW_CAP)
-  const hiddenCount = allRows.length - rows.length
+  const pageCount = Math.max(1, Math.ceil(allRows.length / PAGE_SIZE))
+  // Reset page on filter changes during render (state-during-render pattern)
+  const [prevAllLen, setPrevAllLen] = useState(allRows.length)
+  if (prevAllLen !== allRows.length) {
+    setPrevAllLen(allRows.length)
+    if (page > 0 && page >= pageCount) setPage(0)
+  }
+
+  const rows = showAll
+    ? allRows
+    : allRows.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
 
   const toggleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -103,12 +127,14 @@ export function BudgetsTable({ budgets, onEdit, onDelete }: Props) {
       setSortDir(key === 'user' ? 'asc' : 'desc')
     }
   }
-
   const sortProps = { sortKey, sortDir, onSort: toggleSort } as const
+
+  const startIdx = showAll ? 1 : page * PAGE_SIZE + 1
+  const endIdx = showAll ? allRows.length : Math.min((page + 1) * PAGE_SIZE, allRows.length)
 
   return (
     <Card>
-      <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <CardHeader className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <CardTitle className="text-base font-semibold text-neutral-900 dark:text-neutral-100">
           Individual ULBs ({allRows.length.toLocaleString()})
         </CardTitle>
@@ -122,13 +148,22 @@ export function BudgetsTable({ budgets, onEdit, onDelete }: Props) {
                   'px-2.5 py-1 text-xs font-medium rounded transition-colors capitalize',
                   filter === f
                     ? 'bg-white dark:bg-neutral-700 text-neutral-900 dark:text-neutral-100 shadow-sm'
-                    : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900',
+                    : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100',
                 )}
               >
                 {f === 'all' ? 'All' : f === 'over' ? 'Over' : f === 'near' ? 'Near' : 'OK'}
               </button>
             ))}
           </div>
+          <select
+            value={tier}
+            onChange={e => setTier(e.target.value as TierId)}
+            className="h-8 rounded-md border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 text-xs"
+          >
+            {TIERS.map(t => (
+              <option key={t.id} value={t.id}>{t.label}</option>
+            ))}
+          </select>
           <div className="relative">
             <MagnifyingGlass size={14} weight="duotone" className="absolute left-2.5 top-1/2 -translate-y-1/2 text-neutral-400" />
             <Input
@@ -168,16 +203,7 @@ export function BudgetsTable({ budgets, onEdit, onDelete }: Props) {
                     key={b.id}
                     className="border-b border-neutral-100 dark:border-neutral-800/50 hover:bg-neutral-50 dark:hover:bg-neutral-800/40"
                   >
-                    <td className="px-3 py-2.5 font-medium">
-                      <span className="inline-flex items-center gap-2">
-                        {b.user}
-                        {b.willAlert ? (
-                          <span title="Alerts enabled">
-                            <BellRinging size={12} weight="duotone" className="text-amber-600" />
-                          </span>
-                        ) : null}
-                      </span>
-                    </td>
+                    <td className="px-3 py-2.5 font-medium">{b.user}</td>
                     <td className="px-3 py-2.5 text-right tabular-nums">{formatCurrency(b.budgetAmount)}</td>
                     <td className="px-3 py-2.5 text-right tabular-nums">{formatCurrency(b.consumedAmount)}</td>
                     <td
@@ -208,9 +234,50 @@ export function BudgetsTable({ budgets, onEdit, onDelete }: Props) {
             )}
           </tbody>
         </table>
-        {hiddenCount > 0 ? (
-          <div className="px-3 py-3 border-t border-neutral-200 dark:border-neutral-800 text-xs text-neutral-500 text-center bg-neutral-50 dark:bg-neutral-900/50">
-            Showing {rows.length.toLocaleString()} of {allRows.length.toLocaleString()}. Use search or status filter to narrow results.
+        {allRows.length > PAGE_SIZE ? (
+          <div className="px-3 py-2.5 border-t border-neutral-200 dark:border-neutral-800 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between bg-neutral-50/60 dark:bg-neutral-900/40">
+            <div className="text-xs text-neutral-500">
+              {allRows.length === 0
+                ? 'No results'
+                : `Showing ${startIdx.toLocaleString()}–${endIdx.toLocaleString()} of ${allRows.length.toLocaleString()}`}
+            </div>
+            <div className="flex items-center gap-2">
+              {!showAll ? (
+                <>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setPage(p => Math.max(0, p - 1))}
+                    disabled={page === 0}
+                  >
+                    <CaretLeft size={14} weight="bold" />
+                    Prev
+                  </Button>
+                  <span className="text-xs text-neutral-600 dark:text-neutral-300 tabular-nums">
+                    Page {page + 1} / {pageCount}
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setPage(p => Math.min(pageCount - 1, p + 1))}
+                    disabled={page >= pageCount - 1}
+                  >
+                    Next
+                    <CaretRight size={14} weight="bold" />
+                  </Button>
+                </>
+              ) : null}
+              <Button
+                size="sm"
+                variant={showAll ? 'secondary' : 'ghost'}
+                onClick={() => {
+                  setShowAll(s => !s)
+                  setPage(0)
+                }}
+              >
+                {showAll ? 'Paginate' : 'Show all'}
+              </Button>
+            </div>
           </div>
         ) : null}
       </CardContent>
