@@ -37,17 +37,20 @@ export function generateDemoBudgets(count: number, seed = 42): UserBudget[] {
     const bucket = rand()
     let consumed: number
     if (bucket < 0.03) {
-      // significantly over (rare, often admin error or surge): 110-130%
-      consumed = budget * (1.1 + rand() * 0.2)
-    } else if (bucket < 0.1) {
-      // just over: 100-110%
-      consumed = budget * (1 + rand() * 0.1)
-    } else if (bucket < 0.25) {
-      // near limit: 80-100%
-      consumed = budget * (0.8 + rand() * 0.19)
+      // 100%+ (blocked / over): a small tail, mostly 100-115%
+      consumed = budget * (1 + rand() * 0.15)
+    } else if (bucket < 0.08) {
+      // 90-100% (about to block)
+      consumed = budget * (0.9 + rand() * 0.1)
+    } else if (bucket < 0.15) {
+      // 80-90% (getting close)
+      consumed = budget * (0.8 + rand() * 0.1)
+    } else if (bucket < 0.3) {
+      // 50-80% (moderate)
+      consumed = budget * (0.5 + rand() * 0.3)
     } else {
-      // ok: 0-70%
-      consumed = budget * rand() * 0.7
+      // 0-50% (low)
+      consumed = budget * rand() * 0.5
     }
     consumed = Math.round(consumed * 100) / 100
     out.push({
