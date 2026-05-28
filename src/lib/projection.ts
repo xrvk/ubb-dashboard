@@ -20,8 +20,6 @@ export interface MonthlyProjection {
 
 const LOW_CONFIDENCE_THRESHOLD_DAYS = 5
 
-export { LOW_CONFIDENCE_THRESHOLD_DAYS }
-
 /**
  * Project a user's full-month consumption based on what they've already used
  * this month, then recommend a budget cap that includes a growth buffer.

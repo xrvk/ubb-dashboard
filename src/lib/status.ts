@@ -2,7 +2,7 @@ import type { UserBudget } from './api'
 
 export type Status = 'over' | 'near' | 'ok'
 
-export const NEAR_THRESHOLD = 0.8
+const NEAR_THRESHOLD = 0.8
 
 export function classifyStatus(budget: UserBudget): Status {
   if (budget.budgetAmount <= 0) return budget.consumedAmount > 0 ? 'over' : 'ok'
