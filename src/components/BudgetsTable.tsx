@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 import { useMemo, useState } from 'react'
-import { CaretDown, CaretUp, PencilSimple, Trash, MagnifyingGlass, CaretLeft, CaretRight } from '@phosphor-icons/react'
+import { CaretDown, CaretUp, PencilSimple, Trash, MagnifyingGlass, CaretLeft, CaretRight, LockOpen, X } from '@phosphor-icons/react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -15,14 +15,16 @@ type SortKey = 'user' | 'budgetAmount' | 'consumedAmount' | 'utilization' | 'sta
 export interface TableFilters {
   status: 'all' | Status
   bucketId: string | null
-  tier: 'all' | 'micro' | 'small' | 'mid' | 'large'
+  minBudget: number | null
+  maxBudget: number | null
   query: string
 }
 
 export const EMPTY_FILTERS: TableFilters = {
   status: 'all',
   bucketId: null,
-  tier: 'all',
+  minBudget: null,
+  maxBudget: null,
   query: '',
 }
 
@@ -32,19 +34,12 @@ interface Props {
   onFiltersChange: (next: TableFilters) => void
   onEdit: (b: UserBudget) => void
   onDelete: (b: UserBudget) => void
+  onBulkUnblock: (items: UserBudget[]) => void
 }
 
 const STATUS_ORDER: Record<Status, number> = { over: 0, near: 1, ok: 2 }
 
 const PAGE_SIZE = 50
-
-const TIERS = [
-  { id: 'all', label: 'Any budget', min: -Infinity, max: Infinity },
-  { id: 'micro', label: '< $10', min: 0, max: 10 },
-  { id: 'small', label: '$10–$100', min: 10, max: 100 },
-  { id: 'mid', label: '$100–$1k', min: 100, max: 1000 },
-  { id: 'large', label: '$1k+', min: 1000, max: Infinity },
-] as const
 
 function SortHeader({
   k,
@@ -79,20 +74,45 @@ function SortHeader({
   )
 }
 
-export function BudgetsTable({ budgets, filters, onFiltersChange, onEdit, onDelete }: Props) {
+export function BudgetsTable({ budgets, filters, onFiltersChange, onEdit, onDelete, onBulkUnblock }: Props) {
   const [sortKey, setSortKey] = useState<SortKey>('consumedAmount')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [page, setPage] = useState(0)
   const [showAll, setShowAll] = useState(false)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [minInput, setMinInput] = useState(filters.minBudget !== null ? String(filters.minBudget) : '')
+  const [maxInput, setMaxInput] = useState(filters.maxBudget !== null ? String(filters.maxBudget) : '')
+
+  // Sync local input strings when filters change externally (e.g. reset)
+  const [prevFilterMin, setPrevFilterMin] = useState(filters.minBudget)
+  const [prevFilterMax, setPrevFilterMax] = useState(filters.maxBudget)
+  if (prevFilterMin !== filters.minBudget) {
+    setPrevFilterMin(filters.minBudget)
+    setMinInput(filters.minBudget !== null ? String(filters.minBudget) : '')
+  }
+  if (prevFilterMax !== filters.maxBudget) {
+    setPrevFilterMax(filters.maxBudget)
+    setMaxInput(filters.maxBudget !== null ? String(filters.maxBudget) : '')
+  }
 
   const setFilter = (next: Partial<TableFilters>) => onFiltersChange({ ...filters, ...next })
 
+  const commitBudgetRange = () => {
+    const parse = (s: string): number | null => {
+      const t = s.trim()
+      if (!t) return null
+      const n = Number(t)
+      return Number.isFinite(n) ? n : null
+    }
+    onFiltersChange({ ...filters, minBudget: parse(minInput), maxBudget: parse(maxInput) })
+  }
+
   const allRows = useMemo(() => {
-    const tierDef = TIERS.find(t => t.id === filters.tier)!
     const filtered = budgets.filter(b => {
       if (filters.status !== 'all' && classifyStatus(b) !== filters.status) return false
       if (filters.query && !b.user.toLowerCase().includes(filters.query.toLowerCase())) return false
-      if (b.budgetAmount < tierDef.min || b.budgetAmount >= tierDef.max) return false
+      if (filters.minBudget !== null && b.budgetAmount < filters.minBudget) return false
+      if (filters.maxBudget !== null && b.budgetAmount > filters.maxBudget) return false
       if (filters.bucketId && bucketForBudget(b).id !== filters.bucketId) return false
       return true
     })
@@ -124,7 +144,6 @@ export function BudgetsTable({ budgets, filters, onFiltersChange, onEdit, onDele
   }, [budgets, filters, sortKey, sortDir])
 
   const pageCount = Math.max(1, Math.ceil(allRows.length / PAGE_SIZE))
-  // Reset page on filter changes during render (state-during-render pattern)
   const [prevAllLen, setPrevAllLen] = useState(allRows.length)
   if (prevAllLen !== allRows.length) {
     setPrevAllLen(allRows.length)
@@ -134,6 +153,10 @@ export function BudgetsTable({ budgets, filters, onFiltersChange, onEdit, onDele
   const rows = showAll
     ? allRows
     : allRows.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
+
+  const visibleIds = useMemo(() => rows.map(r => r.id), [rows])
+  const allVisibleSelected = visibleIds.length > 0 && visibleIds.every(id => selected.has(id))
+  const someVisibleSelected = visibleIds.some(id => selected.has(id))
 
   const toggleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -145,66 +168,158 @@ export function BudgetsTable({ budgets, filters, onFiltersChange, onEdit, onDele
   }
   const sortProps = { sortKey, sortDir, onSort: toggleSort } as const
 
+  const toggleRow = (id: string) => {
+    setSelected(s => {
+      const next = new Set(s)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+  const toggleVisible = () => {
+    setSelected(s => {
+      const next = new Set(s)
+      if (allVisibleSelected) visibleIds.forEach(id => next.delete(id))
+      else visibleIds.forEach(id => next.add(id))
+      return next
+    })
+  }
+  const clearSelection = () => setSelected(new Set())
+
+  const selectedItems = useMemo(
+    () => budgets.filter(b => selected.has(b.id)),
+    [budgets, selected],
+  )
+  const selectedOverItems = selectedItems.filter(b => classifyStatus(b) === 'over')
+
   const startIdx = showAll ? 1 : page * PAGE_SIZE + 1
   const endIdx = showAll ? allRows.length : Math.min((page + 1) * PAGE_SIZE, allRows.length)
 
   return (
     <Card>
-      <CardHeader className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <CardTitle className="text-base font-semibold text-neutral-900 dark:text-neutral-100">
-          Individual ULBs ({allRows.length.toLocaleString()})
-        </CardTitle>
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex gap-1 p-1 rounded-md bg-neutral-100 dark:bg-neutral-800">
-            {(['all', 'over', 'near', 'ok'] as const).map(f => (
+      <CardHeader className="flex flex-col gap-3">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <CardTitle className="text-base font-semibold text-neutral-900 dark:text-neutral-100">
+            Individual ULBs ({allRows.length.toLocaleString()})
+          </CardTitle>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex gap-1 p-1 rounded-md bg-neutral-100 dark:bg-neutral-800">
+              {(['all', 'over', 'near', 'ok'] as const).map(f => (
+                <button
+                  key={f}
+                  onClick={() => setFilter({ status: f })}
+                  className={cn(
+                    'px-2.5 py-1 text-xs font-medium rounded transition-colors capitalize',
+                    filters.status === f
+                      ? 'bg-white dark:bg-neutral-700 text-neutral-900 dark:text-neutral-100 shadow-sm'
+                      : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100',
+                  )}
+                >
+                  {f === 'all' ? 'All' : f === 'over' ? 'Over' : f === 'near' ? 'Near' : 'OK'}
+                </button>
+              ))}
+            </div>
+            <div className="inline-flex items-center gap-1 text-xs text-neutral-500">
+              <span>Budget</span>
+              <Input
+                type="number"
+                inputMode="numeric"
+                placeholder="Min"
+                value={minInput}
+                onChange={e => setMinInput(e.target.value)}
+                onBlur={commitBudgetRange}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') commitBudgetRange()
+                }}
+                className="h-8 w-20 text-xs px-2"
+              />
+              <span>–</span>
+              <Input
+                type="number"
+                inputMode="numeric"
+                placeholder="Max"
+                value={maxInput}
+                onChange={e => setMaxInput(e.target.value)}
+                onBlur={commitBudgetRange}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') commitBudgetRange()
+                }}
+                className="h-8 w-20 text-xs px-2"
+              />
+              {(filters.minBudget !== null || filters.maxBudget !== null) ? (
+                <button
+                  onClick={() => {
+                    setMinInput('')
+                    setMaxInput('')
+                    setFilter({ minBudget: null, maxBudget: null })
+                  }}
+                  className="h-6 w-6 inline-flex items-center justify-center rounded text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100"
+                  title="Clear budget range"
+                >
+                  <X size={12} weight="bold" />
+                </button>
+              ) : null}
+            </div>
+            <div className="relative">
+              <MagnifyingGlass size={14} weight="duotone" className="absolute left-2.5 top-1/2 -translate-y-1/2 text-neutral-400" />
+              <Input
+                placeholder="Search user"
+                value={filters.query}
+                onChange={e => setFilter({ query: e.target.value })}
+                className="h-8 w-44 pl-8 text-sm"
+              />
+            </div>
+            {filters.bucketId ? (
               <button
-                key={f}
-                onClick={() => setFilter({ status: f })}
-                className={cn(
-                  'px-2.5 py-1 text-xs font-medium rounded transition-colors capitalize',
-                  filters.status === f
-                    ? 'bg-white dark:bg-neutral-700 text-neutral-900 dark:text-neutral-100 shadow-sm'
-                    : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100',
-                )}
+                onClick={() => setFilter({ bucketId: null })}
+                className="inline-flex items-center gap-1 h-8 px-2.5 rounded-md border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/50 text-xs text-amber-800 dark:text-amber-200"
+                title="Clear utilization bucket filter"
               >
-                {f === 'all' ? 'All' : f === 'over' ? 'Over' : f === 'near' ? 'Near' : 'OK'}
+                Bucket
+                <X size={12} weight="bold" />
               </button>
-            ))}
+            ) : null}
           </div>
-          <select
-            value={filters.tier}
-            onChange={e => setFilter({ tier: e.target.value as TableFilters['tier'] })}
-            className="h-8 rounded-md border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 text-xs"
-          >
-            {TIERS.map(t => (
-              <option key={t.id} value={t.id}>{t.label}</option>
-            ))}
-          </select>
-          <div className="relative">
-            <MagnifyingGlass size={14} weight="duotone" className="absolute left-2.5 top-1/2 -translate-y-1/2 text-neutral-400" />
-            <Input
-              placeholder="Search user"
-              value={filters.query}
-              onChange={e => setFilter({ query: e.target.value })}
-              className="h-8 w-48 pl-8 text-sm"
-            />
-          </div>
-          {filters.bucketId ? (
-            <button
-              onClick={() => setFilter({ bucketId: null })}
-              className="inline-flex items-center gap-1 h-8 px-2.5 rounded-md border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/50 text-xs text-amber-800 dark:text-amber-200"
-              title="Clear utilization bucket filter"
-            >
-              Bucket: {filters.bucketId.replace('b', '')}%
-              <span aria-hidden>×</span>
-            </button>
-          ) : null}
         </div>
+
+        {selected.size > 0 ? (
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between p-2.5 rounded-md border border-emerald-300 dark:border-emerald-700/60 bg-emerald-50 dark:bg-emerald-950/30">
+            <div className="text-sm text-emerald-900 dark:text-emerald-100">
+              <strong>{selected.size}</strong> selected
+              {selectedOverItems.length > 0 ? (
+                <span className="text-emerald-700 dark:text-emerald-300 ml-2 text-xs">
+                  ({selectedOverItems.length} over budget)
+                </span>
+              ) : null}
+            </div>
+            <div className="flex gap-2">
+              <Button size="sm" onClick={() => onBulkUnblock(selectedItems)}>
+                <LockOpen size={14} weight="duotone" />
+                Unblock for month
+              </Button>
+              <Button size="sm" variant="ghost" onClick={clearSelection}>
+                Clear
+              </Button>
+            </div>
+          </div>
+        ) : null}
       </CardHeader>
       <CardContent className="p-0 overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="border-b border-neutral-200 dark:border-neutral-800">
             <tr>
+              <th className="px-3 py-2 w-8">
+                <input
+                  type="checkbox"
+                  aria-label="Select all visible rows"
+                  checked={allVisibleSelected}
+                  ref={el => {
+                    if (el) el.indeterminate = !allVisibleSelected && someVisibleSelected
+                  }}
+                  onChange={toggleVisible}
+                  className="rounded cursor-pointer"
+                />
+              </th>
               <SortHeader k="user" {...sortProps}>User</SortHeader>
               <SortHeader k="budgetAmount" align="right" {...sortProps}>Budget</SortHeader>
               <SortHeader k="consumedAmount" align="right" {...sortProps}>Consumed</SortHeader>
@@ -216,7 +331,7 @@ export function BudgetsTable({ budgets, filters, onFiltersChange, onEdit, onDele
           <tbody>
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-3 py-8 text-center text-sm text-neutral-500">
+                <td colSpan={7} className="px-3 py-8 text-center text-sm text-neutral-500">
                   No matching individual ULBs.
                 </td>
               </tr>
@@ -224,11 +339,26 @@ export function BudgetsTable({ budgets, filters, onFiltersChange, onEdit, onDele
               rows.map(b => {
                 const status = classifyStatus(b)
                 const u = utilization(b)
+                const isSelected = selected.has(b.id)
                 return (
                   <tr
                     key={b.id}
-                    className="border-b border-neutral-100 dark:border-neutral-800/50 hover:bg-neutral-50 dark:hover:bg-neutral-800/40"
+                    className={cn(
+                      'border-b border-neutral-100 dark:border-neutral-800/50',
+                      isSelected
+                        ? 'bg-emerald-50/60 dark:bg-emerald-950/20'
+                        : 'hover:bg-neutral-50 dark:hover:bg-neutral-800/40',
+                    )}
                   >
+                    <td className="px-3 py-2.5">
+                      <input
+                        type="checkbox"
+                        aria-label={`Select ${b.user}`}
+                        checked={isSelected}
+                        onChange={() => toggleRow(b.id)}
+                        className="rounded cursor-pointer"
+                      />
+                    </td>
                     <td className="px-3 py-2.5 font-medium">{b.user}</td>
                     <td className="px-3 py-2.5 text-right tabular-nums">{formatCurrency(b.budgetAmount)}</td>
                     <td className="px-3 py-2.5 text-right tabular-nums">{formatCurrency(b.consumedAmount)}</td>

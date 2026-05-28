@@ -10,6 +10,7 @@ import { BudgetsTable, EMPTY_FILTERS, type TableFilters } from '@/components/Bud
 import { EditBudgetDialog } from '@/components/EditBudgetDialog'
 import { CreateBudgetDialog } from '@/components/CreateBudgetDialog'
 import { DeleteConfirmDialog } from '@/components/DeleteConfirmDialog'
+import { BulkUnblockDialog } from '@/components/BulkUnblockDialog'
 import { Button } from '@/components/ui/button'
 import { summarize } from '@/lib/status'
 import {
@@ -26,6 +27,7 @@ export function App() {
   const [editing, setEditing] = useState<UserBudget | null>(null)
   const [deleting, setDeleting] = useState<UserBudget | null>(null)
   const [creating, setCreating] = useState(false)
+  const [bulkUnblock, setBulkUnblock] = useState<UserBudget[] | null>(null)
   const [filters, setFilters] = useState<TableFilters>(EMPTY_FILTERS)
   const tableRef = useRef<HTMLDivElement | null>(null)
 
@@ -74,6 +76,32 @@ export function App() {
     if (!apiFetch) return
     await apiDeleteUserBudget(apiFetch, deleting.id)
     toast.success(`Deleted budget for ${deleting.user}`)
+    await refresh()
+  }
+
+  const handleBulkUnblock = async (
+    updates: Array<{ id: string; user: string; newAmount: number }>,
+  ) => {
+    if (credentials?.base === 'demo://') {
+      toast.info(`Demo mode: would update ${updates.length} budgets`)
+      return
+    }
+    if (!apiFetch) return
+    const results = await Promise.allSettled(
+      updates.map(u => apiPatchUserBudget(apiFetch, u.id, u.newAmount)),
+    )
+    const failed = results
+      .map((r, i) => ({ r, u: updates[i] }))
+      .filter(x => x.r.status === 'rejected')
+    if (failed.length === 0) {
+      toast.success(`Unblocked ${updates.length} user${updates.length === 1 ? '' : 's'}`)
+    } else if (failed.length === updates.length) {
+      toast.error(`Failed to update ${failed.length} user${failed.length === 1 ? '' : 's'}`)
+      const first = failed[0].r as PromiseRejectedResult
+      throw first.reason
+    } else {
+      toast.warning(`Updated ${updates.length - failed.length}, failed ${failed.length}`)
+    }
     await refresh()
   }
 
@@ -144,6 +172,7 @@ export function App() {
                       onFiltersChange={setFilters}
                       onEdit={setEditing}
                       onDelete={setDeleting}
+                      onBulkUnblock={items => setBulkUnblock(items)}
                     />
                   </div>
                 </>
@@ -179,6 +208,12 @@ export function App() {
         open={deleting !== null}
         onOpenChange={open => !open && setDeleting(null)}
         onConfirm={handleDelete}
+      />
+      <BulkUnblockDialog
+        open={bulkUnblock !== null}
+        onOpenChange={open => !open && setBulkUnblock(null)}
+        selected={bulkUnblock ?? []}
+        onApply={handleBulkUnblock}
       />
     </div>
   )
