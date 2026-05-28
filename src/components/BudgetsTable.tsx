@@ -97,6 +97,11 @@ export function BudgetsTable({ budgets, filters, onFiltersChange, onEdit, onDele
 
   const setFilter = (next: Partial<TableFilters>) => onFiltersChange({ ...filters, ...next })
 
+  // Status chip click: status and bucket are mutually exclusive categorical
+  // filters. Selecting a status chip clears any active bucket selection.
+  const selectStatus = (status: TableFilters['status']) =>
+    onFiltersChange({ ...filters, status, bucketId: null })
+
   const commitBudgetRange = () => {
     const parse = (s: string): number | null => {
       const t = s.trim()
@@ -207,7 +212,7 @@ export function BudgetsTable({ budgets, filters, onFiltersChange, onEdit, onDele
               {(['all', 'over', 'near', 'ok'] as const).map(f => (
                 <button
                   key={f}
-                  onClick={() => setFilter({ status: f })}
+                  onClick={() => selectStatus(f)}
                   className={cn(
                     'px-2.5 py-1 text-xs font-medium rounded transition-colors capitalize',
                     filters.status === f
