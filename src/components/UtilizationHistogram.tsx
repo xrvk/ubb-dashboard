@@ -50,7 +50,7 @@ export function UtilizationHistogram({ budgets, selectedBucketId, onSelectBucket
             <BarChart data={counts} margin={{ top: 8, right: 24, left: 32, bottom: 36 }}>
               <XAxis dataKey="short" stroke="#888" fontSize={11} tickMargin={6}>
                 <Label
-                  value="Consumed ÷ budgeted (%)"
+                  value="Utilization (%)"
                   position="insideBottom"
                   offset={-18}
                   style={{ fontSize: 11, fill: '#888' }}
@@ -99,7 +99,7 @@ export function UtilizationHistogram({ budgets, selectedBucketId, onSelectBucket
         <p className="mt-3 text-xs text-neutral-500 dark:text-neutral-400">
           {onSelectBucket
             ? 'Click a bar to filter the table to users in that bucket. Click again to clear.'
-            : 'Distribution of users by consumed ÷ budgeted ratio.'}
+            : 'Distribution of users by utilization.'}
           {selectedBucketId ? (
             <button
               type="button"
