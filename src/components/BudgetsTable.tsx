@@ -325,7 +325,6 @@ export function BudgetsTable({ budgets, filters, onFiltersChange, onEdit, onDele
             </div>
             {showAcrossPagesBanner ? (
               <div className="text-xs text-emerald-800 dark:text-emerald-200">
-                All {rows.length.toLocaleString()} users on this page are selected.{' '}
                 <button
                   type="button"
                   onClick={selectAllMatching}
@@ -337,7 +336,6 @@ export function BudgetsTable({ budgets, filters, onFiltersChange, onEdit, onDele
             ) : null}
             {allMatchingSelected && allRows.length > PAGE_SIZE ? (
               <div className="text-xs text-emerald-800 dark:text-emerald-200">
-                All {allRows.length.toLocaleString()} users matching the current filter are selected.{' '}
                 <button
                   type="button"
                   onClick={clearSelection}
