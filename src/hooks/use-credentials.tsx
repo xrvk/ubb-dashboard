@@ -13,6 +13,7 @@ interface CredentialsContextValue {
   credentials: Credentials | null
   budgets: UserBudget[]
   loading: boolean
+  loadProgress: { loaded: number; total: number | undefined } | null
   error: string | null
   apiFetch: ApiFetch | null
   connect: (enterpriseUrl: string, token: string) => Promise<void>
@@ -26,6 +27,7 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
   const [credentials, setCredentials] = useState<Credentials | null>(null)
   const [budgets, setBudgets] = useState<UserBudget[]>([])
   const [loading, setLoading] = useState(false)
+  const [loadProgress, setLoadProgress] = useState<{ loaded: number; total: number | undefined } | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const apiFetch = useMemo(
@@ -36,14 +38,18 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
   const refresh = useCallback(async () => {
     if (!apiFetch) return
     setLoading(true)
+    setLoadProgress({ loaded: 0, total: undefined })
     setError(null)
     try {
-      const list = await fetchUserBudgets(apiFetch)
+      const list = await fetchUserBudgets(apiFetch, (loaded, total) =>
+        setLoadProgress({ loaded, total }),
+      )
       setBudgets(list)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
       setLoading(false)
+      setLoadProgress(null)
     }
   }, [apiFetch])
 
@@ -55,15 +61,19 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
     }
     const creds: Credentials = { base: parsed.base, ent: parsed.ent, token }
     setLoading(true)
+    setLoadProgress({ loaded: 0, total: undefined })
     setError(null)
     try {
-      const list = await fetchUserBudgets(createApiFetch(creds))
+      const list = await fetchUserBudgets(createApiFetch(creds), (loaded, total) =>
+        setLoadProgress({ loaded, total }),
+      )
       setCredentials(creds)
       setBudgets(list)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
       setLoading(false)
+      setLoadProgress(null)
     }
   }, [])
 
@@ -91,6 +101,7 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
     credentials,
     budgets,
     loading,
+    loadProgress,
     error,
     apiFetch,
     connect,

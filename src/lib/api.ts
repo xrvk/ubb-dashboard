@@ -116,12 +116,24 @@ export function toUserBudget(b: RawBudget): UserBudget {
   }
 }
 
-/** Fetch all Copilot user-scope budgets, paginated. */
-export async function fetchUserBudgets(apiFetch: ApiFetch): Promise<UserBudget[]> {
+/**
+ * Fetch all Copilot user-scope budgets, paginated.
+ *
+ * Note: the enterprise billing budgets endpoint ignores `per_page` and returns
+ * ~10 items per page in practice. There is no server-side `budget_scope`
+ * filter (it is ignored). We therefore page through every budget and filter
+ * client-side. The safety limit is set to support enterprises at the platform
+ * cap (~10k budgets ≈ 1000 pages at 10 / page); we cap at 1500 to be safe.
+ */
+export async function fetchUserBudgets(
+  apiFetch: ApiFetch,
+  onProgress?: (loaded: number, totalCount: number | undefined) => void,
+): Promise<UserBudget[]> {
+  const PAGE_SAFETY_LIMIT = 1500
   const all: RawBudget[] = []
   let page = 1
   let totalCount: number | undefined
-  while (true) {
+  while (page <= PAGE_SAFETY_LIMIT) {
     const data = (await apiFetch(`/budgets?per_page=100&page=${page}`)) as BudgetsResponse | RawBudget[]
     const list = Array.isArray(data) ? data : (data?.budgets ?? [])
     if (!Array.isArray(data) && typeof data?.total_count === 'number') {
@@ -129,9 +141,15 @@ export async function fetchUserBudgets(apiFetch: ApiFetch): Promise<UserBudget[]
     }
     if (list.length === 0) break
     all.push(...list)
+    onProgress?.(all.length, totalCount)
     if (totalCount !== undefined && all.length >= totalCount) break
     page += 1
-    if (page > 50) break // safety
+  }
+  if (page > PAGE_SAFETY_LIMIT) {
+    console.warn(
+      `[ind-ulb-dashboard] Pagination safety limit hit at ${PAGE_SAFETY_LIMIT} pages; ` +
+        `loaded ${all.length} budgets but total_count was ${totalCount ?? 'unknown'}.`,
+    )
   }
   return all.filter(b => b.budget_scope === 'user' && isCopilotBudget(b)).map(toUserBudget)
 }
