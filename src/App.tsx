@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { Plus, Gauge, Moon, Sun } from '@phosphor-icons/react'
 import { Toaster, toast } from 'sonner'
 import { useTheme } from 'next-themes'
@@ -6,7 +6,7 @@ import { useCredentials } from '@/hooks/use-credentials'
 import { ImportPanel } from '@/components/ImportPanel'
 import { SummaryCards } from '@/components/SummaryCards'
 import { UtilizationHistogram } from '@/components/UtilizationHistogram'
-import { BudgetsTable } from '@/components/BudgetsTable'
+import { BudgetsTable, EMPTY_FILTERS, type TableFilters } from '@/components/BudgetsTable'
 import { EditBudgetDialog } from '@/components/EditBudgetDialog'
 import { CreateBudgetDialog } from '@/components/CreateBudgetDialog'
 import { DeleteConfirmDialog } from '@/components/DeleteConfirmDialog'
@@ -26,8 +26,21 @@ export function App() {
   const [editing, setEditing] = useState<UserBudget | null>(null)
   const [deleting, setDeleting] = useState<UserBudget | null>(null)
   const [creating, setCreating] = useState(false)
+  const [filters, setFilters] = useState<TableFilters>(EMPTY_FILTERS)
+  const tableRef = useRef<HTMLDivElement | null>(null)
 
   const summary = useMemo(() => summarize(budgets), [budgets])
+
+  const scrollToTable = () => {
+    requestAnimationFrame(() => {
+      tableRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+  }
+
+  const setFiltersAndScroll = (next: TableFilters) => {
+    setFilters(next)
+    scrollToTable()
+  }
 
   const handleEdit = async (newAmount: number) => {
     if (!editing) return
@@ -111,15 +124,28 @@ export function App() {
             </div>
           ) : (
             <>
-              <SummaryCards summary={summary} />
+              <SummaryCards
+                summary={summary}
+                onReset={() => setFiltersAndScroll(EMPTY_FILTERS)}
+                onSelectOver={() => setFiltersAndScroll({ ...EMPTY_FILTERS, status: 'over' })}
+                onSelectNear={() => setFiltersAndScroll({ ...EMPTY_FILTERS, status: 'near' })}
+              />
               {budgets.length > 0 ? (
                 <>
-                  <UtilizationHistogram budgets={budgets} />
-                  <BudgetsTable
+                  <UtilizationHistogram
                     budgets={budgets}
-                    onEdit={setEditing}
-                    onDelete={setDeleting}
+                    selectedBucketId={filters.bucketId}
+                    onSelectBucket={id => setFiltersAndScroll({ ...filters, bucketId: id })}
                   />
+                  <div ref={tableRef}>
+                    <BudgetsTable
+                      budgets={budgets}
+                      filters={filters}
+                      onFiltersChange={setFilters}
+                      onEdit={setEditing}
+                      onDelete={setDeleting}
+                    />
+                  </div>
                 </>
               ) : (
                 <div className="rounded-lg border border-dashed border-neutral-300 dark:border-neutral-700 p-12 text-center">
