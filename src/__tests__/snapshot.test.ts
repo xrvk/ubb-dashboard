@@ -5,6 +5,8 @@ import {
   clearSnapshot,
   daysUntilCycleReset,
   endOfMonth,
+  serializeSnapshot,
+  parseSnapshot,
   type BulkApplySnapshot,
 } from '@/lib/snapshot'
 
@@ -62,5 +64,38 @@ describe('cycle helpers', () => {
   it('daysUntilCycleReset counts inclusive days remaining', () => {
     expect(daysUntilCycleReset(new Date(2025, 5, 1))).toBe(30)
     expect(daysUntilCycleReset(new Date(2025, 5, 29))).toBeLessThanOrEqual(2)
+  })
+})
+
+describe('snapshot JSON serialization', () => {
+  it('round-trips through serialize/parse', () => {
+    const snap = makeSnap()
+    const result = parseSnapshot(serializeSnapshot(snap))
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.snapshot).toEqual(snap)
+  })
+
+  it('rejects an enterprise mismatch when expectedEnterprise is given', () => {
+    const snap = makeSnap()
+    const result = parseSnapshot(serializeSnapshot(snap), 'someone-else')
+    expect(result.ok).toBe(false)
+  })
+
+  it('accepts a matching enterprise', () => {
+    const snap = makeSnap()
+    const result = parseSnapshot(serializeSnapshot(snap), ent)
+    expect(result.ok).toBe(true)
+  })
+
+  it('reports a clear error on bad JSON', () => {
+    const result = parseSnapshot('not json')
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toMatch(/Not valid JSON/)
+  })
+
+  it('rejects empty entries', () => {
+    const snap = makeSnap({ entries: [] })
+    const result = parseSnapshot(serializeSnapshot(snap))
+    expect(result.ok).toBe(false)
   })
 })

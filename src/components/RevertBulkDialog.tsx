@@ -1,9 +1,9 @@
 import { useState } from 'react'
-import { ArrowCounterClockwise } from '@phosphor-icons/react'
+import { ArrowCounterClockwise, Download } from '@phosphor-icons/react'
 import { Dialog, DialogContent, DialogTitle, DialogDescription, DialogClose } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { formatCurrency } from '@/lib/utils'
-import type { BulkApplySnapshot } from '@/lib/snapshot'
+import { downloadSnapshot, type BulkApplySnapshot } from '@/lib/snapshot'
 
 interface Props {
   snapshot: BulkApplySnapshot | null
@@ -67,9 +67,22 @@ export function RevertBulkDialog({ snapshot, onCancel, onConfirm, onDiscard }: P
         </div>
 
         <div className="flex items-center justify-between mt-4 gap-2">
-          <Button type="button" variant="ghost" size="sm" disabled={submitting} onClick={onDiscard}>
-            Discard snapshot
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={submitting}
+              onClick={() => downloadSnapshot(snapshot)}
+              title="Download a JSON copy you can re-import later or from another browser"
+            >
+              <Download size={14} weight="duotone" />
+              Download JSON
+            </Button>
+            <Button type="button" variant="ghost" size="sm" disabled={submitting} onClick={onDiscard}>
+              Discard
+            </Button>
+          </div>
           <div className="flex gap-2">
             <DialogClose asChild>
               <Button type="button" variant="ghost" disabled={submitting}>Cancel</Button>
