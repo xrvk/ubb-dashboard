@@ -227,11 +227,12 @@ export function BudgetsTable({ budgets, filters, onFiltersChange, onEdit, onDele
             <div className="inline-flex items-center gap-1 text-xs text-neutral-500">
               <span>Budget</span>
               <Input
-                type="number"
-                inputMode="numeric"
+                type="text"
+                inputMode="decimal"
+                pattern="[0-9]*\.?[0-9]*"
                 placeholder="Min"
                 value={minInput}
-                onChange={e => setMinInput(e.target.value)}
+                onChange={e => setMinInput(e.target.value.replace(/[^0-9.]/g, ''))}
                 onBlur={commitBudgetRange}
                 onKeyDown={e => {
                   if (e.key === 'Enter') commitBudgetRange()
@@ -240,28 +241,30 @@ export function BudgetsTable({ budgets, filters, onFiltersChange, onEdit, onDele
               />
               <span>–</span>
               <Input
-                type="number"
-                inputMode="numeric"
+                type="text"
+                inputMode="decimal"
+                pattern="[0-9]*\.?[0-9]*"
                 placeholder="Max"
                 value={maxInput}
-                onChange={e => setMaxInput(e.target.value)}
+                onChange={e => setMaxInput(e.target.value.replace(/[^0-9.]/g, ''))}
                 onBlur={commitBudgetRange}
                 onKeyDown={e => {
                   if (e.key === 'Enter') commitBudgetRange()
                 }}
                 className="h-8 w-20 text-xs px-2"
               />
-              {(filters.minBudget !== null || filters.maxBudget !== null) ? (
+              {(filters.minBudget !== null || filters.maxBudget !== null || minInput !== '' || maxInput !== '') ? (
                 <button
                   onClick={() => {
                     setMinInput('')
                     setMaxInput('')
                     setFilter({ minBudget: null, maxBudget: null })
                   }}
-                  className="h-6 w-6 inline-flex items-center justify-center rounded text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100"
+                  className="h-8 px-2 inline-flex items-center gap-1 rounded-md text-neutral-600 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-neutral-100 hover:bg-neutral-100 dark:hover:bg-neutral-800"
                   title="Clear budget range"
                 >
                   <X size={12} weight="bold" />
+                  Clear
                 </button>
               ) : null}
             </div>

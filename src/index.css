@@ -25,3 +25,17 @@ body {
 :root {
   color-scheme: light;
 }
+
+/* Hide native spinner arrows on number inputs.
+   Users said the arrows are noisy and they prefer plain keyboard / numpad
+   input; the wheel-blur in the Input component already neutralizes scroll. */
+input[type='number']::-webkit-outer-spin-button,
+input[type='number']::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type='number'] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+

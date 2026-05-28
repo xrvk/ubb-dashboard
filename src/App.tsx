@@ -13,12 +13,8 @@ import { DeleteConfirmDialog } from '@/components/DeleteConfirmDialog'
 import { BulkUnblockDialog } from '@/components/BulkUnblockDialog'
 import { Button } from '@/components/ui/button'
 import { summarize } from '@/lib/status'
-import {
-  createUserBudget as apiCreateUserBudget,
-  deleteUserBudget as apiDeleteUserBudget,
-  patchUserBudget as apiPatchUserBudget,
-  type UserBudget,
-} from '@/lib/api'
+import { createUserBudget as apiCreateUserBudget, deleteUserBudget as apiDeleteUserBudget, patchUserBudget as apiPatchUserBudget, type UserBudget } from '@/lib/api'
+import { runBatch, type BatchProgress } from '@/lib/batch'
 
 export function App() {
   const { credentials, budgets, loading, loadProgress, apiFetch, refresh } = useCredentials()
@@ -81,26 +77,51 @@ export function App() {
 
   const handleBulkUnblock = async (
     updates: Array<{ id: string; user: string; newAmount: number }>,
+    handle: { signal: AbortSignal; onProgress: (p: BatchProgress) => void },
   ) => {
     if (credentials?.base === 'demo://') {
-      toast.info(`Demo mode: would update ${updates.length} budgets`)
+      // Simulate progress for demo without hitting the API
+      let done = 0
+      for (let i = 0; i < updates.length; i += 1) {
+        if (handle.signal.aborted) break
+        await new Promise(r => setTimeout(r, 8))
+        done += 1
+        handle.onProgress({
+          total: updates.length,
+          completed: done,
+          succeeded: done,
+          failed: 0,
+          inFlight: 0,
+          retrying: 0,
+          startedAt: Date.now() - done * 8,
+        })
+      }
+      toast.info(`Demo mode: would update ${updates.length.toLocaleString()} budgets`)
       return
     }
     if (!apiFetch) return
-    const results = await Promise.allSettled(
-      updates.map(u => apiPatchUserBudget(apiFetch, u.id, u.newAmount)),
+    const results = await runBatch(
+      updates,
+      async u => {
+        await apiPatchUserBudget(apiFetch, u.id, u.newAmount)
+      },
+      {
+        concurrency: 5,
+        perTaskDelayMs: 50,
+        maxRetriesOn429: 2,
+        defaultRetryAfterMs: 60_000,
+        signal: handle.signal,
+        onProgress: handle.onProgress,
+      },
     )
-    const failed = results
-      .map((r, i) => ({ r, u: updates[i] }))
-      .filter(x => x.r.status === 'rejected')
-    if (failed.length === 0) {
-      toast.success(`Unblocked ${updates.length} user${updates.length === 1 ? '' : 's'}`)
-    } else if (failed.length === updates.length) {
-      toast.error(`Failed to update ${failed.length} user${failed.length === 1 ? '' : 's'}`)
-      const first = failed[0].r as PromiseRejectedResult
-      throw first.reason
+    const failed = results.filter(r => !r.ok).length
+    const ok = results.length - failed
+    if (failed === 0) {
+      toast.success(`Unblocked ${ok.toLocaleString()} users`)
+    } else if (ok === 0) {
+      toast.error(`Failed to update ${failed.toLocaleString()} users`)
     } else {
-      toast.warning(`Updated ${updates.length - failed.length}, failed ${failed.length}`)
+      toast.warning(`Updated ${ok.toLocaleString()}, failed ${failed.toLocaleString()}`)
     }
     await refresh()
   }
