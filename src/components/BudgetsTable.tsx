@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import { useMemo, useState } from 'react'
 import { CaretDown, CaretUp, PencilSimple, Trash, MagnifyingGlass, CaretLeft, CaretRight } from '@phosphor-icons/react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
@@ -6,12 +7,29 @@ import { Input } from '@/components/ui/input'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { formatCurrency, formatPercent, cn } from '@/lib/utils'
 import { classifyStatus, utilization, type Status } from '@/lib/status'
+import { bucketForBudget } from '@/components/UtilizationHistogram'
 import type { UserBudget } from '@/lib/api'
 
 type SortKey = 'user' | 'budgetAmount' | 'consumedAmount' | 'utilization' | 'status'
 
+export interface TableFilters {
+  status: 'all' | Status
+  bucketId: string | null
+  tier: 'all' | 'micro' | 'small' | 'mid' | 'large'
+  query: string
+}
+
+export const EMPTY_FILTERS: TableFilters = {
+  status: 'all',
+  bucketId: null,
+  tier: 'all',
+  query: '',
+}
+
 interface Props {
   budgets: UserBudget[]
+  filters: TableFilters
+  onFiltersChange: (next: TableFilters) => void
   onEdit: (b: UserBudget) => void
   onDelete: (b: UserBudget) => void
 }
@@ -27,8 +45,6 @@ const TIERS = [
   { id: 'mid', label: '$100–$1k', min: 100, max: 1000 },
   { id: 'large', label: '$1k+', min: 1000, max: Infinity },
 ] as const
-
-type TierId = (typeof TIERS)[number]['id']
 
 function SortHeader({
   k,
@@ -63,21 +79,21 @@ function SortHeader({
   )
 }
 
-export function BudgetsTable({ budgets, onEdit, onDelete }: Props) {
+export function BudgetsTable({ budgets, filters, onFiltersChange, onEdit, onDelete }: Props) {
   const [sortKey, setSortKey] = useState<SortKey>('consumedAmount')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
-  const [filter, setFilter] = useState<'all' | Status>('all')
-  const [tier, setTier] = useState<TierId>('all')
-  const [query, setQuery] = useState('')
   const [page, setPage] = useState(0)
   const [showAll, setShowAll] = useState(false)
 
+  const setFilter = (next: Partial<TableFilters>) => onFiltersChange({ ...filters, ...next })
+
   const allRows = useMemo(() => {
-    const tierDef = TIERS.find(t => t.id === tier)!
+    const tierDef = TIERS.find(t => t.id === filters.tier)!
     const filtered = budgets.filter(b => {
-      if (filter !== 'all' && classifyStatus(b) !== filter) return false
-      if (query && !b.user.toLowerCase().includes(query.toLowerCase())) return false
+      if (filters.status !== 'all' && classifyStatus(b) !== filters.status) return false
+      if (filters.query && !b.user.toLowerCase().includes(filters.query.toLowerCase())) return false
       if (b.budgetAmount < tierDef.min || b.budgetAmount >= tierDef.max) return false
+      if (filters.bucketId && bucketForBudget(b).id !== filters.bucketId) return false
       return true
     })
     const sorted = [...filtered].sort((a, b) => {
@@ -105,7 +121,7 @@ export function BudgetsTable({ budgets, onEdit, onDelete }: Props) {
       return sortDir === 'asc' ? cmp : -cmp
     })
     return sorted
-  }, [budgets, filter, query, sortKey, sortDir, tier])
+  }, [budgets, filters, sortKey, sortDir])
 
   const pageCount = Math.max(1, Math.ceil(allRows.length / PAGE_SIZE))
   // Reset page on filter changes during render (state-during-render pattern)
@@ -143,10 +159,10 @@ export function BudgetsTable({ budgets, onEdit, onDelete }: Props) {
             {(['all', 'over', 'near', 'ok'] as const).map(f => (
               <button
                 key={f}
-                onClick={() => setFilter(f)}
+                onClick={() => setFilter({ status: f })}
                 className={cn(
                   'px-2.5 py-1 text-xs font-medium rounded transition-colors capitalize',
-                  filter === f
+                  filters.status === f
                     ? 'bg-white dark:bg-neutral-700 text-neutral-900 dark:text-neutral-100 shadow-sm'
                     : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100',
                 )}
@@ -156,8 +172,8 @@ export function BudgetsTable({ budgets, onEdit, onDelete }: Props) {
             ))}
           </div>
           <select
-            value={tier}
-            onChange={e => setTier(e.target.value as TierId)}
+            value={filters.tier}
+            onChange={e => setFilter({ tier: e.target.value as TableFilters['tier'] })}
             className="h-8 rounded-md border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 text-xs"
           >
             {TIERS.map(t => (
@@ -168,11 +184,21 @@ export function BudgetsTable({ budgets, onEdit, onDelete }: Props) {
             <MagnifyingGlass size={14} weight="duotone" className="absolute left-2.5 top-1/2 -translate-y-1/2 text-neutral-400" />
             <Input
               placeholder="Search user"
-              value={query}
-              onChange={e => setQuery(e.target.value)}
+              value={filters.query}
+              onChange={e => setFilter({ query: e.target.value })}
               className="h-8 w-48 pl-8 text-sm"
             />
           </div>
+          {filters.bucketId ? (
+            <button
+              onClick={() => setFilter({ bucketId: null })}
+              className="inline-flex items-center gap-1 h-8 px-2.5 rounded-md border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/50 text-xs text-amber-800 dark:text-amber-200"
+              title="Clear utilization bucket filter"
+            >
+              Bucket: {filters.bucketId.replace('b', '')}%
+              <span aria-hidden>×</span>
+            </button>
+          ) : null}
         </div>
       </CardHeader>
       <CardContent className="p-0 overflow-x-auto">

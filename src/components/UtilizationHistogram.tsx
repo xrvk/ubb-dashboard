@@ -1,8 +1,10 @@
-import { Bar, BarChart, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+/* eslint-disable react-refresh/only-export-components */
+import { Bar, BarChart, Cell, Label, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import type { UserBudget } from '@/lib/api'
 
-interface Bucket {
+export interface UtilBucket {
+  id: string
   label: string
   short: string
   min: number
@@ -10,26 +12,32 @@ interface Bucket {
   color: string
 }
 
-const BUCKETS: Bucket[] = [
-  { label: '0–25%', short: '<25', min: 0, max: 0.25, color: '#10b981' },
-  { label: '25–50%', short: '25–50', min: 0.25, max: 0.5, color: '#10b981' },
-  { label: '50–80%', short: '50–80', min: 0.5, max: 0.8, color: '#22c55e' },
-  { label: '80–100% (near)', short: '80–100', min: 0.8, max: 1, color: '#f59e0b' },
-  { label: '100–150%', short: '100–150', min: 1, max: 1.5, color: '#ef4444' },
-  { label: '150%+', short: '>150', min: 1.5, max: Infinity, color: '#b91c1c' },
+export const UTIL_BUCKETS: UtilBucket[] = [
+  { id: 'b0-25', label: '0–25%', short: '0–25', min: 0, max: 0.25, color: '#10b981' },
+  { id: 'b25-50', label: '25–50%', short: '25–50', min: 0.25, max: 0.5, color: '#10b981' },
+  { id: 'b50-80', label: '50–80%', short: '50–80', min: 0.5, max: 0.8, color: '#22c55e' },
+  { id: 'b80-100', label: '80–100% (near)', short: '80–100', min: 0.8, max: 1, color: '#f59e0b' },
+  { id: 'b100-150', label: '100–150% (over)', short: '100–150', min: 1, max: 1.5, color: '#ef4444' },
+  { id: 'b150', label: '150%+ (over)', short: '>150', min: 1.5, max: Infinity, color: '#b91c1c' },
 ]
+
+export function bucketForBudget(b: UserBudget): UtilBucket {
+  const ratio = b.budgetAmount > 0 ? b.consumedAmount / b.budgetAmount : b.consumedAmount > 0 ? Infinity : 0
+  return UTIL_BUCKETS.find(c => ratio >= c.min && ratio < c.max) ?? UTIL_BUCKETS[UTIL_BUCKETS.length - 1]
+}
 
 interface Props {
   budgets: UserBudget[]
+  selectedBucketId?: string | null
+  onSelectBucket?: (bucketId: string | null) => void
 }
 
-export function UtilizationHistogram({ budgets }: Props) {
-  const counts = BUCKETS.map(b => ({ ...b, count: 0 }))
+export function UtilizationHistogram({ budgets, selectedBucketId, onSelectBucket }: Props) {
+  const counts = UTIL_BUCKETS.map(b => ({ ...b, count: 0 }))
   for (const b of budgets) {
-    const ratio = b.budgetAmount > 0 ? b.consumedAmount / b.budgetAmount : b.consumedAmount > 0 ? Infinity : 0
-    const idx = counts.findIndex(c => ratio >= c.min && ratio < c.max)
+    const bucket = bucketForBudget(b)
+    const idx = counts.findIndex(c => c.id === bucket.id)
     if (idx >= 0) counts[idx].count += 1
-    else counts[counts.length - 1].count += 1
   }
 
   return (
@@ -38,30 +46,70 @@ export function UtilizationHistogram({ budgets }: Props) {
         <CardTitle>Utilization distribution</CardTitle>
       </CardHeader>
       <CardContent>
-        <div style={{ height: 240 }}>
+        <div style={{ height: 280 }}>
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={counts} margin={{ top: 8, right: 16, left: 0, bottom: 8 }}>
-              <XAxis dataKey="short" stroke="#888" fontSize={11} />
-              <YAxis stroke="#888" fontSize={11} allowDecimals={false} />
+            <BarChart data={counts} margin={{ top: 8, right: 24, left: 32, bottom: 36 }}>
+              <XAxis dataKey="short" stroke="#888" fontSize={11} tickMargin={6}>
+                <Label
+                  value="Consumed ÷ budgeted (%)"
+                  position="insideBottom"
+                  offset={-18}
+                  style={{ fontSize: 11, fill: '#888' }}
+                />
+              </XAxis>
+              <YAxis stroke="#888" fontSize={11} allowDecimals={false}>
+                <Label
+                  value="Users"
+                  angle={-90}
+                  position="insideLeft"
+                  offset={10}
+                  style={{ fontSize: 11, fill: '#888', textAnchor: 'middle' }}
+                />
+              </YAxis>
               <Tooltip
                 cursor={{ fill: 'rgba(120,120,120,0.08)' }}
                 contentStyle={{ borderRadius: 8, fontSize: 12 }}
                 formatter={(value, _name, item) => {
-                  const p = (item as { payload?: Bucket })?.payload
+                  const p = (item as { payload?: UtilBucket })?.payload
                   return [`${value} users`, p?.label ?? '']
                 }}
                 labelFormatter={() => ''}
               />
-              <Bar dataKey="count" radius={[4, 4, 0, 0]}>
+              <Bar
+                dataKey="count"
+                radius={[4, 4, 0, 0]}
+                cursor={onSelectBucket ? 'pointer' : undefined}
+                onClick={(data: unknown) => {
+                  if (!onSelectBucket) return
+                  const d = data as { id?: string } | undefined
+                  if (!d?.id) return
+                  onSelectBucket(selectedBucketId === d.id ? null : d.id)
+                }}
+              >
                 {counts.map(b => (
-                  <Cell key={b.label} fill={b.color} />
+                  <Cell
+                    key={b.id}
+                    fill={b.color}
+                    fillOpacity={selectedBucketId && selectedBucketId !== b.id ? 0.35 : 1}
+                  />
                 ))}
               </Bar>
             </BarChart>
           </ResponsiveContainer>
         </div>
         <p className="mt-3 text-xs text-neutral-500 dark:text-neutral-400">
-          Distribution of users by consumed ÷ budgeted ratio. The two right bars are over their cap.
+          {onSelectBucket
+            ? 'Click a bar to filter the table to users in that bucket. Click again to clear.'
+            : 'Distribution of users by consumed ÷ budgeted ratio.'}
+          {selectedBucketId ? (
+            <button
+              type="button"
+              onClick={() => onSelectBucket?.(null)}
+              className="ml-2 underline text-neutral-700 dark:text-neutral-200"
+            >
+              Clear bucket filter
+            </button>
+          ) : null}
         </p>
       </CardContent>
     </Card>
