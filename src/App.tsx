@@ -163,7 +163,9 @@ export function App() {
                   <UtilizationHistogram
                     budgets={budgets}
                     selectedBucketId={filters.bucketId}
-                    onSelectBucket={id => setFiltersAndScroll({ ...filters, bucketId: id })}
+                    onSelectBucket={id =>
+                      setFiltersAndScroll({ ...filters, bucketId: id, status: 'all' })
+                    }
                   />
                   <div ref={tableRef}>
                     <BudgetsTable
