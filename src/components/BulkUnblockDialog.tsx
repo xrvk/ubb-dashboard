@@ -22,6 +22,7 @@ interface Row {
   budget: UserBudget
   recommended: number
   override: number | null
+  lowConfidence: boolean
 }
 
 function formatDuration(ms: number): string {
@@ -72,7 +73,7 @@ export function BulkUnblockDialog({ open, onOpenChange, selected, onApply }: Pro
     return selected.map(b => {
       const p = projectMonthlyBudget(b.consumedAmount, buffer)
       const override = overrides[b.id] ?? null
-      return { budget: b, recommended: p.recommendedBudget, override }
+      return { budget: b, recommended: p.recommendedBudget, override, lowConfidence: p.lowConfidence }
     })
   }, [selected, bufferPct, overrides])
 
@@ -246,7 +247,19 @@ export function BulkUnblockDialog({ open, onOpenChange, selected, onApply }: Pro
                   const isOverride = r.override !== null && r.override !== r.recommended
                   return (
                     <tr key={r.budget.id} className="border-t border-neutral-100 dark:border-neutral-800/60">
-                      <td className="px-3 py-1.5 font-medium">{r.budget.user}</td>
+                      <td className="px-3 py-1.5 font-medium">
+                        <span className="inline-flex items-center gap-1.5">
+                          {r.budget.user}
+                          {r.lowConfidence ? (
+                            <span
+                              title="Recommendation is based on fewer than 5 days of usage. Review before applying."
+                              className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300"
+                            >
+                              low confidence
+                            </span>
+                          ) : null}
+                        </span>
+                      </td>
                       <td className="px-3 py-1.5 text-right tabular-nums">{formatCurrency(r.budget.consumedAmount)}</td>
                       <td className="px-3 py-1.5 text-right tabular-nums text-neutral-500">{formatCurrency(r.budget.budgetAmount)}</td>
                       <td className="px-3 py-1.5 text-right tabular-nums text-emerald-700 dark:text-emerald-400">
@@ -293,6 +306,30 @@ export function BulkUnblockDialog({ open, onOpenChange, selected, onApply }: Pro
             block these users before they reach their new ULB ceiling.
           </p>
         </div>
+
+        <details className="mt-2 text-xs text-neutral-600 dark:text-neutral-300 group">
+          <summary className="cursor-pointer select-none inline-flex items-center gap-1 underline decoration-dotted underline-offset-2 hover:text-neutral-900 dark:hover:text-neutral-100">
+            How is the recommendation calculated?
+          </summary>
+          <div className="mt-2 p-3 rounded-md border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800/50 space-y-2">
+            <p>For each user we project this month's full spend from their current pace, then add the growth buffer:</p>
+            <pre className="text-[11px] leading-relaxed tabular-nums whitespace-pre-wrap font-mono bg-white dark:bg-neutral-900 p-2 rounded border border-neutral-200 dark:border-neutral-700">
+{`daily_rate    = consumed_so_far / days_elapsed
+projected     = consumed_so_far + daily_rate × days_remaining
+recommended   = ceil( projected × (1 + buffer / 100) )`}
+            </pre>
+            <p>
+              Calendar days are used on both sides, so weekend / holiday patterns largely
+              cancel out. The result is rounded up to whole dollars so cents can't re-block
+              the user.
+            </p>
+            <p>
+              The <strong className="text-amber-700 dark:text-amber-300">low confidence</strong> tag appears
+              when fewer than 5 days have elapsed, since short windows make the daily rate noisy.
+              Review those rows before applying.
+            </p>
+          </div>
+        </details>
 
         <div className="flex justify-end gap-2 mt-4">
           {submitting ? (

@@ -10,7 +10,17 @@ export interface MonthlyProjection {
   dailyRate: number
   projectedMonthTotal: number
   recommendedBudget: number
+  /**
+   * True when the elapsed window is too short for the daily rate to be a
+   * reliable signal. The UI surfaces this so admins can sanity-check
+   * recommendations made off 1-4 days of data.
+   */
+  lowConfidence: boolean
 }
+
+const LOW_CONFIDENCE_THRESHOLD_DAYS = 5
+
+export { LOW_CONFIDENCE_THRESHOLD_DAYS }
 
 /**
  * Project a user's full-month consumption based on what they've already used
@@ -44,5 +54,6 @@ export function projectMonthlyBudget(
     dailyRate,
     projectedMonthTotal,
     recommendedBudget,
+    lowConfidence: dayOfMonth < LOW_CONFIDENCE_THRESHOLD_DAYS,
   }
 }
