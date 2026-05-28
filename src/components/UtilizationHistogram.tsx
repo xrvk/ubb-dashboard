@@ -96,20 +96,17 @@ export function UtilizationHistogram({ budgets, selectedBucketId, onSelectBucket
             </BarChart>
           </ResponsiveContainer>
         </div>
-        <p className="mt-3 text-xs text-neutral-500 dark:text-neutral-400">
-          {onSelectBucket
-            ? 'Click a bar to filter the table to users in that bucket. Click again to clear.'
-            : 'Distribution of users by utilization.'}
-          {selectedBucketId ? (
+        {selectedBucketId && onSelectBucket ? (
+          <p className="mt-3 text-xs">
             <button
               type="button"
-              onClick={() => onSelectBucket?.(null)}
-              className="ml-2 underline text-neutral-700 dark:text-neutral-200"
+              onClick={() => onSelectBucket(null)}
+              className="underline text-neutral-700 dark:text-neutral-200 hover:text-neutral-900 dark:hover:text-neutral-100"
             >
               Clear bucket filter
             </button>
-          ) : null}
-        </p>
+          </p>
+        ) : null}
       </CardContent>
     </Card>
   )
