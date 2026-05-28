@@ -47,7 +47,20 @@ export function UtilizationHistogram({ budgets, selectedBucketId, onSelectBucket
       <CardContent>
         <div style={{ height: 280 }}>
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={counts} margin={{ top: 8, right: 24, left: 32, bottom: 36 }}>
+            <BarChart
+              data={counts}
+              margin={{ top: 8, right: 24, left: 32, bottom: 36 }}
+              onClick={(state: unknown) => {
+                if (!onSelectBucket) return
+                const s = state as
+                  | { activePayload?: Array<{ payload?: { id?: string } }> }
+                  | undefined
+                const id = s?.activePayload?.[0]?.payload?.id
+                if (!id) return
+                onSelectBucket(selectedBucketId === id ? null : id)
+              }}
+              style={onSelectBucket ? { cursor: 'pointer' } : undefined}
+            >
               <XAxis dataKey="short" stroke="#888" fontSize={11} tickMargin={6}>
                 <Label
                   value="Utilization (%)"
@@ -77,13 +90,6 @@ export function UtilizationHistogram({ budgets, selectedBucketId, onSelectBucket
               <Bar
                 dataKey="count"
                 radius={[4, 4, 0, 0]}
-                cursor={onSelectBucket ? 'pointer' : undefined}
-                onClick={(data: unknown) => {
-                  if (!onSelectBucket) return
-                  const d = data as { id?: string } | undefined
-                  if (!d?.id) return
-                  onSelectBucket(selectedBucketId === d.id ? null : d.id)
-                }}
               >
                 {counts.map(b => (
                   <Cell
