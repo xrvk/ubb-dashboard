@@ -41,7 +41,9 @@ describe('fetchUserBudgets pagination', () => {
     // 10k total / 10 per page = 1000 calls
     expect(fetchMock).toHaveBeenCalledTimes(TOTAL / PAGE_SIZE)
     // 9 of every 10 are user-scope
-    expect(result).toHaveLength(TOTAL * 0.9)
+    expect(result.userBudgets).toHaveLength(TOTAL * 0.9)
+    // Total budget count reflects the API's total_count (all scopes/types)
+    expect(result.totalBudgetCount).toBe(TOTAL)
     // Progress was reported
     expect(progress[progress.length - 1]).toEqual([TOTAL, TOTAL])
   })
@@ -53,7 +55,8 @@ describe('fetchUserBudgets pagination', () => {
     }))
     const result = await fetchUserBudgets(fetchMock)
     expect(fetchMock).toHaveBeenCalledTimes(1)
-    expect(result).toHaveLength(5)
+    expect(result.userBudgets).toHaveLength(5)
+    expect(result.totalBudgetCount).toBe(5)
   })
 
   it('stops on an empty page when total_count is missing', async () => {
@@ -64,7 +67,9 @@ describe('fetchUserBudgets pagination', () => {
       return { budgets: [] }
     })
     const result = await fetchUserBudgets(fetchMock)
-    expect(result).toHaveLength(2)
+    expect(result.userBudgets).toHaveLength(2)
+    // Falls back to the number of raw budgets paginated through
+    expect(result.totalBudgetCount).toBe(2)
     expect(calls).toBe(2)
   })
 })

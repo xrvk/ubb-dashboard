@@ -19,7 +19,7 @@ import { runBatch, type BatchProgress } from '@/lib/batch'
 import { clearSnapshot, endOfMonth, loadSnapshot, saveSnapshot, type BulkApplySnapshot } from '@/lib/snapshot'
 
 export function App() {
-  const { credentials, budgets, seats, loading, loadProgress, apiFetch, refresh } = useCredentials()
+  const { credentials, budgets, totalBudgetCount, seats, loading, loadProgress, apiFetch, refresh } = useCredentials()
   const { theme, setTheme } = useTheme()
 
   const [editing, setEditing] = useState<UserBudget | null>(null)
@@ -236,7 +236,12 @@ export function App() {
                     Revert ({snapshot.entries.length.toLocaleString()})
                   </Button>
                 ) : null}
-                <Button onClick={() => setCreating(true)} size="sm">
+                <Button
+                  onClick={() => setCreating(true)}
+                  size="sm"
+                  disabled={totalBudgetCount >= 10000}
+                  title={totalBudgetCount >= 10000 ? 'Budget limit of 10,000 reached for this enterprise' : undefined}
+                >
                   <Plus size={16} weight="bold" />
                   Add ULB
                 </Button>
@@ -268,6 +273,33 @@ export function App() {
             </div>
           ) : (
             <>
+              {totalBudgetCount >= 9500 ? (
+                <div
+                  role="alert"
+                  className={
+                    totalBudgetCount >= 10000
+                      ? 'rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-900 dark:border-red-800/60 dark:bg-red-950/40 dark:text-red-200'
+                      : 'rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-200'
+                  }
+                >
+                  <strong className="font-medium">
+                    {totalBudgetCount >= 10000 ? 'Budget limit reached:' : 'Approaching budget limit:'}
+                  </strong>{' '}
+                  {totalBudgetCount.toLocaleString()} of 10,000 budgets used across this
+                  enterprise (all types).{' '}
+                  {totalBudgetCount >= 10000
+                    ? 'New budgets cannot be created until existing ones are removed.'
+                    : `${(10000 - totalBudgetCount).toLocaleString()} remaining.`}{' '}
+                  <a
+                    href="https://docs.github.com/en/billing/concepts/budgets-and-alerts#budget-limitation"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="underline underline-offset-2 hover:no-underline"
+                  >
+                    Learn more
+                  </a>
+                </div>
+              ) : null}
               <SummaryCards
                 summary={summary}
                 onReset={() => setFiltersAndScroll(EMPTY_FILTERS)}

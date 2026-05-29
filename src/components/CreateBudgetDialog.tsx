@@ -43,6 +43,22 @@ export function CreateBudgetDialog({ open, onOpenChange, onSubmit, seats, existi
         <DialogDescription>
           Set a per-user budget cap. Hard stop is always enforced.
         </DialogDescription>
+        <div
+          role="note"
+          className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-200"
+        >
+          <strong className="font-medium">Warning:</strong>{' '}
+          This becomes the user&apos;s recurring monthly cap. Consider sizing it for a full
+          month, not just the remainder.{' '}
+          <a
+            href="https://docs.github.com/en/billing/concepts/budgets-and-alerts#your-first-billing-cycle-after-creating-a-budget"
+            target="_blank"
+            rel="noreferrer"
+            className="underline underline-offset-2 hover:no-underline"
+          >
+            Learn more
+          </a>
+        </div>
         <form
           onSubmit={async e => {
             e.preventDefault()

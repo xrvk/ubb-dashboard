@@ -15,6 +15,7 @@ import { generateDemoBudgets, generateDemoSeats, readDemoCountFromUrl } from '@/
 interface CredentialsContextValue {
   credentials: Credentials | null
   budgets: UserBudget[]
+  totalBudgetCount: number
   seats: CopilotSeat[]
   loading: boolean
   loadProgress: { loaded: number; total: number | undefined } | null
@@ -30,6 +31,7 @@ const Ctx = createContext<CredentialsContextValue | null>(null)
 export function CredentialsProvider({ children }: { children: ReactNode }) {
   const [credentials, setCredentials] = useState<Credentials | null>(null)
   const [budgets, setBudgets] = useState<UserBudget[]>([])
+  const [totalBudgetCount, setTotalBudgetCount] = useState(0)
   const [seats, setSeats] = useState<CopilotSeat[]>([])
   const [loading, setLoading] = useState(false)
   const [loadProgress, setLoadProgress] = useState<{ loaded: number; total: number | undefined } | null>(null)
@@ -43,7 +45,9 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
   const refresh = useCallback(async () => {
     if (credentials?.base === 'demo://') {
       const demoCount = readDemoCountFromUrl() ?? 0
-      setBudgets(generateDemoBudgets(demoCount, Math.floor(Math.random() * 100_000)))
+      const demoBudgets = generateDemoBudgets(demoCount, Math.floor(Math.random() * 100_000))
+      setBudgets(demoBudgets)
+      setTotalBudgetCount(demoBudgets.length)
       setSeats(generateDemoSeats(demoCount))
       return
     }
@@ -52,13 +56,14 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
     setLoadProgress({ loaded: 0, total: undefined })
     setError(null)
     try {
-      const [list, seatList] = await Promise.all([
+      const [result, seatList] = await Promise.all([
         fetchUserBudgets(apiFetch, (loaded, total) =>
           setLoadProgress({ loaded, total }),
         ),
         fetchAllCopilotSeats(apiFetch).catch(() => [] as CopilotSeat[]),
       ])
-      setBudgets(list)
+      setBudgets(result.userBudgets)
+      setTotalBudgetCount(result.totalBudgetCount)
       setSeats(seatList)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -80,14 +85,15 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
     setError(null)
     try {
       const fetcher = createApiFetch(creds)
-      const [list, seatList] = await Promise.all([
+      const [result, seatList] = await Promise.all([
         fetchUserBudgets(fetcher, (loaded, total) =>
           setLoadProgress({ loaded, total }),
         ),
         fetchAllCopilotSeats(fetcher).catch(() => [] as CopilotSeat[]),
       ])
       setCredentials(creds)
-      setBudgets(list)
+      setBudgets(result.userBudgets)
+      setTotalBudgetCount(result.totalBudgetCount)
       setSeats(seatList)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -100,6 +106,7 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
   const disconnect = useCallback(() => {
     setCredentials(null)
     setBudgets([])
+    setTotalBudgetCount(0)
     setSeats([])
     setError(null)
   }, [])
@@ -114,7 +121,9 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
       autoConnectRef.current = true
       void Promise.resolve().then(() => {
         setCredentials({ base: 'demo://', ent: `demo-${demoCount}`, token: 'demo' })
-        setBudgets(generateDemoBudgets(demoCount))
+        const demoBudgets = generateDemoBudgets(demoCount)
+        setBudgets(demoBudgets)
+        setTotalBudgetCount(demoBudgets.length)
         setSeats(generateDemoSeats(demoCount))
       })
       return
@@ -130,6 +139,7 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
   const value: CredentialsContextValue = {
     credentials,
     budgets,
+    totalBudgetCount,
     seats,
     loading,
     loadProgress,

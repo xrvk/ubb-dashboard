@@ -126,6 +126,17 @@ export function toUserBudget(b: RawBudget): UserBudget {
   }
 }
 
+export interface FetchUserBudgetsResult {
+  /** User-scope Copilot (ai_credits) budgets only. What this dashboard manages. */
+  userBudgets: UserBudget[]
+  /**
+   * Total budgets across the whole enterprise account (every type, scope, and SKU).
+   * Used to surface the per-account 10,000 budget cap.
+   * See https://docs.github.com/en/billing/concepts/budgets-and-alerts#budget-limitation
+   */
+  totalBudgetCount: number
+}
+
 /**
  * Fetch all Copilot user-scope budgets, paginated.
  *
@@ -134,11 +145,14 @@ export function toUserBudget(b: RawBudget): UserBudget {
  * filter (it is ignored). We therefore page through every budget and filter
  * client-side. The safety limit is set to support enterprises at the platform
  * cap (~10k budgets ≈ 1000 pages at 10 / page); we cap at 1500 to be safe.
+ *
+ * Returns both the filtered user-scope Copilot budgets and the total count of
+ * all budgets across the account (used for the 10k cap warning).
  */
 export async function fetchUserBudgets(
   apiFetch: ApiFetch,
   onProgress?: (loaded: number, totalCount: number | undefined) => void,
-): Promise<UserBudget[]> {
+): Promise<FetchUserBudgetsResult> {
   const PAGE_SAFETY_LIMIT = 1500
   const all: RawBudget[] = []
   let page = 1
@@ -161,7 +175,10 @@ export async function fetchUserBudgets(
         `loaded ${all.length} budgets but total_count was ${totalCount ?? 'unknown'}.`,
     )
   }
-  return all.filter(b => b.budget_scope === 'user' && isCopilotBudget(b)).map(toUserBudget)
+  return {
+    userBudgets: all.filter(b => b.budget_scope === 'user' && isCopilotBudget(b)).map(toUserBudget),
+    totalBudgetCount: totalCount ?? all.length,
+  }
 }
 
 /** Update an existing user budget's amount. Hard stop (prevent_further_usage) is always enforced. */
