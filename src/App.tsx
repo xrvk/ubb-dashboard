@@ -20,7 +20,7 @@ import { clearSnapshot, endOfMonth, loadSnapshot, saveSnapshot, type BulkApplySn
 
 export function App() {
   const { credentials, budgets, totalBudgetCount, seats, loading, loadProgress, apiFetch, refresh } = useCredentials()
-  const { theme, setTheme } = useTheme()
+  const { resolvedTheme, setTheme } = useTheme()
 
   const [editing, setEditing] = useState<UserBudget | null>(null)
   const [deleting, setDeleting] = useState<UserBudget | null>(null)
@@ -251,9 +251,9 @@ export function App() {
               variant="ghost"
               size="icon"
               aria-label="Toggle theme"
-              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+              onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
             >
-              {theme === 'dark' ? <Sun size={18} weight="duotone" /> : <Moon size={18} weight="duotone" />}
+              {resolvedTheme === 'dark' ? <Sun size={18} weight="duotone" /> : <Moon size={18} weight="duotone" />}
             </Button>
           </div>
         </div>
