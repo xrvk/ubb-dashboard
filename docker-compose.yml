@@ -1,0 +1,29 @@
+services:
+  # Production: build the static bundle and serve it via nginx on :5003
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ind-ulb-dashboard:latest
+    container_name: ind-ulb-dashboard
+    ports:
+      - "5003:80"
+    restart: unless-stopped
+
+  # Dev: Vite dev server with HMR. Run with: docker compose --profile dev up
+  dev:
+    profiles: ["dev"]
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    image: ind-ulb-dashboard:dev
+    container_name: ind-ulb-dashboard-dev
+    ports:
+      - "5003:5003"
+    volumes:
+      - .:/app
+      - /app/node_modules
+    env_file:
+      - path: .env.local
+        required: false
+    command: ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
