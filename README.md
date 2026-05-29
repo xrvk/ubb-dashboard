@@ -17,6 +17,14 @@ _Runs entirely in your browser. Your enterprise URL and PAT stay in tab memory �
 
 ---
 
+## 📸 Screenshots
+
+![Dashboard overview — summary cards, utilization histogram, and the individual ULB table with status badges](docs/dashboard-overview.png)
+
+_Summary cards, utilization histogram, and the searchable / filterable table of individual ULBs. Demo mode is shown here; with a real enterprise connection the data comes from the GitHub billing API._
+
+---
+
 > [!IMPORTANT]
 > **Disclaimer:** This tool is an independent, personal project built by a GitHub Solutions Engineer to help customers and the broader community manage GitHub Copilot individual user-level budgets (ULBs). It is **not** an official GitHub product, does not represent GitHub's views, and is not endorsed or supported by GitHub.
 >
@@ -63,6 +71,8 @@ Each user is classified by `consumed_amount ÷ budget_amount`:
 The summary cards and histogram are wired to the table — clicking either applies a filter and scrolls to the rows you care about.
 
 ### Unblock for the month
+
+![Unblock for the month dialog — per-user recommended caps with editable growth buffer and late-cycle warning](docs/unblock-for-the-month.png)
 
 Select any number of users (within a filter or across all matching pages) and run a guided bulk-update:
 
