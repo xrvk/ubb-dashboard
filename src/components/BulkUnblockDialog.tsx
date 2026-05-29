@@ -212,9 +212,7 @@ export function BulkUnblockDialog({ open, onOpenChange, selected, onApply }: Pro
                 Cycle resets in {daysToReset} day{daysToReset === 1 ? '' : 's'}.
               </strong>
               <p className="text-amber-800 dark:text-amber-200 mt-1">
-                These caps persist after reset. <code>consumed_amount</code> zeros out on day 1
-                but <code>budget_amount</code> does not. Plan to revert (or schedule a reset)
-                next cycle so users aren't running on inflated caps all month.
+                Warning: Adjustments to user level budgets carry over to the next billing cycle.
               </p>
             </div>
           </div>
