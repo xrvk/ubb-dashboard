@@ -11,7 +11,7 @@ COPY . .
 RUN npm run build
 
 # ---------- Runtime stage ----------
-FROM nginx:1.27-alpine AS runtime
+FROM nginx:1.31-alpine AS runtime
 
 ARG GIT_SHA=unknown
 ARG GIT_REF=unknown
