@@ -120,28 +120,56 @@ This file is gitignored and never persisted anywhere else.
 
 A multi-stage `Dockerfile` builds the static bundle and serves it with nginx. A dev variant runs the Vite dev server with HMR.
 
-**Production (built bundle on nginx, port 5003):**
+**Pull the published image** (built on every push to `main` by [`.github/workflows/docker.yml`](.github/workflows/docker.yml)):
 
 ```bash
-docker compose up --build
+docker run --rm -p 5003:80 ghcr.io/xrvk/ind-ulb-dashboard:latest
 # → http://localhost:5003
 ```
 
-Or without compose:
+Tags published to GHCR:
+
+| Tag | Meaning |
+|---|---|
+| `latest` | Tip of `main` |
+| `sha-<short>` | A specific commit |
+| `vX.Y.Z` | Released git tag |
+| `main` | Same as `latest` |
+
+**Build locally with compose:**
 
 ```bash
-docker build -t ind-ulb-dashboard .
-docker run --rm -p 5003:80 ind-ulb-dashboard
+docker compose up --build              # → http://localhost:5003
 ```
 
-**Dev (Vite + HMR, source mounted from host):**
+**Dev (Vite + HMR, source mounted):**
 
 ```bash
 docker compose --profile dev up --build dev
-# → http://localhost:5003
 ```
 
 `.env.local` is picked up automatically by the dev profile if present.
+
+#### Am I running the latest image?
+
+Each image bakes its git SHA into `/version.json` and into the OCI `org.opencontainers.image.revision` label, so you can verify either from inside the container or from the registry.
+
+```bash
+# What your running container is serving:
+curl -s http://localhost:5003/version.json
+# → {"sha":"8ff1a47...","ref":"main","builtAt":"2026-05-29T05:00:00Z"}
+
+# What's currently on `:latest` in GHCR:
+docker pull ghcr.io/xrvk/ind-ulb-dashboard:latest
+docker inspect ghcr.io/xrvk/ind-ulb-dashboard:latest \
+  --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}'
+```
+
+If the two SHAs match, you're on the latest image. Otherwise:
+
+```bash
+docker compose pull && docker compose up -d
+```
 
 ### Try without an enterprise
 
