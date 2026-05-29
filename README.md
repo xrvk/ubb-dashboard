@@ -9,7 +9,11 @@ _A focused, single-purpose dashboard for individual ULBs — see who's near thei
 [![Vite](https://img.shields.io/badge/vite-8-646CFF?style=for-the-badge&logo=vite&logoColor=white)](https://vitejs.dev)
 [![Tailwind](https://img.shields.io/badge/tailwind-v4-38bdf8?style=for-the-badge&logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
 
-[Features](#-features) · [Quick start](#-quick-start) · [Connect your enterprise](#-connect-your-enterprise) · [How it works](#-how-it-works) · [Security](#-security--token-handling)
+### 🌐 [**Open the app → xrvk.github.io/ind-ulb-dashboard**](https://xrvk.github.io/ind-ulb-dashboard/)
+
+_Runs entirely in your browser. Your enterprise URL and PAT stay in tab memory — never sent anywhere except the GitHub API host you connect to. See [Security](#-security--token-handling)._
+
+[Open the app](https://xrvk.github.io/ind-ulb-dashboard/) · [Features](#-features) · [Quick start](#-quick-start) · [Connect your enterprise](#-connect-your-enterprise) · [How it works](#-how-it-works) · [Security](#-security--token-handling)
 
 ---
 
@@ -97,6 +101,12 @@ This means you can confidently run a 9,800-user unblock without thinking about i
 ---
 
 ## 🚀 Quick start
+
+The fastest way to try the app is the **hosted version** — no install required:
+
+> 🌐 **[xrvk.github.io/ind-ulb-dashboard](https://xrvk.github.io/ind-ulb-dashboard/)**
+
+To run it locally instead:
 
 ```bash
 git clone https://github.com/xrvk/ind-ulb-dashboard.git
