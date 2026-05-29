@@ -116,6 +116,33 @@ VITE_DEV_PAT=ghp_xxxxxxxxxxxxxxxxx
 
 This file is gitignored and never persisted anywhere else.
 
+### Run with Docker
+
+A multi-stage `Dockerfile` builds the static bundle and serves it with nginx. A dev variant runs the Vite dev server with HMR.
+
+**Production (built bundle on nginx, port 5003):**
+
+```bash
+docker compose up --build
+# → http://localhost:5003
+```
+
+Or without compose:
+
+```bash
+docker build -t ind-ulb-dashboard .
+docker run --rm -p 5003:80 ind-ulb-dashboard
+```
+
+**Dev (Vite + HMR, source mounted from host):**
+
+```bash
+docker compose --profile dev up --build dev
+# → http://localhost:5003
+```
+
+`.env.local` is picked up automatically by the dev profile if present.
+
 ### Try without an enterprise
 
 The app ships with a synthetic-data mode for trying the UI at scale:
