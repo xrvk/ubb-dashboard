@@ -15,6 +15,26 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Light mode: warm sepia palette. Overrides Tailwind's cool neutral + white
+   tokens so existing bg-neutral-*/text-neutral-*/bg-white classes pick up
+   paper-toned, warm hues without touching component markup. Dark mode resets
+   below restore the stock Tailwind values. */
+:root {
+  color-scheme: light;
+  --color-white: oklch(0.99 0.012 82);
+  --color-neutral-50: oklch(0.985 0.014 82);
+  --color-neutral-100: oklch(0.965 0.02 80);
+  --color-neutral-200: oklch(0.925 0.028 78);
+  --color-neutral-300: oklch(0.865 0.038 76);
+  --color-neutral-400: oklch(0.725 0.048 70);
+  --color-neutral-500: oklch(0.585 0.052 65);
+  --color-neutral-600: oklch(0.485 0.05 60);
+  --color-neutral-700: oklch(0.385 0.045 55);
+  --color-neutral-800: oklch(0.285 0.036 52);
+  --color-neutral-900: oklch(0.215 0.03 50);
+  --color-neutral-950: oklch(0.145 0.024 50);
+}
+
 .dark,
 .dark body {
   background-color: var(--color-neutral-950);
@@ -22,8 +42,21 @@ body {
   color-scheme: dark;
 }
 
-:root {
-  color-scheme: light;
+/* Restore stock Tailwind neutrals + white in dark mode so the sepia tint
+   only affects light mode. */
+.dark {
+  --color-white: #fff;
+  --color-neutral-50: oklch(0.985 0 0);
+  --color-neutral-100: oklch(0.97 0 0);
+  --color-neutral-200: oklch(0.922 0 0);
+  --color-neutral-300: oklch(0.87 0 0);
+  --color-neutral-400: oklch(0.708 0 0);
+  --color-neutral-500: oklch(0.556 0 0);
+  --color-neutral-600: oklch(0.439 0 0);
+  --color-neutral-700: oklch(0.371 0 0);
+  --color-neutral-800: oklch(0.269 0 0);
+  --color-neutral-900: oklch(0.205 0 0);
+  --color-neutral-950: oklch(0.145 0 0);
 }
 
 /* Hide native spinner arrows on number inputs.
