@@ -163,19 +163,38 @@ describe('buildCostCenterIndex', () => {
     expect(idx.orgToCC.get('github')?.id).toBe('cc1')
   })
 
-  it('keeps the first occurrence and warns when a user appears in multiple CCs', () => {
+  it('warns and reports collisions when an org is in multiple ai-credits-budgeted CCs', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {
       const ccs = [
-        fakeCC('cc1', 'First', [{ type: 'User', name: 'alice' }]),
-        fakeCC('cc2', 'Second', [{ type: 'User', name: 'alice' }]),
+        fakeCC('cc1', 'First', [{ type: 'Org', name: 'octo' }]),
+        fakeCC('cc2', 'Second', [{ type: 'Org', name: 'octo' }]),
       ]
-      const idx = buildCostCenterIndex(ccs)
-      expect(idx.userToCC.get('alice')?.id).toBe('cc1')
+      // Both CCs have ai_credits budgets (keys lowercased).
+      const budgets = new Map([
+        ['first', { id: 'b1', costCenterName: 'First', budgetAmount: 10, preventFurtherUsage: true, willAlert: false, alertRecipients: [] }],
+        ['second', { id: 'b2', costCenterName: 'Second', budgetAmount: 20, preventFurtherUsage: true, willAlert: false, alertRecipients: [] }],
+      ])
+      const idx = buildCostCenterIndex(ccs, budgets)
+      // Sorted-by-id first-wins puts cc1 ahead of cc2.
+      expect(idx.orgToCC.get('octo')?.id).toBe('cc1')
+      expect(idx.orgBudgetedCollisions).toEqual([{ org: 'octo', costCenterNames: ['First', 'Second'] }])
       expect(warn).toHaveBeenCalledTimes(1)
     } finally {
       warn.mockRestore()
     }
+  })
+
+  it('does NOT flag org collisions when only one of the colliding CCs has a budget', () => {
+    const ccs = [
+      fakeCC('cc1', 'First', [{ type: 'Org', name: 'octo' }]),
+      fakeCC('cc2', 'Second', [{ type: 'Org', name: 'octo' }]),
+    ]
+    const budgets = new Map([
+      ['first', { id: 'b1', costCenterName: 'First', budgetAmount: 10, preventFurtherUsage: true, willAlert: false, alertRecipients: [] }],
+    ])
+    const idx = buildCostCenterIndex(ccs, budgets)
+    expect(idx.orgBudgetedCollisions).toEqual([])
   })
 
   it('skips non-active cost centers', () => {

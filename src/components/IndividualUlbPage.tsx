@@ -10,6 +10,7 @@ import { CreateBudgetDialog } from '@/components/CreateBudgetDialog'
 import { DeleteConfirmDialog } from '@/components/DeleteConfirmDialog'
 import { BulkUnblockDialog } from '@/components/BulkUnblockDialog'
 import { RevertBulkDialog } from '@/components/RevertBulkDialog'
+import { ConstraintsBanner } from '@/components/ConstraintsBanner'
 import { Button } from '@/components/ui/button'
 import { summarize } from '@/lib/status'
 import {
@@ -251,6 +252,7 @@ export function IndividualUlbPage({
 
   return (
     <>
+      <ConstraintsBanner />
       {totalBudgetCount >= 9500 ? (
         <div
           role="alert"
