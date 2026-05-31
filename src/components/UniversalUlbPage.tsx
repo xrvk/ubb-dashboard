@@ -92,8 +92,6 @@ export function UniversalUlbPage() {
   const [costCenterFilter, setCostCenterFilter] = useState<string | null>(null)
   /** Anchor for shift-click range selection in the outliers table. */
   const [lastClickedOutlierLogin, setLastClickedOutlierLogin] = useState<string | null>(null)
-  /** Bulk-edit ULB input (applies to currently selected outliers). */
-  const [bulkUlbInput, setBulkUlbInput] = useState('')
   const OUTLIERS_PER_PAGE = 25
 
   // Reload cached months whenever import changes them.
@@ -312,22 +310,24 @@ export function UniversalUlbPage() {
     setLastClickedOutlierLogin(login)
   }
 
-  // Bulk-apply a ULB amount to every currently selected outlier.
-  const applyBulkUlb = (amount: number) => {
-    if (!Number.isFinite(amount) || amount < 1) return
-    const n = Math.max(1, Math.round(amount))
+  // Excel-style edit: if the row is part of a multi-row selection, an edit to
+  // this row's ULB fans out to every selected row. Single-row edits still use
+  // the "matches suggested → clear override" shortcut; multi-row edits always
+  // write an explicit override because each row has its own suggested value.
+  const setRowUlb = (login: string, amount: number | null, suggested: number) => {
+    const multi = selectedOutliers.size >= 2 && selectedOutliers.has(login)
+    if (!multi) {
+      if (amount !== null && amount === suggested) setEditedOutlierUlb(login, null)
+      else setEditedOutlierUlb(login, amount)
+      return
+    }
     setEditedOutlierUlbsEntry(prev => {
       const base = prev?.sig === datasetSig ? { ...prev.map } : {}
-      for (const login of selectedOutliers) base[login] = n
-      return Object.keys(base).length > 0 ? { sig: datasetSig, map: base } : null
-    })
-  }
-
-  const resetBulkUlb = () => {
-    setEditedOutlierUlbsEntry(prev => {
-      if (!prev || prev.sig !== datasetSig) return prev
-      const base = { ...prev.map }
-      for (const login of selectedOutliers) delete base[login]
+      if (amount === null) {
+        for (const l of selectedOutliers) delete base[l]
+      } else {
+        for (const l of selectedOutliers) base[l] = amount
+      }
       return Object.keys(base).length > 0 ? { sig: datasetSig, map: base } : null
     })
   }
@@ -687,7 +687,7 @@ export function UniversalUlbPage() {
                         </span>
                       )}
                       <span className="text-neutral-400 dark:text-neutral-500">
-                        · tip: shift-click to select a range
+                        · tip: shift-click to select a range; editing one $ updates all selected
                       </span>
                     </label>
                     <div className="text-neutral-500">
@@ -697,48 +697,6 @@ export function UniversalUlbPage() {
                         : ''}
                     </div>
                   </div>
-
-                  {selectedOutliers.size >= 2 && (
-                    <div className="flex flex-wrap items-center gap-2 text-xs rounded-md border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900/50 px-3 py-2">
-                      <span className="text-neutral-700 dark:text-neutral-300">
-                        Bulk edit {selectedOutliers.size.toLocaleString()} selected:
-                      </span>
-                      <span className="text-neutral-400">$</span>
-                      <input
-                        type="number"
-                        min={1}
-                        value={bulkUlbInput}
-                        onChange={e => setBulkUlbInput(e.target.value)}
-                        onKeyDown={e => {
-                          if (e.key === 'Enter' && bulkUlbInput) {
-                            applyBulkUlb(Number(bulkUlbInput))
-                            setBulkUlbInput('')
-                          }
-                        }}
-                        placeholder="amount"
-                        aria-label="Bulk ULB amount"
-                        className="w-24 h-7 rounded border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-1.5 text-right tabular-nums"
-                      />
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        disabled={!bulkUlbInput || Number(bulkUlbInput) < 1}
-                        onClick={() => {
-                          applyBulkUlb(Number(bulkUlbInput))
-                          setBulkUlbInput('')
-                        }}
-                      >
-                        Apply to {selectedOutliers.size.toLocaleString()}
-                      </Button>
-                      <button
-                        type="button"
-                        onClick={resetBulkUlb}
-                        className="text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200 underline"
-                      >
-                        Reset to suggested
-                      </button>
-                    </div>
-                  )}
 
                   <div className="rounded-md border border-neutral-200 dark:border-neutral-800 overflow-x-auto">
                     <table className="w-full text-sm">
@@ -760,6 +718,8 @@ export function UniversalUlbPage() {
                           )
                           const isEdited = editedOutlierLogins.has(u.login)
                           const value = isEdited ? editedOutlierUlbs[u.login] : suggested
+                          const inMultiEdit =
+                            selectedOutliers.size >= 2 && selectedOutliers.has(u.login)
                           return (
                             <tr
                               key={u.login}
@@ -805,26 +765,38 @@ export function UniversalUlbPage() {
                                     onChange={e => {
                                       const raw = e.target.value
                                       if (raw === '') {
-                                        setEditedOutlierUlb(u.login, null)
+                                        setRowUlb(u.login, null, suggested)
                                         return
                                       }
                                       const n = Math.max(1, Math.round(Number(raw)))
                                       if (!Number.isFinite(n)) return
-                                      if (n === suggested) setEditedOutlierUlb(u.login, null)
-                                      else setEditedOutlierUlb(u.login, n)
+                                      setRowUlb(u.login, n, suggested)
                                     }}
                                     aria-label={`ULB for ${u.login}`}
+                                    title={
+                                      inMultiEdit
+                                        ? `Editing will apply to all ${selectedOutliers.size.toLocaleString()} selected rows`
+                                        : undefined
+                                    }
                                     className={`w-24 h-7 rounded border px-1.5 text-right tabular-nums bg-white dark:bg-neutral-900 ${
                                       isEdited
                                         ? 'border-amber-500 dark:border-amber-400 font-semibold'
                                         : 'border-neutral-300 dark:border-neutral-700'
+                                    } ${
+                                      inMultiEdit
+                                        ? 'ring-1 ring-amber-300/70 dark:ring-amber-500/40'
+                                        : ''
                                     }`}
                                   />
                                   {isEdited ? (
                                     <button
                                       type="button"
-                                      onClick={() => setEditedOutlierUlb(u.login, null)}
-                                      title={`Reset to suggested ($${suggested})`}
+                                      onClick={() => setRowUlb(u.login, null, suggested)}
+                                      title={
+                                        inMultiEdit
+                                          ? `Reset ${selectedOutliers.size.toLocaleString()} selected to suggested`
+                                          : `Reset to suggested ($${suggested})`
+                                      }
                                       className="text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 text-xs px-1"
                                     >
                                       ↺
