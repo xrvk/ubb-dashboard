@@ -20,6 +20,12 @@ function formatAICs(n: number): string {
   return n.toLocaleString('en-US', { maximumFractionDigits: 0 })
 }
 
+const AICS_PER_USD = 100
+function formatUsd(aics: number): string {
+  const usd = Math.ceil(aics / AICS_PER_USD)
+  return `$${usd.toLocaleString('en-US')}`
+}
+
 interface ConsumptionCurveProps {
   /** Users sorted DESCENDING by totalAICs (heaviest first). */
   sortedUsers: CsvUserUsage[]
@@ -325,7 +331,7 @@ export function ConsumptionCurve({
                 textAnchor="end"
                 className="fill-amber-900 dark:fill-amber-200 text-[10px] font-medium pointer-events-none"
               >
-                Universal ULB {formatAICs(ulbAICs)} AICs{ulbIsOverridden ? ' (custom)' : ''}
+                Universal ULB {formatUsd(ulbAICs)}{ulbIsOverridden ? ' (custom)' : ''}
               </text>
             </g>
           )}
@@ -370,7 +376,7 @@ export function ConsumptionCurve({
                 textAnchor="end"
                 className="fill-orange-800 dark:fill-orange-300 text-[10px] font-medium pointer-events-none"
               >
-                Power ULB {formatAICs(powerUlbAICs)} AICs{powerUlbIsOverridden ? ' (custom)' : ''}
+                Power ULB {formatUsd(powerUlbAICs)}{powerUlbIsOverridden ? ' (custom)' : ''}
               </text>
             </g>
           )}
@@ -472,7 +478,7 @@ export function ConsumptionCurve({
         <div className="rounded-md bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800 px-3 py-2">
           <div className="flex items-center gap-1.5 text-amber-800 dark:text-amber-300 font-semibold">
             <span className="w-2.5 h-2.5 rounded-sm bg-amber-600 dark:bg-amber-400" />
-            Regular users · ULB {formatAICs(ulbAICs)} AICs{ulbIsOverridden ? ' (custom)' : ''}
+            Regular users · ULB {formatUsd(ulbAICs)}{ulbIsOverridden ? ' (custom)' : ''}
           </div>
           <p className="text-neutral-600 dark:text-neutral-400 mt-0.5">
             {totalN - powerUserCount} {totalN - powerUserCount === 1 ? 'user' : 'users'} below threshold
@@ -487,7 +493,7 @@ export function ConsumptionCurve({
             Outliers · need individual ULB
           </div>
           <p className="text-neutral-600 dark:text-neutral-400 mt-0.5">
-            {powerUserCount} {powerUserCount === 1 ? 'user' : 'users'} at or above {formatAICs(thresholdAICs)} AICs
+            {powerUserCount} {powerUserCount === 1 ? 'user' : 'users'} at or above {formatUsd(thresholdAICs)}
             <span className="block text-[10px] italic mt-0.5">
               Drag the vertical line to change the cutoff.
             </span>
@@ -501,7 +507,8 @@ export function ConsumptionCurve({
           <span>
             <span className="font-semibold text-neutral-900 dark:text-neutral-100">{hoverUser.login}</span>
             {' · '}
-            <span className="tabular-nums">{formatAICs(hoverUser.totalAICs)}</span> AICs
+            <span className="tabular-nums">{formatUsd(hoverUser.totalAICs)}</span>
+            <span className="text-neutral-400 dark:text-neutral-500"> · ~{formatAICs(hoverUser.totalAICs)} AICs</span>
             {' · '}rank #{hoverRank ?? 1}
           </span>
         ) : (
