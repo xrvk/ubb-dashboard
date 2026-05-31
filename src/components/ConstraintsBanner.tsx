@@ -1,14 +1,15 @@
-import { useEffect, useMemo, useState } from 'react'
-import { CheckCircle, Warning, XCircle, CaretDown, CaretUp, ArrowDown, ArrowSquareOut, Users } from '@phosphor-icons/react'
+import { useMemo, useState } from 'react'
+import { CheckCircle, Warning, XCircle, CaretDown, CaretUp, ArrowDown, ArrowSquareOut, Users, ArrowsClockwise } from '@phosphor-icons/react'
 import { useCredentials } from '@/hooks/use-credentials'
 import { buildCostCenterIndex, budgetEditUrl } from '@/lib/api'
 import { computeBudgetConstraints } from '@/lib/budgetConstraints'
-import { computeRequiredMinimums } from '@/lib/budgetAutoFix'
+import { computeRequiredMinimums, proposeLowerUniversalUlb } from '@/lib/budgetAutoFix'
 import { formatCurrency, cn, openExternal } from '@/lib/utils'
 import { EMPTY_FILTERS } from '@/components/BudgetsTable'
 import {
   NAV_TO_BUDGET_MODEL_EVENT,
   NAV_TO_INDIVIDUAL_EVENT,
+  NAV_TO_UNIVERSAL_EVENT,
   type NavToIndividualDetail,
   type NavToIndividualTask,
 } from '@/lib/navEvents'
@@ -35,52 +36,9 @@ interface FailingCheck {
     label: string
     onClick?: () => void
     href?: string
-    icon?: 'scroll' | 'external' | 'users'
+    icon?: 'scroll' | 'external' | 'users' | 'universal'
     primary?: boolean
-    // If set, this action will be hidden when the element with this id is
-    // already in the viewport — no point scrolling to something the user can
-    // already see.
-    scrollTargetId?: string
   }>
-}
-
-/**
- * Track which of the given DOM ids are currently in the viewport.
- * Used to hide "scroll to row" actions when the target is already visible.
- */
-function useVisibleTargets(targetIds: string[]): Set<string> {
-  const key = targetIds.slice().sort().join('|')
-  const [visible, setVisible] = useState<Set<string>>(new Set())
-  useEffect(() => {
-    if (targetIds.length === 0) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setVisible(prev => (prev.size === 0 ? prev : new Set()))
-      return
-    }
-    const observer = new IntersectionObserver(
-      entries => {
-        // IntersectionObserver callbacks run async (microtask after layout),
-        // not during render — setState here is safe.
-        setVisible(prev => {
-          const next = new Set(prev)
-          for (const entry of entries) {
-            if (entry.isIntersecting) next.add(entry.target.id)
-            else next.delete(entry.target.id)
-          }
-          return next
-        })
-      },
-      { threshold: 0.5 },
-    )
-    for (const id of targetIds) {
-      const el = document.getElementById(id)
-      if (el) observer.observe(el)
-    }
-    return () => observer.disconnect()
-    // targetIds identity changes every render; key is the stable comparator.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key])
-  return visible
 }
 
 /**
@@ -122,6 +80,36 @@ export function ConstraintsBanner() {
   }, [enterpriseBudget, universalUlb, costCenters, costCenterBudgetsByName, seats, budgets])
 
   const requiredMins = useMemo(() => computeRequiredMinimums(result), [result])
+  const lowerUniversalProposal = useMemo(
+    () => proposeLowerUniversalUlb(result, universalUlb?.budgetAmount ?? null),
+    [result, universalUlb],
+  )
+
+  // For the cc-vs-ent failing check, identify the largest CC budget — that's
+  // the most efficient single knob to turn down to bring CC totals under the
+  // enterprise budget. We propose lowering it by the overBy, but clamp to its
+  // own perCc requirement so we don't introduce a new per-CC failure.
+  const largestCcContributor = useMemo(() => {
+    const ccvs = result.checks.ccVsEnterprise
+    if (!ccvs || ccvs.ok) return null
+    let best: { id: string; name: string; amount: number } | null = null
+    for (const [name, budget] of costCenterBudgetsByName) {
+      if (!best || budget.budgetAmount > best.amount) {
+        best = { id: budget.id, name, amount: budget.budgetAmount }
+      }
+    }
+    if (!best) return null
+    // Resolve the budgeted CC id (id on the cost center, not the budget)
+    // so we can scroll to the matching planner row.
+    const cc = costCenters.find(c => c.name === best.name)
+    if (!cc) return null
+    const perCcMin = requiredMins.perCc.get(cc.id) ?? 0
+    const newAmount = Math.max(perCcMin, best.amount - ccvs.overBy)
+    // If newAmount === current, lowering this CC alone can't satisfy the gap
+    // without breaching its own per-CC check — skip the action.
+    if (newAmount >= best.amount) return null
+    return { ccId: cc.id, name: best.name, newAmount }
+  }, [result, costCenterBudgetsByName, costCenters, requiredMins])
 
   const hasFailingCheck = result.checks.perCc.some(c => !c.check.ok)
     || (result.checks.ccVsEnterprise ? !result.checks.ccVsEnterprise.ok : false)
@@ -149,7 +137,6 @@ export function ConstraintsBanner() {
             onClick: () => scrollToPlanner(`bp-cc-${c.costCenterId}`),
             icon: 'scroll',
             primary: true,
-            scrollTargetId: `bp-cc-${c.costCenterId}`,
           })
         }
         actions.push({
@@ -175,6 +162,13 @@ export function ConstraintsBanner() {
           },
           icon: 'users',
         })
+        if (lowerUniversalProposal) {
+          actions.push({
+            label: lowerUniversalProposal.label,
+            onClick: () => window.dispatchEvent(new CustomEvent(NAV_TO_UNIVERSAL_EVENT)),
+            icon: 'universal',
+          })
+        }
         if (ccBudget && credentials) {
           actions.push({
             label: 'Edit on github.com',
@@ -197,7 +191,13 @@ export function ConstraintsBanner() {
           onClick: () => scrollToPlanner('bp-ent'),
           icon: 'scroll',
           primary: true,
-          scrollTargetId: 'bp-ent',
+        })
+      }
+      if (largestCcContributor) {
+        actions.push({
+          label: `Lower "${largestCcContributor.name}" budget to ${formatCurrency(largestCcContributor.newAmount)}`,
+          onClick: () => scrollToPlanner(`bp-cc-${largestCcContributor.ccId}`),
+          icon: 'scroll',
         })
       }
       if (enterpriseBudget && credentials) {
@@ -221,7 +221,13 @@ export function ConstraintsBanner() {
           onClick: () => scrollToPlanner('bp-ent'),
           icon: 'scroll',
           primary: true,
-          scrollTargetId: 'bp-ent',
+        })
+      }
+      if (lowerUniversalProposal) {
+        actions.push({
+          label: lowerUniversalProposal.label,
+          onClick: () => window.dispatchEvent(new CustomEvent(NAV_TO_UNIVERSAL_EVENT)),
+          icon: 'universal',
         })
       }
       if (enterpriseBudget && credentials) {
@@ -238,20 +244,7 @@ export function ConstraintsBanner() {
       })
     }
     return arr
-  }, [result, requiredMins, costCenterBudgetsByName, credentials, enterpriseBudget])
-
-  // Watch the scroll-action targets so we can hide the "scroll to row" buttons
-  // when the row is already in view.
-  const scrollTargetIds = useMemo(() => {
-    const ids = new Set<string>()
-    for (const fc of failingChecks) {
-      for (const a of fc.actions) {
-        if (a.scrollTargetId) ids.add(a.scrollTargetId)
-      }
-    }
-    return Array.from(ids)
-  }, [failingChecks])
-  const visibleTargets = useVisibleTargets(scrollTargetIds)
+  }, [result, requiredMins, costCenterBudgetsByName, credentials, enterpriseBudget, lowerUniversalProposal, largestCcContributor])
 
   if (!hasAnyEnvelope) return null
 
@@ -311,15 +304,12 @@ export function ConstraintsBanner() {
                   <div className="text-xs font-semibold uppercase tracking-wide opacity-70">Failing checks</div>
                   <ul className="mt-1 space-y-2">
                     {failingChecks.map((fc, i) => {
-                      const visibleActions = fc.actions.filter(
-                        a => !a.scrollTargetId || !visibleTargets.has(a.scrollTargetId),
-                      )
                       return (
                       <li key={i} className="rounded border border-current/20 bg-white/40 dark:bg-black/20 px-2.5 py-2 text-xs">
                         <div>{fc.message}</div>
-                        {visibleActions.length > 0 ? (
+                        {fc.actions.length > 0 ? (
                           <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
-                            {visibleActions.map((a, j) => {
+                            {fc.actions.map((a, j) => {
                               const baseClass = cn(
                                 'inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-medium transition-colors',
                                 a.primary
@@ -333,6 +323,8 @@ export function ConstraintsBanner() {
                                   <ArrowSquareOut size={10} />
                                 ) : a.icon === 'users' ? (
                                   <Users size={10} weight="bold" />
+                                ) : a.icon === 'universal' ? (
+                                  <ArrowsClockwise size={10} weight="bold" />
                                 ) : null
                               if (a.href) {
                                 return (
@@ -382,23 +374,12 @@ export function ConstraintsBanner() {
               {result.maxSafeUniversalUlb !== Infinity ? (() => {
                 const safe = result.maxSafeUniversalUlb
                 const currentUlb = universalUlb?.budgetAmount ?? null
-                // Three meaningful cases:
-                //  1. hasFailure && safe === 0: even universal=$0 wouldn't fix
-                //     things — the failure is driven by individual ULBs alone.
-                //  2. hasFailure && safe > 0 && current > safe: lowering the
-                //     universal ULB to $safe would resolve the per-CC failures.
-                //  3. all clear: headroom indicator.
-                if (hasFailure && safe === 0) {
-                  return (
-                    <div className="text-xs opacity-90">
-                      <span className="font-semibold">Universal ULB won't help here:</span>{' '}
-                      individual ULBs alone exceed the per-cost-center budgets, so even
-                      lowering the universal ULB to $0 wouldn't satisfy the constraints.
-                      Reduce individual ULBs (on the Individual ULBs tab) or raise the
-                      affected cost-center budgets above.
-                    </div>
-                  )
-                }
+                // When hasFailure && safe === 0, there's nothing useful to say
+                // here that isn't already in the failing-checks actions above.
+                // The previous "individual ULBs alone exceed per-CC budgets"
+                // message was wrong when the binding cap was actually the
+                // unassigned-leftover allowance, so we just suppress it.
+                if (hasFailure && safe === 0) return null
                 if (hasFailure && safe > 0 && currentUlb !== null && currentUlb > safe) {
                   return (
                     <div className="text-xs opacity-90">
@@ -409,6 +390,7 @@ export function ConstraintsBanner() {
                     </div>
                   )
                 }
+                if (hasFailure) return null
                 return (
                   <div className="text-xs opacity-90">
                     <span className="font-semibold">Max safe universal ULB:</span>{' '}

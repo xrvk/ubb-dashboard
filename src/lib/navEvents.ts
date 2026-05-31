@@ -8,6 +8,9 @@ import type { TableFilters } from '@/components/BudgetsTable'
 
 export const NAV_TO_INDIVIDUAL_EVENT = 'ulb:nav-to-individual'
 
+/** Navigate to the Universal ULB tab. No payload needed today. */
+export const NAV_TO_UNIVERSAL_EVENT = 'ulb:nav-to-universal'
+
 /**
  * Task context attached to a deep-link nav. Rendered as a contextual banner at
  * the top of the destination page so the user remembers what they came to fix

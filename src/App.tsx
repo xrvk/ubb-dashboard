@@ -14,6 +14,7 @@ import { EMPTY_FILTERS, type TableFilters } from '@/components/BudgetsTable'
 import {
   NAV_TO_BUDGET_MODEL_EVENT,
   NAV_TO_INDIVIDUAL_EVENT,
+  NAV_TO_UNIVERSAL_EVENT,
   type NavToIndividualDetail,
   type NavToIndividualTask,
 } from '@/lib/navEvents'
@@ -61,6 +62,12 @@ export function App() {
     const handler = () => setTab('budget-model')
     window.addEventListener(NAV_TO_BUDGET_MODEL_EVENT, handler)
     return () => window.removeEventListener(NAV_TO_BUDGET_MODEL_EVENT, handler)
+  }, [])
+
+  useEffect(() => {
+    const handler = () => setTab('universal')
+    window.addEventListener(NAV_TO_UNIVERSAL_EVENT, handler)
+    return () => window.removeEventListener(NAV_TO_UNIVERSAL_EVENT, handler)
   }, [])
   return (
     <div className="min-h-screen">
