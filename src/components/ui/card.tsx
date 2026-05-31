@@ -1,11 +1,12 @@
 import type { ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 
-export function Card({ className, children }: { className?: string; children: ReactNode }) {
+export function Card({ className, children, id }: { className?: string; children: ReactNode; id?: string }) {
   return (
     <div
+      id={id}
       className={cn(
-        'rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 shadow-sm',
+        'rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 shadow-sm scroll-mt-24',
         className,
       )}
     >

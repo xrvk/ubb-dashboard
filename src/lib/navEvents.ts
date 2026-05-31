@@ -40,3 +40,19 @@ export interface NavToIndividualDetail {
 /** Navigate to the in-app budget constraint model explainer page. */
 export const NAV_TO_BUDGET_MODEL_EVENT = 'ulb:nav-to-budget-model'
 
+/**
+ * Ask the BudgetPlanner to highlight a section and show a transient banner
+ * explaining what adjustment to make. Fired by ConstraintsBanner when the user
+ * clicks an abstract action like "Lower cost-center budgets by $X" — the
+ * action knows the goal but not which specific row(s) to change, so the
+ * planner card shows a contextual hint to guide the manual edit.
+ */
+export const PLANNER_HIGHLIGHT_EVENT = 'ulb:planner-highlight'
+
+export interface PlannerHighlightDetail {
+  /** Which planner section to highlight + banner. */
+  target: 'cc-card' | 'ent'
+  /** Message rendered in the transient banner. */
+  message: string
+}
+

@@ -10,8 +10,10 @@ import {
   NAV_TO_BUDGET_MODEL_EVENT,
   NAV_TO_INDIVIDUAL_EVENT,
   NAV_TO_UNIVERSAL_EVENT,
+  PLANNER_HIGHLIGHT_EVENT,
   type NavToIndividualDetail,
   type NavToIndividualTask,
+  type PlannerHighlightDetail,
 } from '@/lib/navEvents'
 
 /**
@@ -97,31 +99,15 @@ export function ConstraintsBanner() {
     [result, universalUlb],
   )
 
-  // For the cc-vs-ent failing check, identify the largest CC budget — that's
-  // the most efficient single knob to turn down to bring CC totals under the
-  // enterprise budget. We propose lowering it by the overBy, but clamp to its
-  // own perCc requirement so we don't introduce a new per-CC failure.
-  const largestCcContributor = useMemo(() => {
+  // For the cc-vs-ent failing check, we don't suggest a specific cost center
+  // to lower — there are many ways to redistribute, and prescribing a single
+  // row is too prescriptive. Instead we offer an abstract "lower the total"
+  // action that scrolls to the CC card and shows a banner with the gap.
+  const ccLowerProposal = useMemo(() => {
     const ccvs = result.checks.ccVsEnterprise
     if (!ccvs || ccvs.ok) return null
-    let best: { id: string; name: string; amount: number } | null = null
-    for (const [name, budget] of costCenterBudgetsByName) {
-      if (!best || budget.budgetAmount > best.amount) {
-        best = { id: budget.id, name, amount: budget.budgetAmount }
-      }
-    }
-    if (!best) return null
-    // Resolve the budgeted CC id (id on the cost center, not the budget)
-    // so we can scroll to the matching planner row.
-    const cc = costCenters.find(c => c.name === best.name)
-    if (!cc) return null
-    const perCcMin = requiredMins.perCc.get(cc.id) ?? 0
-    const newAmount = Math.max(perCcMin, best.amount - ccvs.overBy)
-    // If newAmount === current, lowering this CC alone can't satisfy the gap
-    // without breaching its own per-CC check — skip the action.
-    if (newAmount >= best.amount) return null
-    return { ccId: cc.id, name: best.name, newAmount }
-  }, [result, costCenterBudgetsByName, costCenters, requiredMins])
+    return { overBy: ccvs.overBy, target: ccvs.allowed, actual: ccvs.actual }
+  }, [result])
 
   const hasFailingCheck = result.checks.perCc.some(c => !c.check.ok)
     || (result.checks.ccVsEnterprise ? !result.checks.ccVsEnterprise.ok : false)
@@ -205,10 +191,19 @@ export function ConstraintsBanner() {
           primary: true,
         })
       }
-      if (largestCcContributor) {
+      if (ccLowerProposal) {
         actions.push({
-          label: `Lower "${largestCcContributor.name}" budget to ${formatCurrency(largestCcContributor.newAmount)}`,
-          onClick: () => scrollToPlanner(`bp-cc-${largestCcContributor.ccId}`),
+          label: `Lower cost-center budgets by ${formatCurrency(ccLowerProposal.overBy)}`,
+          onClick: () => {
+            scrollToPlanner('bp-cc-card')
+            const detail: PlannerHighlightDetail = {
+              target: 'cc-card',
+              message: `Adjust cost-center budgets so they total ${formatCurrency(ccLowerProposal.target)} or less (currently ${formatCurrency(ccLowerProposal.actual)}, over by ${formatCurrency(ccLowerProposal.overBy)}).`,
+            }
+            window.dispatchEvent(
+              new CustomEvent<PlannerHighlightDetail>(PLANNER_HIGHLIGHT_EVENT, { detail }),
+            )
+          },
           icon: 'scroll',
         })
       }
@@ -256,7 +251,7 @@ export function ConstraintsBanner() {
       })
     }
     return arr
-  }, [result, requiredMins, costCenterBudgetsByName, credentials, enterpriseBudget, lowerUniversalProposal, largestCcContributor])
+  }, [result, requiredMins, costCenterBudgetsByName, credentials, enterpriseBudget, lowerUniversalProposal, ccLowerProposal])
 
   if (!hasAnyEnvelope) return null
 
