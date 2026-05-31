@@ -21,7 +21,7 @@ export function SummaryCards({ summary, onSelectOver, onSelectNear, onReset }: P
     hint?: string
   }> = [
     {
-      label: 'Users with ULB',
+      label: 'Users with Ind ULB',
       value: summary.total.toLocaleString(),
       icon: <Users size={20} weight="duotone" className="text-neutral-500" />,
       onClick: onReset,
