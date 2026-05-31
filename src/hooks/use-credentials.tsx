@@ -5,6 +5,7 @@ import {
   createApiFetch,
   fetchAllCopilotSeats,
   fetchCostCenters,
+  fetchUniversalULB,
   fetchUserBudgets,
   parseEnterpriseUrl,
   resolveCostCenter,
@@ -13,6 +14,7 @@ import {
   type CostCenter,
   type CostCenterResolution,
   type Credentials,
+  type UniversalUlb,
   type UserBudget,
 } from '@/lib/api'
 import { generateDemoBudgets, generateDemoSeats, readDemoCountFromUrl } from '@/lib/demo'
@@ -23,6 +25,9 @@ interface CredentialsContextValue {
   totalBudgetCount: number
   seats: CopilotSeat[]
   costCenters: CostCenter[]
+  /** Universal ULB (multi_user_customer scope) or null if not configured. */
+  universalUlb: UniversalUlb | null
+  setUniversalUlb: (u: UniversalUlb | null) => void
   /**
    * Lowercased-login → resolved CC (or null if unassigned).
    * Built from seats × cost-center index per the cost-center allocation docs:
@@ -47,6 +52,7 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
   const [totalBudgetCount, setTotalBudgetCount] = useState(0)
   const [seats, setSeats] = useState<CopilotSeat[]>([])
   const [costCenters, setCostCenters] = useState<CostCenter[]>([])
+  const [universalUlb, setUniversalUlb] = useState<UniversalUlb | null>(null)
   const [loading, setLoading] = useState(false)
   const [loadProgress, setLoadProgress] = useState<{ loaded: number; total: number | undefined } | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -64,6 +70,7 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
       setTotalBudgetCount(demoBudgets.length)
       setSeats(generateDemoSeats(demoCount))
       setCostCenters([])
+      setUniversalUlb(null)
       return
     }
     if (!apiFetch) return
@@ -71,17 +78,19 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
     setLoadProgress({ loaded: 0, total: undefined })
     setError(null)
     try {
-      const [result, seatList, ccList] = await Promise.all([
+      const [result, seatList, ccList, universal] = await Promise.all([
         fetchUserBudgets(apiFetch, (loaded, total) =>
           setLoadProgress({ loaded, total }),
         ),
         fetchAllCopilotSeats(apiFetch).catch(() => [] as CopilotSeat[]),
         fetchCostCenters(apiFetch).catch(() => [] as CostCenter[]),
+        fetchUniversalULB(apiFetch).catch(() => null),
       ])
       setBudgets(result.userBudgets)
       setTotalBudgetCount(result.totalBudgetCount)
       setSeats(seatList)
       setCostCenters(ccList)
+      setUniversalUlb(universal)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -102,18 +111,20 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
     setError(null)
     try {
       const fetcher = createApiFetch(creds)
-      const [result, seatList, ccList] = await Promise.all([
+      const [result, seatList, ccList, universal] = await Promise.all([
         fetchUserBudgets(fetcher, (loaded, total) =>
           setLoadProgress({ loaded, total }),
         ),
         fetchAllCopilotSeats(fetcher).catch(() => [] as CopilotSeat[]),
         fetchCostCenters(fetcher).catch(() => [] as CostCenter[]),
+        fetchUniversalULB(fetcher).catch(() => null),
       ])
       setCredentials(creds)
       setBudgets(result.userBudgets)
       setTotalBudgetCount(result.totalBudgetCount)
       setSeats(seatList)
       setCostCenters(ccList)
+      setUniversalUlb(universal)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -128,6 +139,7 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
     setTotalBudgetCount(0)
     setSeats([])
     setCostCenters([])
+    setUniversalUlb(null)
     setError(null)
   }, [])
 
@@ -176,6 +188,8 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
     seats,
     costCenters,
     loginToCostCenter,
+    universalUlb,
+    setUniversalUlb,
     loading,
     loadProgress,
     error,
