@@ -194,15 +194,17 @@ export function startOfMonthISO(d: Date): string {
 
 /**
  * Returns YYYY-MM-DD for the last day of the given Date's month (UTC),
- * capped at today so the API doesn't reject "end_date cannot be in the future".
+ * capped at yesterday so the API doesn't reject "end_date cannot be in the future".
+ * Billing data isn't available for the current UTC day, so we need to use the day before.
  */
 export function endOfMonthISO(d: Date): string {
   const y = d.getUTCFullYear()
   const m = d.getUTCMonth()
   const last = new Date(Date.UTC(y, m + 1, 0))
-  const today = new Date()
-  const todayUtc = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()))
-  const capped = last.getTime() > todayUtc.getTime() ? todayUtc : last
+  const now = new Date()
+  // Yesterday in UTC — current day's usage isn't queryable yet.
+  const yesterday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 1))
+  const capped = last.getTime() > yesterday.getTime() ? yesterday : last
   const yy = capped.getUTCFullYear()
   const mm = String(capped.getUTCMonth() + 1).padStart(2, '0')
   const dd = String(capped.getUTCDate()).padStart(2, '0')
