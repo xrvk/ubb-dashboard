@@ -26,6 +26,7 @@ import {
   generateDemoSeats,
   generateDemoUniversalUlb,
   readDemoCountFromUrl,
+  readDemoExcludeCcFromUrl,
 } from '@/lib/demo'
 
 interface CredentialsContextValue {
@@ -182,7 +183,7 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
         setSeats(generateDemoSeats(demoCount))
         setCostCenters(generateDemoCostCenters(demoCount))
         setUniversalUlb(generateDemoUniversalUlb())
-        setEnterpriseBudget(generateDemoEnterpriseBudget())
+        setEnterpriseBudget(generateDemoEnterpriseBudget({ excludeCostCenterUsage: readDemoExcludeCcFromUrl() }))
         setCostCenterBudgetsByName(generateDemoCostCenterBudgets())
       })
       return

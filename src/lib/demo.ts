@@ -82,6 +82,19 @@ export function readDemoCountFromUrl(): number | null {
 }
 
 /**
+ * Toggle for the "cost center exclusion" mode in demo. When set
+ * (`?exclude=1`), the demo enterprise budget is created with
+ * excludeCostCenterUsage=true so CCs become independent pools instead of
+ * sub-allocations of the umbrella.
+ */
+export function readDemoExcludeCcFromUrl(): boolean {
+  if (typeof window === 'undefined') return false
+  const params = new URLSearchParams(window.location.search)
+  const v = params.get('exclude')
+  return v === '1' || v === 'true'
+}
+
+/**
  * Demo seats: a superset of the demo budget users so the "Add ULB" autocomplete
  * can suggest users who don't yet have an individual cap. The org assignment
  * mirrors the CC layout in generateDemoCostCenters so seats line up cleanly
@@ -149,11 +162,11 @@ export function generateDemoCostCenters(count: number): CostCenter[] {
   ]
 }
 
-export function generateDemoEnterpriseBudget(): EnterpriseBudget {
+export function generateDemoEnterpriseBudget(opts?: { excludeCostCenterUsage?: boolean }): EnterpriseBudget {
   return {
     id: 'demo-ent',
     budgetAmount: 9000,
-    excludeCostCenterUsage: false,
+    excludeCostCenterUsage: opts?.excludeCostCenterUsage ?? false,
     preventFurtherUsage: true,
     willAlert: true,
     alertRecipients: ['finance@demo.test'],
