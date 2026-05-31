@@ -933,66 +933,119 @@ function CostCenterBulletList({
   rows: CcBulletRow[]
   unassignedDraw: number
 }) {
+  // Shared scale across all rows so budget/ceiling ticks line up visually
+  // and CCs are comparable in size. Round up to a "nice" number so the
+  // right edge feels stable.
+  const rawMax = Math.max(
+    1,
+    ...rows.flatMap(r => [r.budget ?? 0, r.ceiling, r.projected, r.mtd]),
+    unassignedDraw,
+  )
+  const scaleMax = niceCeil(rawMax)
+  const sorted = [...rows].sort(
+    (a, b) => (b.budget ?? b.ceiling) - (a.budget ?? a.ceiling),
+  )
   return (
-    <div className="rounded-md border border-neutral-200 dark:border-neutral-800 p-3 space-y-2.5">
-      <div className="flex items-center gap-3 text-[10px] text-neutral-500">
-        <LegendDot color="bg-emerald-500" label="MTD" />
-        <LegendDot color="bg-emerald-300 dark:bg-emerald-500/40" label="Projected" />
-        <span className="inline-flex items-center gap-1">
-          <span className="inline-block w-0.5 h-3 bg-neutral-900 dark:bg-neutral-200" />
-          Budget cap
+    <div className="rounded-md border border-neutral-200 dark:border-neutral-800 p-3 space-y-3">
+      <div className="flex items-center gap-4 text-[10px] text-neutral-500">
+        <span className="inline-flex items-center gap-1.5">
+          <span className="inline-block w-3 h-2 rounded-sm bg-emerald-500" />MTD
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="inline-block w-3 h-2 rounded-sm bg-emerald-300 dark:bg-emerald-500/40" />Projected
         </span>
         <span className="inline-flex items-center gap-1">
-          <span className="inline-block w-0.5 h-3 bg-amber-500" />
-          ULB ceiling
+          <span className="inline-block w-0.5 h-3 bg-neutral-900 dark:bg-neutral-200" />Budget cap
         </span>
+        <span className="inline-flex items-center gap-1">
+          <span className="inline-block w-0.5 h-3 bg-amber-500" />ULB ceiling
+        </span>
+        <span className="ml-auto tabular-nums">scale 0 – {formatCurrency(scaleMax)}</span>
       </div>
-      {rows.map(row => (
-        <CcBulletRowView key={row.key} row={row} />
+      {sorted.map(row => (
+        <CcBulletRowView key={row.key} row={row} scaleMax={scaleMax} />
       ))}
       {unassignedDraw > 0 ? (
-        <div className="grid grid-cols-[8rem_minmax(0,1fr)_auto] items-center gap-3 pt-1 border-t border-neutral-100 dark:border-neutral-800/60">
-          <div className="text-xs text-neutral-500 italic truncate" title="Seats not routed to any cost center">
-            Unassigned
-          </div>
-          <div className="text-[11px] text-neutral-500">
-            {formatCurrency(unassignedDraw)} effective draw · no CC budget
-          </div>
-          <div className="text-[11px] text-neutral-500 tabular-nums text-right">—</div>
-        </div>
+        <CcBulletRowView
+          key="__unassigned"
+          row={{
+            key: '__unassigned',
+            name: 'Unassigned',
+            budget: null,
+            ceiling: 0,
+            mtd: unassignedDraw,
+            projected: unassignedDraw,
+            measured: true,
+          }}
+          scaleMax={scaleMax}
+          muted
+        />
       ) : null}
     </div>
   )
 }
 
-function CcBulletRowView({ row }: { row: CcBulletRow }) {
+/** Round up to a friendly axis max so the right edge feels stable. */
+function niceCeil(value: number): number {
+  if (value <= 0) return 1
+  const exp = Math.floor(Math.log10(value))
+  const pow = Math.pow(10, exp)
+  const norm = value / pow
+  let nice: number
+  if (norm <= 1) nice = 1
+  else if (norm <= 2) nice = 2
+  else if (norm <= 2.5) nice = 2.5
+  else if (norm <= 5) nice = 5
+  else nice = 10
+  return nice * pow
+}
+
+function CcBulletRowView({
+  row,
+  scaleMax,
+  muted = false,
+}: {
+  row: CcBulletRow
+  scaleMax: number
+  muted?: boolean
+}) {
   const { name, budget, ceiling, mtd, projected, measured } = row
-  // Scale: largest value the row needs to represent. Always >0 so we don't divide by 0.
-  const scaleMax = Math.max(budget ?? 0, ceiling, projected, mtd, 1)
-  const mtdPct = (mtd / scaleMax) * 100
-  const projPct = (projected / scaleMax) * 100
+  const mtdPct = Math.min(100, (mtd / scaleMax) * 100)
+  const projPct = Math.min(100, (projected / scaleMax) * 100)
   const budgetPct = budget !== null ? Math.min(100, (budget / scaleMax) * 100) : null
-  const ceilingPct = Math.min(100, (ceiling / scaleMax) * 100)
+  const ceilingPct = ceiling > 0 ? Math.min(100, (ceiling / scaleMax) * 100) : null
 
   const overBudget = budget !== null && projected > budget
   const nearBudget = budget !== null && projected > budget * 0.8 && !overBudget
-  const fillColor = overBudget
-    ? 'bg-red-500'
-    : nearBudget
-      ? 'bg-amber-500'
-      : 'bg-emerald-500'
-  const trailColor = overBudget
-    ? 'bg-red-300 dark:bg-red-500/40'
-    : nearBudget
-      ? 'bg-amber-300 dark:bg-amber-500/40'
-      : 'bg-emerald-300 dark:bg-emerald-500/40'
+  const fillColor = muted
+    ? 'bg-neutral-400 dark:bg-neutral-500'
+    : overBudget
+      ? 'bg-red-500'
+      : nearBudget
+        ? 'bg-amber-500'
+        : 'bg-emerald-500'
+  const trailColor = muted
+    ? 'bg-neutral-300 dark:bg-neutral-600/50'
+    : overBudget
+      ? 'bg-red-300 dark:bg-red-500/40'
+      : nearBudget
+        ? 'bg-amber-300 dark:bg-amber-500/40'
+        : 'bg-emerald-300 dark:bg-emerald-500/40'
 
   const numericLabel = (() => {
+    if (muted) {
+      return (
+        <span className="text-neutral-500">
+          {formatCurrency(mtd)} draw · no CC budget
+        </span>
+      )
+    }
     if (!measured) {
       return (
         <span className="text-neutral-400">
-          — · ceiling {formatCurrency(ceiling)}
+          no spend yet
           {budget !== null ? ` · budget ${formatCurrency(budget)}` : ''}
+          {ceiling > 0 ? ` · ceiling ${formatCurrency(ceiling)}` : ''}
         </span>
       )
     }
@@ -1003,27 +1056,35 @@ function CcBulletRowView({ row }: { row: CcBulletRow }) {
       <>
         <span className="text-neutral-700 dark:text-neutral-200">{left}</span>
         <span className="text-neutral-500"> · proj {formatCurrency(projected)}</span>
-        <span className="text-neutral-500"> · ceiling {formatCurrency(ceiling)}</span>
+        {ceiling > 0 ? (
+          <span className="text-neutral-500"> · ceiling {formatCurrency(ceiling)}</span>
+        ) : null}
       </>
     )
   })()
 
   return (
-    <div className="grid grid-cols-[8rem_minmax(0,1fr)_auto] items-center gap-3">
-      <div className="text-xs font-medium text-neutral-700 dark:text-neutral-300 truncate" title={name}>
+    <div className="grid grid-cols-[7rem_minmax(0,1fr)_auto] items-center gap-3">
+      <div
+        className={cn(
+          'text-xs font-medium truncate',
+          muted ? 'text-neutral-500 italic' : 'text-neutral-700 dark:text-neutral-300',
+        )}
+        title={name}
+      >
         {name}
       </div>
       <div className="relative h-3 rounded-sm bg-neutral-100 dark:bg-neutral-800/70 overflow-hidden">
         {/* Projected trail (lighter, behind MTD) */}
         <div
           className={cn('absolute inset-y-0 left-0', trailColor)}
-          style={{ width: `${Math.min(100, projPct)}%` }}
+          style={{ width: `${projPct}%` }}
           title={`Projected ${formatCurrency(projected)}`}
         />
         {/* MTD solid fill on top */}
         <div
           className={cn('absolute inset-y-0 left-0', fillColor)}
-          style={{ width: `${Math.min(100, mtdPct)}%` }}
+          style={{ width: `${mtdPct}%` }}
           title={`MTD ${formatCurrency(mtd)}`}
         />
         {/* Budget tick (dark vertical line) */}
@@ -1035,7 +1096,7 @@ function CcBulletRowView({ row }: { row: CcBulletRow }) {
           />
         ) : null}
         {/* ULB ceiling tick (amber vertical line) */}
-        {ceiling > 0 ? (
+        {ceilingPct !== null ? (
           <div
             className="absolute inset-y-0 w-0.5 bg-amber-500"
             style={{ left: `calc(${ceilingPct}% - 1px)` }}
