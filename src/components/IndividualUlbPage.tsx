@@ -338,7 +338,17 @@ export function IndividualUlbPage({
           </a>
         </div>
       ) : null}
-      <ForecastHero forecast={forecast} />
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+        <p className="text-xs text-neutral-500 dark:text-neutral-400">
+          Live utilization for users with an individual ULB. Forecasts project end of month at the current burn rate.
+        </p>
+      </div>
+      <ForecastHero
+        forecast={forecast}
+        onSelectProjectedOver={() =>
+          setFiltersAndScroll({ ...EMPTY_FILTERS, atRiskByEom: true })
+        }
+      />
       <SummaryCards
         summary={summary}
         onReset={() => setFiltersAndScroll(EMPTY_FILTERS)}
@@ -354,6 +364,29 @@ export function IndividualUlbPage({
               setFiltersAndScroll({ ...filters, bucketId: id, status: 'all' })
             }
           />
+          <div className="rounded-md border border-neutral-200 dark:border-neutral-800 p-3 text-xs grid gap-1.5 sm:grid-cols-3">
+            <div>
+              <div className="text-neutral-500 dark:text-neutral-400">Already over today</div>
+              <div className="font-semibold text-sm">
+                {forecast.alreadyOver.toLocaleString()}
+                <span className="text-neutral-500 font-normal"> · of {forecast.total.toLocaleString()} users</span>
+              </div>
+            </div>
+            <div>
+              <div className="text-neutral-500 dark:text-neutral-400">Projected to slip over by EoM</div>
+              <div className="font-semibold text-sm">
+                {forecast.projectedOver.toLocaleString()}
+                <span className="text-neutral-500 font-normal"> · at current burn{forecast.lowConfidence ? ', low confidence' : ''}</span>
+              </div>
+            </div>
+            <div>
+              <div className="text-neutral-500 dark:text-neutral-400">Days remaining in cycle</div>
+              <div className="font-semibold text-sm">
+                {(forecast.daysInMonth - forecast.daysElapsed).toLocaleString()}
+                <span className="text-neutral-500 font-normal"> · Day {forecast.daysElapsed} of {forecast.daysInMonth}</span>
+              </div>
+            </div>
+          </div>
           <div ref={tableRef} className="space-y-3">
             <div className="flex items-center justify-between gap-3">
               <h2 className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
