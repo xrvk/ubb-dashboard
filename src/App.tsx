@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Gauge, Moon, Sun, ArrowCounterClockwise } from '@phosphor-icons/react'
 import { Toaster } from 'sonner'
 import { useTheme } from 'next-themes'
@@ -9,6 +9,8 @@ import { OverviewPage } from '@/components/OverviewPage'
 import { UniversalUlbPage } from '@/components/UniversalUlbPage'
 import { Button } from '@/components/ui/button'
 import { cn, openExternal } from '@/lib/utils'
+import { EMPTY_FILTERS, type TableFilters } from '@/components/BudgetsTable'
+import { NAV_TO_INDIVIDUAL_EVENT, type NavToIndividualDetail } from '@/lib/navEvents'
 import type { BulkApplySnapshot } from '@/lib/snapshot'
 
 type Tab = 'overview' | 'individual' | 'universal'
@@ -29,7 +31,20 @@ export function App() {
   // can render the Revert button regardless of which tab is active.
   const [snapshot, setSnapshot] = useState<BulkApplySnapshot | null>(null)
   const [revertCandidate, setRevertCandidate] = useState<BulkApplySnapshot | null>(null)
+  // Pending filter set by deep-link events (e.g. from ConstraintsBanner).
+  // Cleared by IndividualUlbPage once consumed.
+  const [pendingIndividualFilter, setPendingIndividualFilter] = useState<TableFilters | null>(null)
 
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<NavToIndividualDetail>).detail
+      if (!detail) return
+      setPendingIndividualFilter(detail.filter ?? EMPTY_FILTERS)
+      setTab('individual')
+    }
+    window.addEventListener(NAV_TO_INDIVIDUAL_EVENT, handler)
+    return () => window.removeEventListener(NAV_TO_INDIVIDUAL_EVENT, handler)
+  }, [])
   return (
     <div className="min-h-screen">
       <Toaster richColors position="bottom-right" />
@@ -105,6 +120,8 @@ export function App() {
               onSnapshotChange={setSnapshot}
               pendingRevert={revertCandidate}
               onPendingRevertChange={setRevertCandidate}
+              pendingFilter={pendingIndividualFilter}
+              onPendingFilterConsumed={() => setPendingIndividualFilter(null)}
             />
           ) : (
             <UniversalUlbPage />

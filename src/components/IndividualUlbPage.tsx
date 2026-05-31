@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Plus } from '@phosphor-icons/react'
 import { toast } from 'sonner'
 import { useCredentials } from '@/hooks/use-credentials'
@@ -35,6 +35,14 @@ interface Props {
   onSnapshotChange?: (snap: BulkApplySnapshot | null) => void
   pendingRevert: BulkApplySnapshot | null
   onPendingRevertChange: (snap: BulkApplySnapshot | null) => void
+  /**
+   * Optional initial filter to apply on mount or when it changes.
+   * Set by App.tsx when something elsewhere (e.g. ConstraintsBanner)
+   * deep-links to this page already filtered to a specific cost center.
+   */
+  pendingFilter?: TableFilters | null
+  /** Called after pendingFilter has been applied so the parent can clear it. */
+  onPendingFilterConsumed?: () => void
 }
 
 export function IndividualUlbPage({
@@ -43,6 +51,8 @@ export function IndividualUlbPage({
   onSnapshotChange,
   pendingRevert,
   onPendingRevertChange,
+  pendingFilter,
+  onPendingFilterConsumed,
 }: Props) {
   const {
     credentials,
@@ -86,6 +96,20 @@ export function IndividualUlbPage({
     setFilters(next)
     scrollToTable()
   }
+
+  // Apply a deep-link filter requested by another page (e.g. ConstraintsBanner
+  // sending the user here pre-filtered to a failing CC's members). Consume on
+  // apply so subsequent renders don't keep re-applying the same filter. The
+  // setState-in-effect is intentional: this IS the synchronization with the
+  // external nav-event state owned by App.tsx.
+  useEffect(() => {
+    if (!pendingFilter) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setFilters(pendingFilter)
+    scrollToTable()
+    onPendingFilterConsumed?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingFilter])
 
   const updateSnapshot = (s: BulkApplySnapshot | null) => {
     setSnapshot(s)

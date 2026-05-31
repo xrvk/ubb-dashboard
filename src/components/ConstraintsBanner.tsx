@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
-import { CheckCircle, Warning, XCircle, CaretDown, CaretUp, ArrowDown, ArrowSquareOut } from '@phosphor-icons/react'
+import { CheckCircle, Warning, XCircle, CaretDown, CaretUp, ArrowDown, ArrowSquareOut, Users } from '@phosphor-icons/react'
 import { useCredentials } from '@/hooks/use-credentials'
 import { buildCostCenterIndex, budgetEditUrl } from '@/lib/api'
 import { computeBudgetConstraints } from '@/lib/budgetConstraints'
 import { computeRequiredMinimums } from '@/lib/budgetAutoFix'
 import { formatCurrency, cn, openExternal } from '@/lib/utils'
+import { EMPTY_FILTERS } from '@/components/BudgetsTable'
+import { NAV_TO_INDIVIDUAL_EVENT, type NavToIndividualDetail } from '@/lib/navEvents'
 
 /**
  * Scroll to a BudgetPlanner row (ent card or a specific CC row) and flash a
@@ -28,7 +30,7 @@ interface FailingCheck {
     label: string
     onClick?: () => void
     href?: string
-    icon?: 'scroll' | 'external'
+    icon?: 'scroll' | 'external' | 'users'
     primary?: boolean
     // If set, this action will be hidden when the element with this id is
     // already in the viewport — no point scrolling to something the user can
@@ -145,6 +147,18 @@ export function ConstraintsBanner() {
             scrollTargetId: `bp-cc-${c.costCenterId}`,
           })
         }
+        actions.push({
+          label: `Reduce ULBs for ${c.memberCount} member${c.memberCount === 1 ? '' : 's'}`,
+          onClick: () => {
+            const detail: NavToIndividualDetail = {
+              filter: { ...EMPTY_FILTERS, costCenter: c.costCenterId },
+            }
+            window.dispatchEvent(
+              new CustomEvent<NavToIndividualDetail>(NAV_TO_INDIVIDUAL_EVENT, { detail }),
+            )
+          },
+          icon: 'users',
+        })
         if (ccBudget && credentials) {
           actions.push({
             label: 'Edit on github.com',
@@ -301,6 +315,8 @@ export function ConstraintsBanner() {
                                   <ArrowDown size={10} weight="bold" />
                                 ) : a.icon === 'external' ? (
                                   <ArrowSquareOut size={10} />
+                                ) : a.icon === 'users' ? (
+                                  <Users size={10} weight="bold" />
                                 ) : null
                               if (a.href) {
                                 return (
