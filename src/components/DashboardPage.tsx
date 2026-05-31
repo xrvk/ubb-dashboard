@@ -208,14 +208,24 @@ export function DashboardPage() {
       </div>
       <ForecastBreakdownCard tracked={trackedForecast} entBudget={entAmount} />
 
-      {/* § 3 — Cost centers today: per-CC budget, MTD, projected. */}
+      {/* § 3 — Budget allocation: how the enterprise budget and CC budgets
+          partition the org. Layout depends on whether CC usage is
+          excluded (independent pools) or rolled up into the ent cap. */}
+      <SectionHeader title="Budget allocation" />
+      <BudgetAllocationCard
+        enterpriseBudget={enterpriseBudget}
+        pool={pool}
+        usageByCostCenterId={usageByCostCenterId}
+      />
+
+      {/* § 4 — Cost centers today: per-CC budget, MTD, projected. */}
       <SectionHeader title="Cost centers" />
       <CostCenterStatusCard
         pool={pool}
         usageByCostCenterId={usageByCostCenterId}
       />
 
-      {/* § 4 — Action items: blocked users, missing budgets, allocation
+      {/* § 5 — Action items: blocked users, missing budgets, allocation
           risk. */}
       <SectionHeader title="Action items" />
       <ActionItemsCard
@@ -701,6 +711,312 @@ function LicenseContribRow({
         {billedMtd !== null ? formatCurrency(billedMtd) : '—'}
       </td>
     </tr>
+  )
+}
+
+/**
+ * § 3 — Budget allocation. Stacked bar showing how the enterprise budget
+ * and CC budgets partition the org's commit. Two layouts:
+ *   - Independent (excludeCostCenterUsage=true): enterprise and each CC
+ *     are disjoint pools. Bar = [Ent | CC1 | CC2 | ...] proportional to
+ *     each budget.
+ *   - Rolled-up (excludeCostCenterUsage=false): CC budgets are
+ *     sub-allocations inside the ent cap. Bar = ent container with CCs
+ *     nested + unallocated tail. If ΣCC > ent, the bar extends past the
+ *     ent line with an over-allocation warning.
+ *
+ * Each CC segment is tone-coded by its own projected-vs-budget %
+ * (safe/near/over). Uncapped CCs are omitted from the bar and reported
+ * as a footnote.
+ */
+function BudgetAllocationCard({
+  enterpriseBudget,
+  pool,
+  usageByCostCenterId,
+}: {
+  enterpriseBudget: import('@/lib/api').EnterpriseBudget | null
+  pool: ReturnType<typeof computePoolSplit>
+  usageByCostCenterId: ReturnType<typeof useCredentials>['usageByCostCenterId']
+}) {
+  const independent = enterpriseBudget?.excludeCostCenterUsage ?? false
+  const entBudget = pool.enterpriseBudget
+
+  const segments = useMemo(() => {
+    const asof = readDemoAsofFromUrl() ?? undefined
+    return pool.costCenters
+      .filter(cc => cc.budgetAmount !== null && cc.budgetAmount > 0)
+      .map(cc => {
+        const usage = usageByCostCenterId.get(cc.costCenterId)
+        const mtd = usage?.aiCreditsGross ?? 0
+        const projected = usage
+          ? projectMonthlyBudget(mtd, 0, asof).projectedMonthTotal
+          : 0
+        const measured = !!usage
+        const budget = cc.budgetAmount!
+        const pct = measured && budget > 0 ? projected / budget : 0
+        const tone: AllocTone = !measured
+          ? 'neutral'
+          : pct >= 1
+            ? 'over'
+            : pct >= 0.8
+              ? 'near'
+              : 'safe'
+        return {
+          id: cc.costCenterId,
+          name: cc.name,
+          budget,
+          projected,
+          measured,
+          tone,
+          pct: measured ? Math.round(pct * 100) : null,
+        }
+      })
+  }, [pool.costCenters, usageByCostCenterId])
+
+  const ccBudgetTotal = segments.reduce((s, c) => s + c.budget, 0)
+  const uncappedCount = pool.costCenters.length - segments.length
+
+  if (entBudget === null && segments.length === 0) {
+    return (
+      <Card>
+        <CardContent className="text-sm text-neutral-500">
+          No enterprise budget or capped cost-center budgets to allocate.
+        </CardContent>
+      </Card>
+    )
+  }
+
+  return (
+    <Card>
+      <CardContent className="space-y-4 pt-6">
+        {independent
+          ? (
+            <IndependentAllocationView
+              entBudget={entBudget}
+              ccBudgetTotal={ccBudgetTotal}
+              segments={segments}
+            />
+          )
+          : (
+            <RolledUpAllocationView
+              entBudget={entBudget}
+              ccBudgetTotal={ccBudgetTotal}
+              segments={segments}
+            />
+          )}
+
+        {/* Legend */}
+        <div className="grid gap-1.5 text-[11px] grid-cols-1 sm:grid-cols-2">
+          {entBudget !== null && entBudget > 0 ? (
+            <LegendRow
+              swatch="bg-indigo-500"
+              label={independent ? 'Enterprise pool' : 'Enterprise cap'}
+              value={formatCurrency(entBudget)}
+            />
+          ) : null}
+          {segments.map(s => (
+            <LegendRow
+              key={s.id}
+              swatch={ALLOC_TONE_CLASS[s.tone]}
+              label={s.name}
+              value={
+                s.measured
+                  ? `${formatCurrency(s.budget)} · projected ${s.pct}%`
+                  : `${formatCurrency(s.budget)} · no usage data`
+              }
+            />
+          ))}
+        </div>
+
+        {uncappedCount > 0 ? (
+          <div className="text-[11px] text-neutral-500">
+            {uncappedCount} uncapped cost center{uncappedCount === 1 ? '' : 's'}{' '}
+            not shown (no budget set).
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
+  )
+}
+
+type AllocTone = 'safe' | 'near' | 'over' | 'neutral'
+const ALLOC_TONE_CLASS: Record<AllocTone, string> = {
+  safe: 'bg-emerald-500',
+  near: 'bg-amber-500',
+  over: 'bg-red-500',
+  neutral: 'bg-neutral-300 dark:bg-neutral-700',
+}
+
+function IndependentAllocationView({
+  entBudget,
+  ccBudgetTotal,
+  segments,
+}: {
+  entBudget: number | null
+  ccBudgetTotal: number
+  segments: ReadonlyArray<{ id: string; name: string; budget: number; tone: AllocTone; pct: number | null; measured: boolean }>
+}) {
+  const totalCommit = (entBudget ?? 0) + ccBudgetTotal
+  if (totalCommit === 0) {
+    return <div className="text-sm text-neutral-500">Nothing to allocate yet.</div>
+  }
+  return (
+    <div className="space-y-2">
+      <div className="flex items-baseline justify-between gap-3 flex-wrap">
+        <div className="text-xs text-neutral-500">
+          Independent pools · {formatCurrency(totalCommit)} total org commitment
+        </div>
+        {entBudget !== null ? (
+          <div className="text-[11px] text-neutral-500 tabular-nums">
+            Enterprise {formatCurrency(entBudget)} + {segments.length} CC
+            {segments.length === 1 ? '' : 's'} {formatCurrency(ccBudgetTotal)}
+          </div>
+        ) : null}
+      </div>
+      <div className="flex h-7 w-full rounded-md overflow-hidden border border-neutral-200 dark:border-neutral-800">
+        {entBudget !== null && entBudget > 0 ? (
+          <AllocSegment
+            widthPct={(entBudget / totalCommit) * 100}
+            className="bg-indigo-500"
+            title={`Enterprise · ${formatCurrency(entBudget)}`}
+          />
+        ) : null}
+        {segments.map(s => (
+          <AllocSegment
+            key={s.id}
+            widthPct={(s.budget / totalCommit) * 100}
+            className={ALLOC_TONE_CLASS[s.tone]}
+            title={`${s.name} · ${formatCurrency(s.budget)}${s.pct !== null ? ` · projected ${s.pct}%` : ''}`}
+          />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function RolledUpAllocationView({
+  entBudget,
+  ccBudgetTotal,
+  segments,
+}: {
+  entBudget: number | null
+  ccBudgetTotal: number
+  segments: ReadonlyArray<{ id: string; name: string; budget: number; tone: AllocTone; pct: number | null; measured: boolean }>
+}) {
+  if (entBudget === null || entBudget === 0) {
+    // No ent cap to nest into — degrade to a CC-only stacked bar.
+    if (ccBudgetTotal === 0) {
+      return <div className="text-sm text-neutral-500">No budgets to allocate.</div>
+    }
+    return (
+      <div className="space-y-2">
+        <div className="text-xs text-neutral-500">
+          No enterprise budget · {formatCurrency(ccBudgetTotal)} committed across {segments.length} CC{segments.length === 1 ? '' : 's'}
+        </div>
+        <div className="flex h-7 w-full rounded-md overflow-hidden border border-neutral-200 dark:border-neutral-800">
+          {segments.map(s => (
+            <AllocSegment
+              key={s.id}
+              widthPct={(s.budget / ccBudgetTotal) * 100}
+              className={ALLOC_TONE_CLASS[s.tone]}
+              title={`${s.name} · ${formatCurrency(s.budget)}`}
+            />
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  const overAlloc = ccBudgetTotal > entBudget
+  const unallocated = Math.max(0, entBudget - ccBudgetTotal)
+  // Bar spans the larger of (entBudget, ccBudgetTotal) so over-allocation
+  // is visible as an overflow past the ent marker.
+  const denom = Math.max(entBudget, ccBudgetTotal)
+  const entMarkerPct = (entBudget / denom) * 100
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-baseline justify-between gap-3 flex-wrap">
+        <div className="text-xs text-neutral-500">
+          {segments.length} CC budget{segments.length === 1 ? '' : 's'} inside the{' '}
+          {formatCurrency(entBudget)} enterprise cap
+        </div>
+        <div
+          className={cn(
+            'text-[11px] tabular-nums',
+            overAlloc ? 'text-red-700 dark:text-red-300 font-medium' : 'text-neutral-500',
+          )}
+        >
+          {overAlloc
+            ? `${formatCurrency(ccBudgetTotal - entBudget)} over-allocated`
+            : `${formatCurrency(unallocated)} unallocated`}
+        </div>
+      </div>
+      <div className="relative">
+        <div className="flex h-7 w-full rounded-md overflow-hidden border border-neutral-200 dark:border-neutral-800">
+          {segments.map(s => (
+            <AllocSegment
+              key={s.id}
+              widthPct={(s.budget / denom) * 100}
+              className={ALLOC_TONE_CLASS[s.tone]}
+              title={`${s.name} · ${formatCurrency(s.budget)}${s.pct !== null ? ` · projected ${s.pct}%` : ''}`}
+            />
+          ))}
+          {!overAlloc && unallocated > 0 ? (
+            <AllocSegment
+              widthPct={(unallocated / denom) * 100}
+              className="bg-neutral-200 dark:bg-neutral-800"
+              title={`Unallocated · ${formatCurrency(unallocated)}`}
+            />
+          ) : null}
+        </div>
+        {/* Enterprise cap marker — only meaningful when over-allocated */}
+        {overAlloc ? (
+          <div
+            className="absolute top-0 bottom-0 border-l-2 border-dashed border-neutral-900 dark:border-neutral-100"
+            style={{ left: `${entMarkerPct}%` }}
+            title={`Enterprise cap · ${formatCurrency(entBudget)}`}
+          />
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+function AllocSegment({
+  widthPct,
+  className,
+  title,
+}: {
+  widthPct: number
+  className: string
+  title: string
+}) {
+  if (widthPct <= 0) return null
+  return (
+    <div
+      className={cn('h-full', className)}
+      style={{ width: `${widthPct}%` }}
+      title={title}
+    />
+  )
+}
+
+function LegendRow({
+  swatch,
+  label,
+  value,
+}: {
+  swatch: string
+  label: string
+  value: string
+}) {
+  return (
+    <div className="flex items-center gap-2 text-neutral-600 dark:text-neutral-400">
+      <span className={cn('inline-block h-2 w-2 rounded-sm shrink-0', swatch)} />
+      <span className="truncate">{label}</span>
+      <span className="ml-auto tabular-nums text-neutral-500">{value}</span>
+    </div>
   )
 }
 
