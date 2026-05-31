@@ -8,7 +8,7 @@ import { IndividualUlbPage } from '@/components/IndividualUlbPage'
 import { OverviewPage } from '@/components/OverviewPage'
 import { UniversalUlbPage } from '@/components/UniversalUlbPage'
 import { Button } from '@/components/ui/button'
-import { cn } from '@/lib/utils'
+import { cn, openExternal } from '@/lib/utils'
 import type { BulkApplySnapshot } from '@/lib/snapshot'
 
 type Tab = 'overview' | 'individual' | 'universal'
@@ -123,6 +123,7 @@ export function App() {
               href="https://docs.github.com"
               target="_blank"
               rel="noopener noreferrer"
+              onClick={openExternal('https://docs.github.com')}
               className="underline hover:text-neutral-900 dark:hover:text-neutral-100 transition-colors"
             >
               GitHub's official documentation
@@ -135,6 +136,7 @@ export function App() {
               href="https://github.com/xrvk"
               target="_blank"
               rel="noopener noreferrer"
+              onClick={openExternal('https://github.com/xrvk')}
               className="hover:text-neutral-900 dark:hover:text-neutral-100 hover:underline underline-offset-2 transition-colors"
             >
               @xrvk
@@ -144,6 +146,7 @@ export function App() {
               href="https://github.com/xrvk/ind-ulb-dashboard"
               target="_blank"
               rel="noopener noreferrer"
+              onClick={openExternal('https://github.com/xrvk/ind-ulb-dashboard')}
               className="hover:text-neutral-900 dark:hover:text-neutral-100 hover:underline underline-offset-2 transition-colors"
             >
               Source

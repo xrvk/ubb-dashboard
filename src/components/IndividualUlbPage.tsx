@@ -12,6 +12,7 @@ import { BulkUnblockDialog } from '@/components/BulkUnblockDialog'
 import { RevertBulkDialog } from '@/components/RevertBulkDialog'
 import { Button } from '@/components/ui/button'
 import { summarize } from '@/lib/status'
+import { openExternal } from '@/lib/utils'
 import {
   createUserBudget as apiCreateUserBudget,
   deleteUserBudget as apiDeleteUserBudget,
@@ -271,6 +272,7 @@ export function IndividualUlbPage({
             href="https://docs.github.com/en/billing/concepts/budgets-and-alerts#budget-limitation"
             target="_blank"
             rel="noreferrer"
+            onClick={openExternal('https://docs.github.com/en/billing/concepts/budgets-and-alerts#budget-limitation')}
             className="underline underline-offset-2 hover:no-underline"
           >
             Learn more

@@ -26,7 +26,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { useCredentials } from '@/hooks/use-credentials'
 import { useBudgetConstraints } from '@/hooks/use-budget-constraints'
 import { computeRequiredMinimums } from '@/lib/budgetAutoFix'
-import { formatCurrency, cn } from '@/lib/utils'
+import { formatCurrency, cn, openExternal } from '@/lib/utils'
 import {
   patchEnterpriseBudget,
   patchCostCenterBudget,
@@ -169,6 +169,7 @@ function AlertsLink({ href, label = 'Alerts' }: { href: string; label?: string }
           href={href}
           target="_blank"
           rel="noopener noreferrer"
+          onClick={openExternal(href)}
           className="inline-flex items-center gap-1 text-[11px] text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100 hover:underline"
         >
           {label}
