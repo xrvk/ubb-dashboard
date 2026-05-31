@@ -142,7 +142,7 @@ export function DashboardPage() {
   return (
     <div className="grid gap-6">
       {/* § 1 — Current state: pool, licenses, used so far. */}
-      <SectionHeader number={1} title="AI credit pool & licenses" />
+      <SectionHeader number={1} title="Pool and licenses" />
       <PoolAndLicensesCard
         seatCost={seatCost}
         usage={usageSummary}
@@ -161,8 +161,8 @@ export function DashboardPage() {
           value={entAmount === null ? 'Not set' : formatCurrency(entAmount)}
           hint={
             entAmount === null
-              ? 'No enterprise-scope budget'
-              : `Caps metered charges · ${seats.length.toLocaleString()} seats`
+              ? 'No enterprise budget'
+              : `Enterprise cap · ${seats.length.toLocaleString()} seats`
           }
           icon={<Buildings size={22} weight="duotone" className="text-neutral-400" />}
         />
@@ -172,7 +172,7 @@ export function DashboardPage() {
           hint={
             trackedForecast.hasActual
               ? `Day ${forecast.daysElapsed} of ${forecast.daysInMonth}`
-              : `Day ${forecast.daysElapsed} of ${forecast.daysInMonth} · ULB-scope proxy`
+              : `Day ${forecast.daysElapsed} of ${forecast.daysInMonth}. ULB proxy`
           }
           icon={<CurrencyDollar size={22} weight="duotone" className="text-neutral-400" />}
         />
@@ -181,7 +181,7 @@ export function DashboardPage() {
           value={formatCurrency(trackedForecast.totalProjected)}
           hint={
             entAmount === null
-              ? 'No budget to compare against'
+              ? 'No budget set'
               : overDelta > 0
                 ? `${formatCurrency(overDelta)} over budget`
                 : `${formatCurrency(-overDelta)} under budget`
@@ -194,7 +194,7 @@ export function DashboardPage() {
           value={headroomVsEnt === null ? '—' : formatCurrency(headroomVsEnt)}
           hint={
             entAmount === null
-              ? 'Requires enterprise budget'
+              ? 'Set enterprise budget'
               : `${formatPercent(trackedForecast.totalMtd / Math.max(1, entAmount))} of budget spent`
           }
           icon={<Receipt size={22} weight="duotone" className="text-neutral-400" />}
@@ -304,7 +304,7 @@ function ForecastBreakdownCard({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Forecasted metered charges</CardTitle>
+        <CardTitle>Metered forecast</CardTitle>
       </CardHeader>
       <CardContent className="grid gap-4">
         <div className={cn('grid gap-4', tracked.hasActual ? 'md:grid-cols-4' : 'md:grid-cols-3')}>
@@ -316,7 +316,7 @@ function ForecastBreakdownCard({
             sub={
               tracked.universal.hasBudget
                 ? `${pct(tracked.universal.projected, tracked.totalProjected)} of total`
-                : 'No universal ULB set'
+                : 'No universal ULB'
             }
           />
           <BreakdownStat
@@ -326,8 +326,8 @@ function ForecastBreakdownCard({
             projected={tracked.individual.projected}
             sub={
               tracked.individual.count > 0
-                ? `${tracked.individual.count.toLocaleString()} users · ${pct(tracked.individual.projected, tracked.totalProjected)} of total`
-                : 'No individual overrides set'
+                ? `${tracked.individual.count.toLocaleString()} users, ${pct(tracked.individual.projected, tracked.totalProjected)} of total`
+                : 'No individual ULBs'
             }
           />
           {tracked.hasActual ? (
@@ -338,7 +338,7 @@ function ForecastBreakdownCard({
               projected={ccRoutedProjected}
               sub={
                 ccRoutedProjected > 0
-                  ? `${pct(ccRoutedProjected, tracked.totalProjected)} of total · not in budgets API`
+                  ? `${pct(ccRoutedProjected, tracked.totalProjected)} of total, outside budgets data`
                   : 'All spend attributed to a tracked scope'
               }
             />
@@ -353,7 +353,7 @@ function ForecastBreakdownCard({
             <div className="text-xs text-neutral-500">
               MTD {formatCurrency(tracked.totalMtd)}
               {entBudget !== null
-                ? ` · ${pct(tracked.totalProjected, entBudget)} of ent budget`
+                ? ` · ${pct(tracked.totalProjected, entBudget)} of enterprise budget`
                 : ''}
             </div>
           </div>
@@ -361,22 +361,19 @@ function ForecastBreakdownCard({
 
         {tracked.hasActual ? (
           <div className="text-[11px] text-neutral-500">
-            Total from the billing usage summary API. "CC-routed" is the
-            residual not attributable to ULB scopes — those budgets don't
-            report consumed_amount.
+            Totals from billing usage. CC-routed is residual spend outside ULB
+            scopes. CC budgets do not report consumed.
           </div>
         ) : tracked.untrackedSeats > 0 ? (
           <div className="rounded-md border border-amber-200 dark:border-amber-900/60 bg-amber-50 dark:bg-amber-950/30 text-amber-900 dark:text-amber-200 px-3 py-2 text-xs">
             {tracked.untrackedSeats.toLocaleString()} seat
-            {tracked.untrackedSeats === 1 ? ' is' : 's are'} covered by a
-            cost-center budget with no individual ULB — their spend isn't
-            included above. Grant the PAT enhanced-billing access for full
-            totals.
+            {tracked.untrackedSeats === 1 ? ' uses' : 's use'} a cost-center
+            budget with no individual ULB. Spend is not included above. Grant
+            PAT enhanced-billing access for full totals.
           </div>
         ) : (
           <div className="text-[11px] text-neutral-500">
-            Spend summed from the two budget scopes that report consumed
-            amounts: universal ULB and individual ULBs.
+            Includes only spend reported by universal and individual ULBs.
           </div>
         )}
       </CardContent>
@@ -492,7 +489,7 @@ function PoolAndLicensesCard({
     return (
       <Card>
         <CardContent className="text-sm text-neutral-500">
-          No Copilot Business or Enterprise seats found.
+          No Copilot Business or Enterprise seats.
         </CardContent>
       </Card>
     )
@@ -516,11 +513,11 @@ function PoolAndLicensesCard({
       <CardHeader>
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div>
-            <CardTitle>AI credit pool &amp; licenses</CardTitle>
+            <CardTitle>Pool and licenses</CardTitle>
             <p className="text-xs text-neutral-500 mt-1 max-w-2xl">
-              Your CB and CE seats fund a <strong>shared AI credit pool</strong>{' '}
-              that's drawn before any metered charges. Only user-level budgets
-              (universal ULB + individual overrides) constrain pool drawdown.{' '}
+              CB and CE seats fund one <strong>shared AI credit pool</strong>{' '}
+              used before metered charges. Universal and individual ULBs limit
+              drawdown.{' '}
               <a
                 href="https://docs.github.com/en/copilot/concepts/billing/usage-based-billing-for-organizations-and-enterprises#how-do-ai-credits-work"
                 target="_blank"
@@ -543,13 +540,13 @@ function PoolAndLicensesCard({
         <div className="grid gap-3 grid-cols-1 sm:grid-cols-2">
           <div className="rounded-md border border-indigo-200 dark:border-indigo-900/60 bg-indigo-50/60 dark:bg-indigo-950/30 p-3">
             <div className="text-[11px] uppercase tracking-wide text-indigo-700 dark:text-indigo-300">
-              Total AI credits / month
+              AI credits / month
             </div>
             <div className="text-2xl font-semibold mt-1 tabular-nums text-indigo-950 dark:text-indigo-100">
               {credits.totalCredits.toLocaleString()}
             </div>
             <div className="text-[11px] text-indigo-700 dark:text-indigo-300 mt-0.5">
-              pooled across all seats
+              across all seats
             </div>
           </div>
           <div className="rounded-md border border-emerald-200 dark:border-emerald-900/60 bg-emerald-50/60 dark:bg-emerald-950/30 p-3">
@@ -618,8 +615,7 @@ function PoolAndLicensesCard({
             metered charges appear, the pool is fully drawn. */}
         {meteredMtd === null ? (
           <div className="rounded-md border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900/40 text-neutral-600 dark:text-neutral-400 px-3 py-2 text-xs">
-            Pool drawdown unknown — connect a billing-scope token to see
-            whether the pool has been exhausted.
+            Pool drawdown unknown. Connect a billing token.
           </div>
         ) : (
           <div
@@ -669,7 +665,7 @@ function PoolAndLicensesCard({
             </div>
             {billedMtd !== null ? (
               <div className="text-[11px] text-neutral-500 dark:text-neutral-400">
-                License spend MTD {formatCurrency(billedMtd)} · full-month
+                License MTD {formatCurrency(billedMtd)} · full-month
                 estimate {formatCurrency(seatCost.monthlyCost)}
               </div>
             ) : null}
@@ -756,7 +752,7 @@ function CostCenterStatusCard({
           <CardTitle>Cost centers</CardTitle>
         </CardHeader>
         <CardContent>
-          <EmptyChart message="No cost centers route Copilot today." />
+          <EmptyChart message="No cost centers routing Copilot." />
         </CardContent>
       </Card>
     )
@@ -767,7 +763,7 @@ function CostCenterStatusCard({
       <CardHeader>
         <CardTitle>Cost centers</CardTitle>
         <p className="text-xs text-neutral-500 mt-1">
-          {pool.costCenters.length} CC{pool.costCenters.length === 1 ? '' : 's'} routing Copilot today.
+          {pool.costCenters.length} CC{pool.costCenters.length === 1 ? '' : 's'} routing Copilot.
         </p>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -1005,8 +1001,8 @@ function ActionItemsCard({
     items.push({
       id: 'already-over',
       severity: 'high',
-      title: `${forecast.alreadyOver} user${forecast.alreadyOver === 1 ? '' : 's'} blocked at their ULB`,
-      hint: 'Already over their individual ULB this cycle.',
+      title: `${forecast.alreadyOver} user${forecast.alreadyOver === 1 ? '' : 's'} blocked at ULB`,
+      hint: 'Already over individual ULB.',
       ctaLabel: 'Review',
       onCta: () =>
         window.dispatchEvent(new CustomEvent(NAV_TO_INDIVIDUAL_EVENT, { detail: {} })),
@@ -1016,8 +1012,8 @@ function ActionItemsCard({
     items.push({
       id: 'projected-over',
       severity: 'medium',
-      title: `${forecast.projectedOver} user${forecast.projectedOver === 1 ? '' : 's'} projected over their ULB`,
-      hint: 'On track to exceed cap at current burn.',
+      title: `${forecast.projectedOver} user${forecast.projectedOver === 1 ? '' : 's'} projected over ULB`,
+      hint: 'On track to exceed cap.',
       ctaLabel: 'Review',
       onCta: () =>
         window.dispatchEvent(new CustomEvent(NAV_TO_INDIVIDUAL_EVENT, { detail: {} })),
@@ -1028,7 +1024,7 @@ function ActionItemsCard({
       id: 'missing-ent',
       severity: 'medium',
       title: 'No enterprise budget set',
-      hint: "Metered charges aren't capped at the enterprise level.",
+      hint: "No enterprise cap on metered charges.",
       ctaLabel: 'Set budget',
       onCta: () => window.dispatchEvent(new CustomEvent(NAV_TO_BUDGET_MODEL_EVENT)),
     })
@@ -1039,7 +1035,7 @@ function ActionItemsCard({
       id: 'over-alloc',
       severity: 'high',
       title: `CC commitments exceed enterprise budget by ${formatCurrency(overshoot)}`,
-      hint: 'Sum of CC effective draws is higher than the enterprise cap.',
+      hint: 'CC commitments exceed the enterprise cap.',
       ctaLabel: 'Open budgets',
       onCta: () => window.dispatchEvent(new CustomEvent(NAV_TO_BUDGET_MODEL_EVENT)),
     })
@@ -1051,8 +1047,8 @@ function ActionItemsCard({
       items.push({
         id: 'missing-univ',
         severity: 'medium',
-        title: `No universal ULB · ${fallbackSeats.toLocaleString()} seat${fallbackSeats === 1 ? '' : 's'} have no per-user cap`,
-        hint: 'Their pool drawdown is unconstrained until the pool runs out.',
+        title: `No universal ULB. ${fallbackSeats.toLocaleString()} seat${fallbackSeats === 1 ? '' : 's'} have no per-user cap`,
+        hint: 'Pool drawdown is uncapped until the pool runs out.',
         ctaLabel: 'Set universal ULB',
         onCta: () => window.dispatchEvent(new CustomEvent(NAV_TO_UNIVERSAL_EVENT)),
       })
@@ -1079,8 +1075,8 @@ function ActionItemsCard({
     items.push({
       id: 'uncapped-risky',
       severity: 'medium',
-      title: `${uncappedRiskyCcs.length} uncapped CC${uncappedRiskyCcs.length === 1 ? '' : 's'} have seats with no ULB fallback`,
-      hint: 'No CC budget AND no user-level cap once the pool exhausts.',
+      title: `${uncappedRiskyCcs.length} uncapped CC${uncappedRiskyCcs.length === 1 ? '' : 's'} have seats without ULB fallback`,
+      hint: 'No CC budget and no user cap after pool exhaustion.',
       ctaLabel: 'Open budgets',
       onCta: () => window.dispatchEvent(new CustomEvent(NAV_TO_BUDGET_MODEL_EVENT)),
     })
@@ -1095,7 +1091,7 @@ function ActionItemsCard({
         {items.length === 0 ? (
           <div className="flex items-center gap-2 text-sm text-emerald-700 dark:text-emerald-300">
             <span className="inline-block w-2 h-2 rounded-full bg-emerald-500" />
-            All clear — no items to address.
+            All clear. No items to address.
           </div>
         ) : (
           <ul className="divide-y divide-neutral-200 dark:divide-neutral-800 -mx-4 -my-2">
