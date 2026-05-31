@@ -253,8 +253,8 @@ export function ConsumptionCurve({
           ))}
 
           {/* Filled areas */}
-          {powerAreaD && <path d={powerAreaD} className="fill-amber-200/60 dark:fill-amber-500/20" />}
-          {regularAreaD && <path d={regularAreaD} className="fill-blue-200/60 dark:fill-blue-500/15" />}
+          {powerAreaD && <path d={powerAreaD} className="fill-orange-300/55 dark:fill-orange-500/20" />}
+          {regularAreaD && <path d={regularAreaD} className="fill-amber-200/50 dark:fill-amber-500/10" />}
 
           {/* Curve line */}
           <path
@@ -291,21 +291,21 @@ export function ConsumptionCurve({
                 stroke="currentColor"
                 strokeWidth={dragging === 'ulb' ? 2 : 1}
                 strokeDasharray="4,3"
-                className="text-blue-600 dark:text-blue-400"
+                className="text-amber-800 dark:text-amber-300"
               />
               {onUlbChange && (
                 <circle
                   cx={VB_W - PAD_R}
                   cy={ulbY}
                   r={dragging === 'ulb' ? 5 : 3.5}
-                  className="fill-blue-600 dark:fill-blue-400"
+                  className="fill-amber-800 dark:fill-amber-300"
                 />
               )}
               <text
                 x={VB_W - PAD_R - 12}
                 y={ulbY - 3}
                 textAnchor="end"
-                className="fill-blue-700 dark:fill-blue-300 text-[10px] font-medium pointer-events-none"
+                className="fill-amber-900 dark:fill-amber-200 text-[10px] font-medium pointer-events-none"
               >
                 Universal ULB {formatAICs(ulbAICs)} AICs{ulbIsOverridden ? ' (custom)' : ''}
               </text>
@@ -336,21 +336,21 @@ export function ConsumptionCurve({
                 stroke="currentColor"
                 strokeWidth={dragging === 'power' ? 2 : 1}
                 strokeDasharray="4,3"
-                className="text-amber-600 dark:text-amber-400"
+                className="text-orange-700 dark:text-orange-400"
               />
               {onPowerUlbChange && (
                 <circle
                   cx={VB_W - PAD_R}
                   cy={powerUlbY}
                   r={dragging === 'power' ? 5 : 3.5}
-                  className="fill-amber-600 dark:fill-amber-400"
+                  className="fill-orange-700 dark:fill-orange-400"
                 />
               )}
               <text
                 x={VB_W - PAD_R - 12}
                 y={labelsOverlap ? powerUlbY + 11 : powerUlbY - 3}
                 textAnchor="end"
-                className="fill-amber-700 dark:fill-amber-300 text-[10px] font-medium pointer-events-none"
+                className="fill-orange-800 dark:fill-orange-300 text-[10px] font-medium pointer-events-none"
               >
                 Power ULB {formatAICs(powerUlbAICs)} AICs{powerUlbIsOverridden ? ' (custom)' : ''}
               </text>
@@ -378,14 +378,14 @@ export function ConsumptionCurve({
               y2={PAD_T + plotH}
               stroke="currentColor"
               strokeWidth={dragging === 'threshold' ? 3 : 2}
-              className="text-blue-600 dark:text-blue-400"
+              className="text-amber-800 dark:text-amber-300"
             />
             {onSetCutoff && (
               <circle
                 cx={thresholdX}
                 cy={PAD_T}
                 r={dragging === 'threshold' ? 5 : 3.5}
-                className="fill-blue-600 dark:fill-blue-400"
+                className="fill-amber-800 dark:fill-amber-300"
               />
             )}
           </g>
@@ -429,21 +429,21 @@ export function ConsumptionCurve({
 
       {/* Legend / split summary */}
       <div className="grid grid-cols-2 gap-3 text-xs">
-        <div className="rounded-md bg-blue-50 dark:bg-blue-950/30 border border-blue-300 dark:border-blue-800 px-3 py-2">
-          <div className="flex items-center gap-1.5 text-blue-700 dark:text-blue-300 font-semibold">
-            <span className="w-2.5 h-2.5 rounded-sm bg-blue-400 dark:bg-blue-500" />
+        <div className="rounded-md bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800 px-3 py-2">
+          <div className="flex items-center gap-1.5 text-amber-800 dark:text-amber-300 font-semibold">
+            <span className="w-2.5 h-2.5 rounded-sm bg-amber-600 dark:bg-amber-400" />
             Regular users · ULB {formatAICs(ulbAICs)} AICs{ulbIsOverridden ? ' (custom)' : ''}
           </div>
           <p className="text-neutral-600 dark:text-neutral-400 mt-0.5">
             {n - powerUserCount} {n - powerUserCount === 1 ? 'user' : 'users'} below threshold
             {onUlbChange && (
-              <span className="block text-[10px] italic mt-0.5">Drag the blue line to adjust.</span>
+              <span className="block text-[10px] italic mt-0.5">Drag the amber line to adjust.</span>
             )}
           </p>
         </div>
-        <div className="rounded-md bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800 px-3 py-2">
-          <div className="flex items-center gap-1.5 text-amber-700 dark:text-amber-300 font-semibold">
-            <span className="w-2.5 h-2.5 rounded-sm bg-amber-400 dark:bg-amber-500" />
+        <div className="rounded-md bg-orange-50 dark:bg-orange-950/30 border border-orange-300 dark:border-orange-800 px-3 py-2">
+          <div className="flex items-center gap-1.5 text-orange-800 dark:text-orange-300 font-semibold">
+            <span className="w-2.5 h-2.5 rounded-sm bg-orange-500 dark:bg-orange-400" />
             Outliers · need individual ULB
           </div>
           <p className="text-neutral-600 dark:text-neutral-400 mt-0.5">
