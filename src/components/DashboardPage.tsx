@@ -785,15 +785,26 @@ function CostCenterStatusCard({
               <tr>
                 <th className="text-left font-medium px-3 py-2">Cost center</th>
                 <th className="text-right font-medium px-3 py-2">Seats</th>
-                <th className="text-right font-medium px-3 py-2">Budget</th>
                 <th className="text-right font-medium px-3 py-2">MTD</th>
                 <th className="text-right font-medium px-3 py-2">Projected</th>
+                <th className="text-right font-medium px-3 py-2">Budget</th>
               </tr>
             </thead>
             <tbody>
               {pool.costCenters.map(cc => {
                 const data = perCc.get(cc.costCenterId)
                 const measured = data?.measured ?? false
+                const hasBudget = cc.budgetAmount !== null && cc.budgetAmount > 0
+                const projPct = measured && hasBudget
+                  ? Math.round((data!.projected / cc.budgetAmount!) * 100)
+                  : null
+                const projTone = projPct === null
+                  ? ''
+                  : projPct >= 100
+                    ? 'text-red-700 dark:text-red-300'
+                    : projPct >= 80
+                      ? 'text-amber-700 dark:text-amber-300'
+                      : 'text-neutral-500'
                 return (
                   <tr key={cc.costCenterId} className="border-t border-neutral-200 dark:border-neutral-800">
                     <td className="px-3 py-2 font-medium text-neutral-700 dark:text-neutral-300">
@@ -803,17 +814,28 @@ function CostCenterStatusCard({
                       {cc.seatCount.toLocaleString()}
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums">
+                      {measured ? formatCurrency(data!.mtd) : <span className="text-neutral-400">—</span>}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      {measured ? (
+                        <span>
+                          {formatCurrency(data!.projected)}
+                          {projPct !== null && (
+                            <span className={cn('ml-1.5 text-[10px] font-medium', projTone)}>
+                              {projPct}%
+                            </span>
+                          )}
+                        </span>
+                      ) : (
+                        <span className="text-neutral-400">—</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">
                       {cc.budgetAmount === null ? (
                         <span className="text-neutral-500">Uncapped</span>
                       ) : (
                         formatCurrency(cc.budgetAmount)
                       )}
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums">
-                      {measured ? formatCurrency(data!.mtd) : <span className="text-neutral-400">—</span>}
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums">
-                      {measured ? formatCurrency(data!.projected) : <span className="text-neutral-400">—</span>}
                     </td>
                   </tr>
                 )
