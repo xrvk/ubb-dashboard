@@ -219,6 +219,86 @@ export async function deleteUserBudget(apiFetch: ApiFetch, budgetId: string): Pr
   await apiFetch(`/budgets/${budgetId}`, { method: 'DELETE' })
 }
 
+// --- Universal ULB (multi_user_customer scope) ---
+
+/**
+ * The "universal ULB" is the single `multi_user_customer`-scope `ai_credits`
+ * budget that caps every enterprise user not covered by a more specific budget
+ * (cost center or individual). Enterprises have at most one of these.
+ */
+export interface UniversalUlb {
+  id: string
+  budgetAmount: number
+  consumedAmount: number
+  preventFurtherUsage: boolean
+  willAlert: boolean
+  alertRecipients: string[]
+}
+
+function toUniversalUlb(b: RawBudget): UniversalUlb {
+  return {
+    id: b.id,
+    budgetAmount: b.budget_amount,
+    consumedAmount: b.consumed_amount,
+    preventFurtherUsage: b.prevent_further_usage,
+    willAlert: b.budget_alerting?.will_alert ?? false,
+    alertRecipients: b.budget_alerting?.alert_recipients ?? [],
+  }
+}
+
+/**
+ * Fetch the enterprise's universal ULB (multi_user_customer scope, ai_credits SKU).
+ * Returns null if one isn't configured. Pages through every budget (same
+ * limitation as `fetchUserBudgets`).
+ */
+export async function fetchUniversalULB(apiFetch: ApiFetch): Promise<UniversalUlb | null> {
+  const PAGE_SAFETY_LIMIT = 1500
+  let page = 1
+  while (page <= PAGE_SAFETY_LIMIT) {
+    const data = (await apiFetch(`/budgets?per_page=100&page=${page}`)) as BudgetsResponse | RawBudget[]
+    const list = Array.isArray(data) ? data : (data?.budgets ?? [])
+    if (list.length === 0) break
+    const hit = list.find(b => b.budget_scope === 'multi_user_customer' && isCopilotBudget(b))
+    if (hit) return toUniversalUlb(hit)
+    if (!Array.isArray(data) && typeof data?.total_count === 'number' && list.length < 100) break
+    page += 1
+  }
+  return null
+}
+
+/** Update the universal ULB's cap. Hard stop is always enforced. */
+export async function patchUniversalULB(
+  apiFetch: ApiFetch,
+  budgetId: string,
+  budgetAmount: number,
+): Promise<void> {
+  await apiFetch(`/budgets/${budgetId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      budget_amount: budgetAmount,
+      prevent_further_usage: true,
+    }),
+  })
+}
+
+/** Create the universal ULB (only used if one doesn't exist yet). */
+export async function createUniversalULB(
+  apiFetch: ApiFetch,
+  budgetAmount: number,
+): Promise<void> {
+  await apiFetch(`/budgets`, {
+    method: 'POST',
+    body: JSON.stringify({
+      budget_type: 'BundlePricing',
+      budget_product_sku: 'ai_credits',
+      budget_scope: 'multi_user_customer',
+      budget_amount: budgetAmount,
+      prevent_further_usage: true,
+      target_entity: {},
+    }),
+  })
+}
+
 // --- Copilot seats (used as the source of truth for "add ULB" autocomplete) ---
 
 export interface CopilotSeat {
