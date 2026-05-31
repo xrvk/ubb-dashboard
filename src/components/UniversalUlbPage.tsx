@@ -379,15 +379,15 @@ export function UniversalUlbPage() {
               <div>
                 <div className="text-neutral-500 dark:text-neutral-400">Suggested ULB (P95 of regulars)</div>
                 <div className="font-semibold text-sm">
-                  {threshold.suggestedULB.toLocaleString()} AICs
-                  <span className="text-neutral-500 font-normal"> · ~${Math.ceil(threshold.suggestedULB / AICS_PER_USD)}</span>
+                  ${Math.ceil(threshold.suggestedULB / AICS_PER_USD).toLocaleString()}
+                  <span className="text-neutral-500 font-normal"> · ~{threshold.suggestedULB.toLocaleString()} AICs</span>
                 </div>
               </div>
               <div>
                 <div className="text-neutral-500 dark:text-neutral-400">Chart ULB</div>
                 <div className="font-semibold text-sm">
-                  {Math.round(ulbAICs).toLocaleString()} AICs
-                  <span className="text-neutral-500 font-normal"> · ~${ulbDeltaUsd}</span>
+                  ${ulbDeltaUsd.toLocaleString()}
+                  <span className="text-neutral-500 font-normal"> · ~{Math.round(ulbAICs).toLocaleString()} AICs</span>
                 </div>
               </div>
               <div>
