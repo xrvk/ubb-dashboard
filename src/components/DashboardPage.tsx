@@ -929,13 +929,15 @@ function RolledUpAllocationView({
 
   const overAlloc = ccBudgetTotal > entBudget
   const unallocated = Math.max(0, entBudget - ccBudgetTotal)
-  // Bar spans the larger of (entBudget, ccBudgetTotal) so over-allocation
-  // is visible as an overflow past the ent marker.
+  // Both bars share a scale = max(ent, ccTotal). When CCs over-allocate,
+  // the CC bar fills the full width while the enterprise bar visibly
+  // shrinks below it, making the inverted relationship obvious.
   const denom = Math.max(entBudget, ccBudgetTotal)
-  const entMarkerPct = (entBudget / denom) * 100
+  const entWidthPct = (entBudget / denom) * 100
+  const ccWidthPct = (ccBudgetTotal / denom) * 100
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
       <div className="flex items-baseline justify-between gap-3 flex-wrap">
         <div className="text-xs text-neutral-500">
           {segments.length} CC budget{segments.length === 1 ? '' : 's'} inside the{' '}
@@ -948,12 +950,32 @@ function RolledUpAllocationView({
           )}
         >
           {overAlloc
-            ? `${formatCurrency(ccBudgetTotal - entBudget)} over-allocated`
+            ? `${formatCurrency(ccBudgetTotal - entBudget)} over-allocated · CC commitments exceed enterprise cap`
             : `${formatCurrency(unallocated)} unallocated`}
         </div>
       </div>
-      <div className="relative">
-        <div className="flex h-7 w-full rounded-md overflow-hidden border border-neutral-200 dark:border-neutral-800">
+
+      {/* Two-bar layout: enterprise cap on top, CC allocations below,
+          both on the same scale. Over-allocation = CC bar wider than
+          ent bar. */}
+      <div className="space-y-2">
+        <AllocBarRow
+          label="Enterprise cap"
+          amountText={formatCurrency(entBudget)}
+          warn={overAlloc}
+        >
+          <AllocSegment
+            widthPct={entWidthPct}
+            className={cn('bg-indigo-500', overAlloc && 'opacity-80')}
+            title={`Enterprise cap · ${formatCurrency(entBudget)}`}
+          />
+        </AllocBarRow>
+
+        <AllocBarRow
+          label="CC allocations"
+          amountText={formatCurrency(ccBudgetTotal)}
+          warn={overAlloc}
+        >
           {segments.map(s => (
             <AllocSegment
               key={s.id}
@@ -969,15 +991,42 @@ function RolledUpAllocationView({
               title={`Unallocated · ${formatCurrency(unallocated)}`}
             />
           ) : null}
-        </div>
-        {/* Enterprise cap marker — only meaningful when over-allocated */}
-        {overAlloc ? (
-          <div
-            className="absolute top-0 bottom-0 border-l-2 border-dashed border-neutral-900 dark:border-neutral-100"
-            style={{ left: `${entMarkerPct}%` }}
-            title={`Enterprise cap · ${formatCurrency(entBudget)}`}
-          />
-        ) : null}
+          {/* Trailing space when CC bar is shorter than the scale */}
+          {!overAlloc && unallocated === 0 && ccWidthPct < 100 ? (
+            <div style={{ width: `${100 - ccWidthPct}%` }} />
+          ) : null}
+        </AllocBarRow>
+      </div>
+    </div>
+  )
+}
+
+function AllocBarRow({
+  label,
+  amountText,
+  warn,
+  children,
+}: {
+  label: string
+  amountText: string
+  warn?: boolean
+  children: React.ReactNode
+}) {
+  return (
+    <div className="grid grid-cols-[7rem_1fr_6rem] items-center gap-2">
+      <div className="text-[11px] text-neutral-500 truncate">{label}</div>
+      <div
+        className={cn(
+          'flex h-6 w-full rounded-md overflow-hidden border',
+          warn
+            ? 'border-red-300 dark:border-red-900/60'
+            : 'border-neutral-200 dark:border-neutral-800',
+        )}
+      >
+        {children}
+      </div>
+      <div className="text-[11px] tabular-nums text-neutral-500 text-right">
+        {amountText}
       </div>
     </div>
   )
