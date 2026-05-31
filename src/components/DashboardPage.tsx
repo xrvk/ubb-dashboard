@@ -954,18 +954,20 @@ function RolledUpAllocationView({
         </div>
       </div>
 
-      {/* Two-bar layout: enterprise cap on top, CC allocations below,
-          both on the same scale (= max of the two). When CC totals
-          exceed the enterprise cap the CC bar is visibly longer than
-          the ent bar, which is the whole point. */}
+      {/* Two-bar layout: each bar's outer width = its share of the
+          shared scale (max of ent and CC totals). The bars are
+          fully filled inside — a short bar means a small value,
+          never "half-empty cap". When CC totals exceed the enterprise
+          cap the CC bar extends past the ent bar visually. */}
       <div className="space-y-2">
         <AllocBarRow
           label="Enterprise cap"
           amountText={formatCurrency(entBudget)}
           warn={overAlloc}
+          barWidthPct={entWidthPct}
         >
           <AllocSegment
-            widthPct={entWidthPct}
+            widthPct={100}
             className="bg-indigo-500"
             title={`Enterprise cap · ${formatCurrency(entBudget)}`}
           />
@@ -975,22 +977,16 @@ function RolledUpAllocationView({
           label="CC allocations"
           amountText={formatCurrency(ccBudgetTotal)}
           warn={overAlloc}
+          barWidthPct={(ccBudgetTotal / denom) * 100}
         >
           {segments.map(s => (
             <AllocSegment
               key={s.id}
-              widthPct={(s.budget / denom) * 100}
+              widthPct={(s.budget / ccBudgetTotal) * 100}
               className={ALLOC_TONE_CLASS[s.tone]}
               title={`${s.name} · ${formatCurrency(s.budget)}${s.pct !== null ? ` · projected ${s.pct}%` : ''}`}
             />
           ))}
-          {!overAlloc && unallocated > 0 ? (
-            <AllocSegment
-              widthPct={(unallocated / denom) * 100}
-              className="bg-neutral-200 dark:bg-neutral-800"
-              title={`Unallocated · ${formatCurrency(unallocated)}`}
-            />
-          ) : null}
         </AllocBarRow>
       </div>
     </div>
@@ -1001,11 +997,13 @@ function AllocBarRow({
   label,
   amountText,
   warn,
+  barWidthPct,
   children,
 }: {
   label: string
   amountText: string
   warn?: boolean
+  barWidthPct: number
   children: React.ReactNode
 }) {
   return (
@@ -1013,11 +1011,12 @@ function AllocBarRow({
       <div className="text-[11px] text-neutral-500 truncate">{label}</div>
       <div
         className={cn(
-          'flex h-6 w-full rounded-md overflow-hidden border',
+          'flex h-6 rounded-md overflow-hidden border',
           warn
             ? 'border-red-300 dark:border-red-900/60'
             : 'border-neutral-200 dark:border-neutral-800',
         )}
+        style={{ width: `${Math.max(0, Math.min(100, barWidthPct))}%` }}
       >
         {children}
       </div>
