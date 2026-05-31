@@ -370,7 +370,7 @@ export function BudgetStructureDiagram() {
           if (softCapped.length > 0) {
             items.push({
               severity: 'amber',
-              text: `${softCapped.length} cost-center budget${softCapped.length === 1 ? '' : 's'} ${softCapped.length === 1 ? 'is' : 'are'} on soft cap — flip to hard cap to actually stop overage.`,
+              text: `${softCapped.length} cost-center budget${softCapped.length === 1 ? '' : 's'} ${softCapped.length === 1 ? 'is' : 'are'} on soft cap — flip to hard cap (turn on “Stop usage when budget limit is reached”) to actually stop metered charges.`,
             })
           }
 

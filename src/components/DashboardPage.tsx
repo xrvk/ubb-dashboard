@@ -163,64 +163,64 @@ export function DashboardPage() {
 
   return (
     <div className="grid gap-6">
-      {/* Two-tier model primer — most dashboards only show overage. Make the
-          pool-vs-overage distinction visible so the rest of the page reads
-          correctly. */}
-      <TwoTierBanner
+      {/* Primer banner — surface the pool-vs-metered distinction so the
+          hero KPIs (all metered-charge metrics) read correctly. */}
+      <BudgetModelBanner
         hasUsage={trackedForecast.hasActual}
-        overageMtd={usageSummary?.aiCreditsNet ?? 0}
+        meteredMtd={usageSummary?.aiCreditsNet ?? 0}
       />
 
-      {/* Hero KPIs — all overage-tier metrics. Ent budget caps overage only. */}
+      {/* Hero KPIs — all describe metered charges, which is what the
+          enterprise budget governs. */}
       <div className="grid gap-3 grid-cols-1 md:grid-cols-4">
         <KpiTile
-          label="Overage budget cap"
+          label="Enterprise budget"
           value={entAmount === null ? 'Not set' : formatCurrency(entAmount)}
           hint={
             entAmount === null
               ? 'No enterprise-scope ai_credits budget'
-              : `Caps metered AIC charges only · ${costCenters.length.toLocaleString()} CCs · ${seats.length.toLocaleString()} seats`
+              : `Caps metered charges · ${costCenters.length.toLocaleString()} CCs · ${seats.length.toLocaleString()} seats`
           }
           icon={<Buildings size={22} weight="duotone" className="text-neutral-400" />}
         />
         <KpiTile
-          label="Metered overage MTD"
+          label="Metered charges MTD"
           value={formatCurrency(trackedForecast.totalMtd)}
           hint={
             trackedForecast.hasActual
-              ? `Day ${forecast.daysElapsed} of ${forecast.daysInMonth} · billing usage API (post-pool)`
+              ? `Day ${forecast.daysElapsed} of ${forecast.daysInMonth} · billing usage API`
               : `Day ${forecast.daysElapsed} of ${forecast.daysInMonth} · tracked ULB scopes (proxy)`
           }
           icon={<CurrencyDollar size={22} weight="duotone" className="text-neutral-400" />}
         />
         <KpiTile
-          label="Projected overage"
+          label="Projected metered charges"
           value={formatCurrency(trackedForecast.totalProjected)}
           hint={
             entAmount === null
-              ? 'No overage cap to compare against'
+              ? 'No enterprise budget to compare against'
               : overDelta > 0
-                ? `${formatCurrency(overDelta)} over cap`
-                : `${formatCurrency(-overDelta)} under cap`
+                ? `${formatCurrency(overDelta)} over budget`
+                : `${formatCurrency(-overDelta)} under budget`
           }
           tone={entAmount !== null && overDelta > 0 ? 'warn' : 'neutral'}
           icon={<TrendUp size={22} weight="duotone" className="text-neutral-400" />}
         />
         <KpiTile
-          label="Overage headroom"
+          label="Headroom"
           value={headroomVsEnt === null ? '—' : formatCurrency(headroomVsEnt)}
           hint={
             entAmount === null
-              ? 'Requires overage budget'
-              : `${formatPercent(trackedForecast.totalMtd / Math.max(1, entAmount))} of cap spent`
+              ? 'Requires enterprise budget'
+              : `${formatPercent(trackedForecast.totalMtd / Math.max(1, entAmount))} of enterprise budget spent`
           }
           icon={<Receipt size={22} weight="duotone" className="text-neutral-400" />}
         />
       </div>
 
-      {/* Entitlement pool — drawn first, governed by ULBs only. Sits above
-          the overage forecast so readers see the upstream tier first. */}
-      <EntitlementReservoirCard seatCost={seatCost} overageMtd={usageSummary?.aiCreditsNet ?? null} />
+      {/* Shared pool — drawn first, governed by ULBs only. Sits above the
+          metered-charge forecast so readers see the upstream funding tier first. */}
+      <SharedPoolCard seatCost={seatCost} meteredMtd={usageSummary?.aiCreditsNet ?? null} />
 
       <ForecastBreakdownCard tracked={trackedForecast} entBudget={entAmount} />
 
@@ -363,10 +363,10 @@ function ForecastBreakdownCard({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Forecasted metered overage</CardTitle>
+        <CardTitle>Forecasted metered charges</CardTitle>
         <p className="text-xs text-neutral-500 mt-1">
-          Tier 2 only — where overage will accrue if the pool is (or becomes)
-          exhausted. Pool drawdown above is not reflected here.
+          Metered charges accrue once the shared pool is exhausted. Pool
+          drawdown shown above is not reflected here.
         </p>
       </CardHeader>
       <CardContent className="grid gap-4">
@@ -882,7 +882,7 @@ function LicenseCostCard({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>License cost vs. overage budget</CardTitle>
+        <CardTitle>License cost vs. enterprise budget</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="grid gap-3 grid-cols-1 sm:grid-cols-4">
@@ -926,10 +926,10 @@ function LicenseCostCard({
 
         {ratio !== null ? (
           <div className="text-xs text-neutral-600 dark:text-neutral-400">
-            Overage budget ({formatCurrency(entBudget ?? 0)}) is{' '}
+            Enterprise budget ({formatCurrency(entBudget ?? 0)}) is{' '}
             <span className="font-medium tabular-nums">{formatPercent(ratio)}</span> of
-            monthly license spend — caps metered AIC charges only, not the
-            pool itself (see Entitlement Pool above).
+            monthly license spend — caps metered charges only, not the shared
+            pool itself (see Shared Pool above).
           </div>
         ) : null}
         <p className="text-[11px] text-neutral-500 dark:text-neutral-500 leading-snug">
@@ -1008,19 +1008,20 @@ function LicenseRow({
 }
 
 /**
- * TwoTierBanner — primer explaining the pool-vs-overage model so the
- * "overage budget" framing of the hero KPIs makes sense at a glance.
- * Compact, dismissible-feeling, with a clear status line based on whether
- * metered overage has kicked in yet.
+ * BudgetModelBanner — primer that frames the page using the docs'
+ * canonical terms: a shared pool of included AI credits is drawn first,
+ * and metered charges accrue once it's exhausted. Enterprise and cost
+ * center budgets only cap metered charges; only user-level budgets
+ * (universal + individual) constrain per-user pool drawdown.
  */
-function TwoTierBanner({
+function BudgetModelBanner({
   hasUsage,
-  overageMtd,
+  meteredMtd,
 }: {
   hasUsage: boolean
-  overageMtd: number
+  meteredMtd: number
 }) {
-  const overageActive = hasUsage && overageMtd > 0
+  const meteredActive = hasUsage && meteredMtd > 0
   return (
     <div className="rounded-md border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900/40 px-3 py-2 text-xs flex items-start gap-2">
       <Stack
@@ -1030,29 +1031,31 @@ function TwoTierBanner({
       />
       <div className="flex-1 min-w-0 leading-relaxed text-neutral-700 dark:text-neutral-300">
         <span className="font-medium text-neutral-900 dark:text-neutral-100">
-          AI credits bill in two tiers.
+          How AI credits bill.
         </span>{' '}
         <span className="text-neutral-600 dark:text-neutral-400">
-          Tier&nbsp;1 — the <strong>entitlement pool</strong> from CB/CE licenses —
-          is drawn first and is only constrained by per-user ULBs. Tier&nbsp;2 —{' '}
-          <strong>metered overage</strong> at $0.01/AIC — is what enterprise and
-          cost-center budgets actually cap. The KPIs below all describe Tier&nbsp;2.
+          Your CB and CE licenses fund a <strong>shared pool</strong> of
+          included AI credits, drawn first and constrained only by user-level
+          budgets (universal ULB + individual overrides). Once the pool is
+          exhausted, usage becomes <strong>metered charges</strong> at $0.01
+          per AI credit — that's what the enterprise budget and any cost
+          center budgets cap. The KPIs below describe metered charges only.
         </span>
         <span className="ml-2 inline-flex items-center gap-1 align-middle">
           {hasUsage ? (
-            overageActive ? (
+            meteredActive ? (
               <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-900 dark:text-amber-200 px-2 py-0.5 text-[10px] font-medium">
                 <WarningCircle size={11} weight="fill" />
-                Overage active · pool exhausted
+                Metered charges active · pool exhausted
               </span>
             ) : (
               <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-900 dark:text-emerald-200 px-2 py-0.5 text-[10px] font-medium">
-                Pool still funding usage · $0 overage
+                Pool still funding usage · $0 metered
               </span>
             )
           ) : (
             <span className="inline-flex items-center gap-1 rounded-full bg-neutral-200 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 px-2 py-0.5 text-[10px] font-medium">
-              Overage status unknown · billing API not reachable
+              Metered status unknown · billing API not reachable
             </span>
           )}
         </span>
@@ -1070,23 +1073,23 @@ function TwoTierBanner({
 }
 
 /**
- * EntitlementReservoirCard — visualizes the upstream (Tier 1) pool that the
- * enterprise's CB/CE licenses entitle the organization to consume before any
- * metered overage begins. Modeled after the Tier Planner's ReservoirCard in
- * xrvk/copilot-budget-command-calculator.
+ * SharedPoolCard — visualizes the included AI credit pool that the
+ * enterprise's CB and CE licenses entitle the organization to consume
+ * before any metered charges begin. Terminology matches the GitHub Copilot
+ * billing docs ("shared pool", "pool value", "metered charges").
  *
- * We intentionally do NOT display a "drawdown percentage" against this pool:
- * the billing usage summary API only reports post-pool overage. The closest
- * inference is binary — if `overageMtd > 0`, the pool was exhausted at some
- * point this period; otherwise it's still funding usage. Surfacing a
- * fabricated drawdown ratio would mislead, so we stick to the binary signal.
+ * We intentionally do NOT display a "drawdown percentage" against the pool:
+ * the billing usage summary API only reports metered charges. The closest
+ * inference is binary — if `meteredMtd > 0`, the pool was exhausted at some
+ * point this period; otherwise it's still funding usage. A fabricated
+ * drawdown ratio would mislead.
  */
-function EntitlementReservoirCard({
+function SharedPoolCard({
   seatCost,
-  overageMtd,
+  meteredMtd,
 }: {
   seatCost: ReturnType<typeof seatCostBreakdown>
-  overageMtd: number | null
+  meteredMtd: number | null
 }) {
   const credits = includedAiCredits(seatCost.business, seatCost.enterprise)
   if (credits.totalCredits === 0) {
@@ -1094,20 +1097,20 @@ function EntitlementReservoirCard({
   }
   const avgCreditsPerSeat =
     seatCost.total > 0 ? credits.totalCredits / seatCost.total : 0
-  const poolExhausted = overageMtd !== null && overageMtd > 0
+  const poolExhausted = meteredMtd !== null && meteredMtd > 0
   return (
     <Card>
       <CardHeader>
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div>
-            <CardTitle>Entitlement pool · Tier 1</CardTitle>
+            <CardTitle>Shared pool</CardTitle>
             <p className="text-xs text-neutral-500 mt-1 max-w-2xl">
               Included AI credits from your CB and CE licenses, pooled at the
-              enterprise. Drawn before any metered charges.{' '}
+              enterprise and drawn before any metered charges.{' '}
               <strong className="text-neutral-700 dark:text-neutral-300">
-                Enterprise and cost-center budgets do not govern this tier
+                Enterprise and cost center budgets do not govern the pool
               </strong>{' '}
-              — only per-user ULBs cap individual drawdown.
+              — only user-level budgets cap individual drawdown.
             </p>
           </div>
           {credits.promoActive ? (
@@ -1158,14 +1161,14 @@ function EntitlementReservoirCard({
         {/* Per-license breakdown rows */}
         <div className="space-y-2">
           {seatCost.business > 0 ? (
-            <ReservoirLicenseRow
+            <PoolLicenseRow
               label="Copilot Business"
               seats={seatCost.business}
               creditsPerSeat={credits.perBusiness}
             />
           ) : null}
           {seatCost.enterprise > 0 ? (
-            <ReservoirLicenseRow
+            <PoolLicenseRow
               label="Copilot Enterprise"
               seats={seatCost.enterprise}
               creditsPerSeat={credits.perEnterprise}
@@ -1177,14 +1180,14 @@ function EntitlementReservoirCard({
         <div
           className={
             'rounded-md border px-3 py-2 text-xs ' +
-            (overageMtd === null
+            (meteredMtd === null
               ? 'border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900/40 text-neutral-600 dark:text-neutral-400'
               : poolExhausted
                 ? 'border-amber-300 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200'
                 : 'border-emerald-300 dark:border-emerald-800/60 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-200')
           }
         >
-          {overageMtd === null ? (
+          {meteredMtd === null ? (
             <>
               Pool drawdown is not directly reported by the billing API. Connect
               billing scope to see whether the pool has been exhausted.
@@ -1192,14 +1195,14 @@ function EntitlementReservoirCard({
           ) : poolExhausted ? (
             <>
               <strong>Pool exhausted this billing period.</strong>{' '}
-              {formatCurrency(overageMtd)} of metered overage has been charged so
-              far — see Tier 2 metrics above and the forecast below.
+              {formatCurrency(meteredMtd)} of metered charges accrued so far —
+              see metered-charge metrics above and the forecast below.
             </>
           ) : (
             <>
-              <strong>Pool is still funding all AIC usage this period.</strong>{' '}
-              $0 metered overage so far — the Tier 2 budget caps below are
-              precautionary until the pool runs out.
+              <strong>Pool is still funding all AI credit usage this period.</strong>{' '}
+              $0 in metered charges so far — the enterprise and cost center
+              budgets below are precautionary until the pool runs out.
             </>
           )}
         </div>
@@ -1222,7 +1225,7 @@ function EntitlementReservoirCard({
   )
 }
 
-function ReservoirLicenseRow({
+function PoolLicenseRow({
   label,
   seats,
   creditsPerSeat,
