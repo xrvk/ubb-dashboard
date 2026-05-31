@@ -138,9 +138,12 @@ export function DashboardPage() {
   ])
 
   const entAmount = pool.enterpriseBudget
-  const overDelta = trackedForecast.totalProjected - (entAmount ?? 0)
-  const headroomVsEnt =
-    entAmount === null ? null : Math.max(0, entAmount - trackedForecast.totalMtd)
+  const credits = includedAiCredits(seatCost.business, seatCost.enterprise)
+  const poolSize = credits.totalCredits > 0 ? credits.totalDollars : null
+  const poolRemaining =
+    poolSize === null ? null : Math.max(0, poolSize - trackedForecast.totalMtd)
+  const forecastOverPool =
+    poolSize === null ? 0 : Math.max(0, trackedForecast.totalProjected - poolSize)
 
   return (
     <div className="grid gap-6">
@@ -151,11 +154,13 @@ export function DashboardPage() {
         usage={usageSummary}
       />
 
-      {/* § 2 — Metered spend so far + forecast. KPIs scope to metered
-          charges (which is what the enterprise budget governs); the
-          forecast card breaks them down across the budget scopes the API
-          does and doesn't report. */}
-      <SectionHeader title="Metered charges" />
+      {/* § 2 — Spend so far + forecast. Numbers are gross AI credit
+          drawdown (consumption from the pool plus any post-pool metered
+          overflow), which reconciles with the per-scope breakdown below
+          and the pool drawdown bar above. The enterprise budget itself
+          caps only the post-pool metered slice, surfaced as a footnote
+          in the breakdown card. */}
+      <SectionHeader title="Spend forecast" />
       <div className="grid gap-3 grid-cols-1 md:grid-cols-4">
         <KpiTile
           label="Enterprise budget"
@@ -163,40 +168,40 @@ export function DashboardPage() {
           hint={
             entAmount === null
               ? 'No enterprise budget'
-              : `Enterprise cap · ${seats.length.toLocaleString()} seats`
+              : `Caps post-pool metered spend`
           }
           icon={<Buildings size={22} weight="duotone" className="text-neutral-400" />}
         />
         <KpiTile
-          label="Metered MTD"
+          label="Spent MTD"
           value={formatCurrency(trackedForecast.totalMtd)}
           hint={
             trackedForecast.hasActual
-              ? `Day ${forecast.daysElapsed} of ${forecast.daysInMonth}`
-              : `Day ${forecast.daysElapsed} of ${forecast.daysInMonth}. ULB proxy`
+              ? `Day ${forecast.daysElapsed} of ${forecast.daysInMonth} · gross AIC`
+              : `Day ${forecast.daysElapsed} of ${forecast.daysInMonth} · ULB proxy`
           }
           icon={<CurrencyDollar size={22} weight="duotone" className="text-neutral-400" />}
         />
         <KpiTile
-          label="Forecast"
+          label="Forecast EoM"
           value={formatCurrency(trackedForecast.totalProjected)}
           hint={
-            entAmount === null
-              ? 'No budget set'
-              : overDelta > 0
-                ? `${formatCurrency(overDelta)} over budget`
-                : `${formatCurrency(-overDelta)} under budget`
+            poolSize === null
+              ? 'Gross AIC, end of month'
+              : forecastOverPool > 0
+                ? `${formatCurrency(forecastOverPool)} projected over pool`
+                : 'Stays within pool'
           }
-          tone={entAmount !== null && overDelta > 0 ? 'warn' : 'neutral'}
+          tone={forecastOverPool > 0 ? 'warn' : 'neutral'}
           icon={<TrendUp size={22} weight="duotone" className="text-neutral-400" />}
         />
         <KpiTile
-          label="Headroom"
-          value={headroomVsEnt === null ? '—' : formatCurrency(headroomVsEnt)}
+          label="Pool remaining"
+          value={poolRemaining === null ? '—' : formatCurrency(poolRemaining)}
           hint={
-            entAmount === null
-              ? 'Set enterprise budget'
-              : `${formatPercent(trackedForecast.totalMtd / Math.max(1, entAmount))} of budget spent`
+            poolSize === null
+              ? 'No pool'
+              : `${formatPercent(1 - poolRemaining! / Math.max(1, poolSize))} of pool drawn`
           }
           icon={<Receipt size={22} weight="duotone" className="text-neutral-400" />}
         />
