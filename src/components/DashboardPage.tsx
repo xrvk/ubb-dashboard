@@ -149,8 +149,6 @@ export function DashboardPage() {
       <PoolAndLicensesCard
         seatCost={seatCost}
         usage={usageSummary}
-        meteredMtd={usageSummary?.aiCreditsNet ?? null}
-        ulbDrawnMtd={trackedForecast.universal.mtd + trackedForecast.individual.mtd}
       />
 
       {/* § 2 — Metered spend so far + forecast. KPIs scope to metered
@@ -334,7 +332,7 @@ function ForecastBreakdownCard({
           {tracked.hasActual ? (
             <BreakdownStat
               color={COLOR_CC_ROUTED}
-              label="CC-routed (other)"
+              label="Other / unattributed"
               mtd={ccRoutedMtd}
               projected={ccRoutedProjected}
               sub={
@@ -362,8 +360,9 @@ function ForecastBreakdownCard({
 
         {tracked.hasActual ? (
           <div className="text-[11px] text-neutral-500">
-            Totals come from billing usage. CC-routed is residual spend outside
-            ULB scopes; CC budgets do not report consumed spend.
+            Totals come from billing usage. Other / unattributed is gross AIC
+            drawdown outside universal and individual ULB scopes; CC budgets
+            do not report consumed spend.
           </div>
         ) : tracked.untrackedSeats > 0 ? (
           <div className="rounded-md border border-amber-200 dark:border-amber-900/60 bg-amber-50 dark:bg-amber-950/30 text-amber-900 dark:text-amber-200 px-3 py-2 text-xs">
@@ -470,13 +469,9 @@ function SectionHeader({
 function PoolAndLicensesCard({
   seatCost,
   usage,
-  meteredMtd,
-  ulbDrawnMtd,
 }: {
   seatCost: ReturnType<typeof seatCostBreakdown>
   usage: import('@/lib/api').CopilotUsageSummary | null
-  meteredMtd: number | null
-  ulbDrawnMtd: number
 }) {
   const credits = includedAiCredits(seatCost.business, seatCost.enterprise)
   if (credits.totalCredits === 0) {
@@ -489,15 +484,16 @@ function PoolAndLicensesCard({
     )
   }
   const poolValueWhole = `$${Math.round(credits.totalDollars).toLocaleString('en-US')}`
+  const meteredMtd = usage?.aiCreditsNet ?? null
+  const grossMtd = usage?.aiCreditsGross ?? null
   const poolExhausted = meteredMtd !== null && meteredMtd > 0
   const billedMtd = usage !== null ? usage.cbLicenseNet + usage.ceLicenseNet : null
-  // Pool drawdown so far. When metered charges exist the pool is fully drawn
-  // (metering only starts after exhaustion); otherwise we use the ULB-scope
-  // consumption the budgets API reports as a lower bound. CC-direct users
-  // without an individual ULB also draw the pool but aren't reported here.
-  const poolDrawn = poolExhausted
-    ? credits.totalDollars
-    : Math.min(ulbDrawnMtd, credits.totalDollars)
+  // Pool drawdown so far = gross AIC consumption capped at pool value. Once
+  // gross exceeds the pool, the excess is the metered overflow charged
+  // against the enterprise budget (rendered separately below).
+  const poolDrawn = grossMtd === null
+    ? 0
+    : Math.min(grossMtd, credits.totalDollars)
   const poolPct = credits.totalDollars > 0
     ? Math.min(100, (poolDrawn / credits.totalDollars) * 100)
     : 0
@@ -1017,8 +1013,8 @@ function ActionItemsCard({
     items.push({
       id: 'already-over',
       severity: 'high',
-      title: `${forecast.alreadyOver} user${forecast.alreadyOver === 1 ? '' : 's'} blocked at ULB`,
-      hint: 'Already over individual ULB.',
+      title: `${forecast.alreadyOver} user${forecast.alreadyOver === 1 ? '' : 's'} over individual ULB`,
+      hint: 'Already over individual ULB. Blocked only if ULB is set to prevent further usage.',
       ctaLabel: 'Review',
       onCta: () =>
         window.dispatchEvent(new CustomEvent(NAV_TO_INDIVIDUAL_EVENT, { detail: {} })),
