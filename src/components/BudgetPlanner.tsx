@@ -647,7 +647,7 @@ export function BudgetPlanner() {
                 id="bp-ent"
                 data-bp-target="ent"
                 className="rounded-md border border-neutral-200 dark:border-neutral-800 px-3 py-2.5 grid items-center gap-3 scroll-mt-24"
-                style={{ gridTemplateColumns: 'minmax(0,1fr) 5.5rem auto' }}
+                style={{ gridTemplateColumns: 'minmax(0,1fr) 5.5rem 21rem' }}
               >
                 <div>
                   <div className="text-xs text-neutral-500 dark:text-neutral-400">
@@ -824,7 +824,7 @@ export function BudgetPlanner() {
                       <tr className="text-left text-[10px] uppercase tracking-wide text-neutral-500">
                         <th className="px-3 py-1.5 font-medium">Cost center</th>
                         <th className="px-3 py-1.5 font-medium text-right" style={{ width: '5.5rem' }}>Seats</th>
-                        <th className="px-3 py-1.5 font-medium text-right">Budget ($)</th>
+                        <th className="px-3 py-1.5 font-medium text-right" style={{ width: '21rem' }}>Budget ($)</th>
                       </tr>
                     </thead>
                     <tbody>
