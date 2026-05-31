@@ -1,5 +1,13 @@
 import { describe, it, expect, vi } from 'vitest'
-import { fetchUserBudgets, type ApiFetch, type RawBudget } from '@/lib/api'
+import {
+  buildCostCenterIndex,
+  fetchCostCenters,
+  fetchUserBudgets,
+  resolveCostCenter,
+  type ApiFetch,
+  type CostCenter,
+  type RawBudget,
+} from '@/lib/api'
 
 function fakeBudget(i: number, scope: 'user' | 'enterprise' = 'user'): RawBudget {
   return {
@@ -71,5 +79,154 @@ describe('fetchUserBudgets pagination', () => {
     // Falls back to the number of raw budgets paginated through
     expect(result.totalBudgetCount).toBe(2)
     expect(calls).toBe(2)
+  })
+})
+
+function fakeCC(id: string, name: string, resources: Array<{ type: string; name: string }> = [], state = 'active'): CostCenter {
+  return { id, name, state, resources }
+}
+
+describe('fetchCostCenters', () => {
+  it('returns active cost centers from a single page', async () => {
+    const fetchMock: ApiFetch = vi.fn(async () => ({
+      costCenters: [
+        fakeCC('cc1', 'Eng', [{ type: 'User', name: 'alice' }]),
+        fakeCC('cc2', 'Old', [], 'deleted'),
+      ],
+    }))
+    const result = await fetchCostCenters(fetchMock)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(result.map(c => c.id)).toEqual(['cc1'])
+  })
+
+  it('paginates until a short page is returned', async () => {
+    const PER_PAGE = 100
+    const totalActive = PER_PAGE + 3
+    const fetchMock: ApiFetch = vi.fn(async (path: string) => {
+      const m = path.match(/[?&]page=(\d+)/)
+      const page = m ? Number(m[1]) : 1
+      if (page === 1) {
+        return {
+          costCenters: Array.from({ length: PER_PAGE }, (_, i) =>
+            fakeCC(`cc-p1-${i}`, `n${i}`),
+          ),
+        }
+      }
+      if (page === 2) {
+        return {
+          costCenters: Array.from({ length: 3 }, (_, i) =>
+            fakeCC(`cc-p2-${i}`, `n2-${i}`),
+          ),
+        }
+      }
+      return { costCenters: [] }
+    })
+    const result = await fetchCostCenters(fetchMock)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(result).toHaveLength(totalActive)
+  })
+
+  it('handles empty enterprise', async () => {
+    const fetchMock: ApiFetch = vi.fn(async () => ({ costCenters: [] }))
+    const result = await fetchCostCenters(fetchMock)
+    expect(result).toEqual([])
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('propagates API errors (e.g. 403) so the caller can choose to swallow', async () => {
+    const fetchMock: ApiFetch = vi.fn(async () => {
+      throw new Error('403: forbidden')
+    })
+    await expect(fetchCostCenters(fetchMock)).rejects.toThrow(/forbidden/)
+  })
+
+  it('accepts the snake_case cost_centers shape too', async () => {
+    const fetchMock: ApiFetch = vi.fn(async () => ({
+      cost_centers: [fakeCC('cc1', 'A')],
+    }))
+    const result = await fetchCostCenters(fetchMock)
+    expect(result.map(c => c.id)).toEqual(['cc1'])
+  })
+})
+
+describe('buildCostCenterIndex', () => {
+  it('indexes users and orgs lowercased', () => {
+    const ccs = [
+      fakeCC('cc1', 'Eng', [
+        { type: 'User', name: 'Alice' },
+        { type: 'Org', name: 'GitHub' },
+      ]),
+    ]
+    const idx = buildCostCenterIndex(ccs)
+    expect(idx.userToCC.get('alice')?.id).toBe('cc1')
+    expect(idx.userToCC.has('Alice')).toBe(false)
+    expect(idx.orgToCC.get('github')?.id).toBe('cc1')
+  })
+
+  it('keeps the first occurrence and warns when a user appears in multiple CCs', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const ccs = [
+        fakeCC('cc1', 'First', [{ type: 'User', name: 'alice' }]),
+        fakeCC('cc2', 'Second', [{ type: 'User', name: 'alice' }]),
+      ]
+      const idx = buildCostCenterIndex(ccs)
+      expect(idx.userToCC.get('alice')?.id).toBe('cc1')
+      expect(warn).toHaveBeenCalledTimes(1)
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  it('skips non-active cost centers', () => {
+    const ccs = [
+      fakeCC('cc1', 'Old', [{ type: 'User', name: 'alice' }], 'deleted'),
+    ]
+    const idx = buildCostCenterIndex(ccs)
+    expect(idx.userToCC.size).toBe(0)
+  })
+
+  it('ignores unsupported resource types', () => {
+    const ccs = [
+      fakeCC('cc1', 'X', [{ type: 'Repository', name: 'owner/repo' }]),
+    ]
+    const idx = buildCostCenterIndex(ccs)
+    expect(idx.userToCC.size).toBe(0)
+    expect(idx.orgToCC.size).toBe(0)
+  })
+})
+
+describe('resolveCostCenter', () => {
+  const ccs = [
+    fakeCC('ccu', 'User CC', [{ type: 'User', name: 'alice' }]),
+    fakeCC('cco', 'Org CC', [{ type: 'Org', name: 'github' }]),
+  ]
+  const idx = buildCostCenterIndex(ccs)
+
+  it('prefers direct user membership over org membership', () => {
+    // alice is in both: direct user CC, and her org's CC. User wins.
+    const r = resolveCostCenter('alice', 'github', idx)
+    expect(r?.cc.id).toBe('ccu')
+    expect(r?.via).toBe('user')
+  })
+
+  it('falls back to org membership when user is not directly assigned', () => {
+    const r = resolveCostCenter('bob', 'github', idx)
+    expect(r?.cc.id).toBe('cco')
+    expect(r?.via).toBe('org')
+    expect(r?.viaOrg).toBe('github')
+  })
+
+  it('returns null when neither user nor org match', () => {
+    expect(resolveCostCenter('bob', 'unknown-org', idx)).toBeNull()
+  })
+
+  it('returns null when orgLogin is null and user has no direct membership', () => {
+    expect(resolveCostCenter('bob', null, idx)).toBeNull()
+  })
+
+  it('lookups are case-insensitive on login and org', () => {
+    expect(resolveCostCenter('ALICE', null, idx)?.cc.id).toBe('ccu')
+    expect(resolveCostCenter('bob', 'GitHub', idx)?.cc.id).toBe('cco')
   })
 })

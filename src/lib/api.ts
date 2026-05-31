@@ -240,6 +240,148 @@ interface SeatsResponse {
   seats?: RawSeat[]
 }
 
+// --- Cost centers ---
+
+/**
+ * A resource attached to a cost center. We care about `User` and `Org`
+ * entries; `Repository` and any other future types are preserved on the type
+ * but ignored by the resolver.
+ */
+export interface CostCenterResource {
+  type: 'User' | 'Org' | 'Repository' | string
+  name: string
+}
+
+export interface CostCenter {
+  id: string
+  name: string
+  state: string
+  resources: CostCenterResource[]
+}
+
+/**
+ * How a user resolved to a cost center.
+ * - `user`: the user's login is directly in the CC.
+ * - `org`: the user's Copilot-license-granting org is in the CC.
+ *
+ * Per https://docs.github.com/en/billing/reference/cost-center-allocation
+ * user-direct membership wins over org-inherited.
+ */
+export type CostCenterResolutionVia = 'user' | 'org'
+
+export interface CostCenterResolution {
+  cc: CostCenter
+  via: CostCenterResolutionVia
+  /** When via === 'org', the login slug of the org that contributed the CC. */
+  viaOrg?: string
+}
+
+interface CostCentersResponse {
+  costCenters?: CostCenter[]
+  cost_centers?: CostCenter[]
+}
+
+/**
+ * Fetch every active cost center in the enterprise.
+ *
+ * Uses page-based pagination (`?page=N&per_page=100`) and stops on the first
+ * short or empty page, matching `fetchUserBudgets`. We accept both
+ * `costCenters` (current shape) and `cost_centers` (snake_case) just in case
+ * the API normalizes naming across hosts.
+ *
+ * Returns only `state === 'active'` entries since this dashboard only cares
+ * about live attribution.
+ */
+export async function fetchCostCenters(apiFetch: ApiFetch): Promise<CostCenter[]> {
+  const PAGE_SAFETY_LIMIT = 200
+  const PER_PAGE = 100
+  const all: CostCenter[] = []
+  let page = 1
+  while (page <= PAGE_SAFETY_LIMIT) {
+    const data = (await apiFetch(
+      `enterprise:/settings/billing/cost-centers?state=active&per_page=${PER_PAGE}&page=${page}`,
+    )) as CostCentersResponse | CostCenter[]
+    const list: CostCenter[] = Array.isArray(data)
+      ? data
+      : (data?.costCenters ?? data?.cost_centers ?? [])
+    if (list.length === 0) break
+    all.push(...list)
+    if (list.length < PER_PAGE) break
+    page += 1
+  }
+  if (page > PAGE_SAFETY_LIMIT) {
+    console.warn(
+      `[ind-ulb-dashboard] Cost-center pagination safety limit hit at ${PAGE_SAFETY_LIMIT} pages; loaded ${all.length}.`,
+    )
+  }
+  return all.filter(cc => cc.state === 'active')
+}
+
+export interface CostCenterIndex {
+  userToCC: Map<string, CostCenter>
+  orgToCC: Map<string, CostCenter>
+}
+
+/**
+ * Build lookup maps from a list of cost centers. Keys are lowercased logins
+ * / org slugs. If the same login or org appears in multiple active CCs, the
+ * first occurrence wins and we log a single console.warn per duplicate so
+ * admins can clean it up.
+ */
+export function buildCostCenterIndex(costCenters: CostCenter[]): CostCenterIndex {
+  const userToCC = new Map<string, CostCenter>()
+  const orgToCC = new Map<string, CostCenter>()
+  for (const cc of costCenters) {
+    if (cc.state !== 'active') continue
+    for (const r of cc.resources ?? []) {
+      if (!r.name) continue
+      const key = r.name.toLowerCase()
+      if (r.type === 'User') {
+        if (userToCC.has(key)) {
+          console.warn(
+            `[ind-ulb-dashboard] User "${r.name}" is in multiple active cost centers; using "${userToCC.get(key)!.name}".`,
+          )
+          continue
+        }
+        userToCC.set(key, cc)
+      } else if (r.type === 'Org') {
+        if (orgToCC.has(key)) {
+          console.warn(
+            `[ind-ulb-dashboard] Org "${r.name}" is in multiple active cost centers; using "${orgToCC.get(key)!.name}".`,
+          )
+          continue
+        }
+        orgToCC.set(key, cc)
+      }
+    }
+  }
+  return { userToCC, orgToCC }
+}
+
+/**
+ * Resolve a user to their effective cost center for Copilot billing.
+ *
+ * Priority (per cost-center-allocation docs):
+ *   1. Direct User membership
+ *   2. Org membership (via the org that granted the user's Copilot license)
+ *   3. null (enterprise default — surfaced as "Unassigned")
+ */
+export function resolveCostCenter(
+  login: string,
+  orgLogin: string | null | undefined,
+  index: CostCenterIndex,
+): CostCenterResolution | null {
+  const userHit = index.userToCC.get(login.toLowerCase())
+  if (userHit) return { cc: userHit, via: 'user' }
+  if (orgLogin) {
+    const orgHit = index.orgToCC.get(orgLogin.toLowerCase())
+    if (orgHit) return { cc: orgHit, via: 'org', viaOrg: orgLogin }
+  }
+  return null
+}
+
+// --- Copilot seats: fetcher ---
+
 /**
  * Fetch every Copilot seat in the enterprise. Used to power the username
  * autocomplete in the "Add ULB" dialog so admins don't have to remember
