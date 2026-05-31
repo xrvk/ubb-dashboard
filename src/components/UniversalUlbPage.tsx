@@ -603,39 +603,17 @@ export function UniversalUlbPage() {
                 Step 3 · Outliers ({threshold.powerUsers.length.toLocaleString()})
               </h2>
               <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
-                Suggested individual ULB = max-month $ × (1 + growth buffer). Tweak buffer or edit individual rows below.
+                Suggested individual ULB = max-month $ × (1 + growth buffer). Edit rows below or tweak the buffer before applying.
               </p>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
-              {threshold.powerUsers.length > 0 && (
-                <label className="flex items-center gap-1.5 text-xs text-neutral-600 dark:text-neutral-400">
-                  <span>Growth buffer</span>
-                  <Input
-                    type="number"
-                    min={0}
-                    max={MAX_OUTLIER_BUFFER_PCT}
-                    step={1}
-                    value={outlierBufferPct}
-                    onChange={e => {
-                      const n = Number(e.target.value)
-                      if (Number.isNaN(n)) return
-                      setOutlierBufferPct(Math.max(0, Math.min(MAX_OUTLIER_BUFFER_PCT, Math.round(n))))
-                    }}
-                    className="h-8 w-16"
-                    aria-label="Growth buffer percent"
-                  />
-                  <span>%</span>
-                </label>
-              )}
-              {threshold.powerUsers.length > 0 && (
-                <Button
-                  onClick={() => setConfirmCreateOpen(true)}
-                  disabled={selectedOutliers.size === 0 || batchProgress !== null}
-                >
-                  {batchProgress ? 'Creating…' : `Apply ind ULB (${selectedOutliers.size.toLocaleString()})`}
-                </Button>
-              )}
-            </div>
+            {threshold.powerUsers.length > 0 && (
+              <Button
+                onClick={() => setConfirmCreateOpen(true)}
+                disabled={selectedOutliers.size === 0 || batchProgress !== null}
+              >
+                {batchProgress ? 'Creating…' : `Apply ind ULB (${selectedOutliers.size.toLocaleString()})`}
+              </Button>
+            )}
           </div>
 
           {threshold.powerUsers.length === 0 ? (
@@ -895,7 +873,7 @@ export function UniversalUlbPage() {
             these users.
           </div>
 
-          <div className="rounded-md border border-neutral-200 dark:border-neutral-800 p-3 text-xs grid gap-1.5 sm:grid-cols-2 mb-3">
+          <div className="rounded-md border border-neutral-200 dark:border-neutral-800 p-3 text-xs grid gap-3 sm:grid-cols-3 mb-3">
             <div>
               <div className="text-neutral-500 dark:text-neutral-400">Total monthly cap</div>
               <div className="font-semibold text-sm">
@@ -911,6 +889,33 @@ export function UniversalUlbPage() {
                     {' '}· {editedTargetCount.toLocaleString()} edited
                   </span>
                 )}
+              </div>
+            </div>
+            <div>
+              <label
+                htmlFor="growth-buffer-input"
+                className="text-neutral-500 dark:text-neutral-400 block"
+              >
+                Growth buffer
+              </label>
+              <div className="flex items-center gap-1">
+                <Input
+                  id="growth-buffer-input"
+                  type="number"
+                  min={0}
+                  max={MAX_OUTLIER_BUFFER_PCT}
+                  step={1}
+                  value={outlierBufferPct}
+                  onChange={e => {
+                    const n = Number(e.target.value)
+                    if (Number.isNaN(n)) return
+                    setOutlierBufferPct(Math.max(0, Math.min(MAX_OUTLIER_BUFFER_PCT, Math.round(n))))
+                  }}
+                  disabled={batchProgress !== null}
+                  className="h-7 w-16"
+                  aria-label="Growth buffer percent"
+                />
+                <span className="font-semibold text-sm">%</span>
               </div>
             </div>
           </div>
