@@ -118,16 +118,16 @@ describe('applyThreshold', () => {
 describe('calcThreshold', () => {
   const users = Array.from({ length: 10 }, (_, i) => makeUser(`user-${i}`, (i + 1) * 100))
 
+  it('top-5 gets roughly 1 power user from 10', () => {
+    expect(calcThreshold(users, 'top-5').powerUserCount).toBe(1)
+  })
+
   it('top-10 gets roughly 1 power user from 10', () => {
     expect(calcThreshold(users, 'top-10').powerUserCount).toBe(1)
   })
 
-  it('top-20 gets roughly 2 power users from 10', () => {
-    expect(calcThreshold(users, 'top-20').powerUserCount).toBe(2)
-  })
-
-  it('top-30 gets roughly 3 power users from 10', () => {
-    expect(calcThreshold(users, 'top-30').powerUserCount).toBe(3)
+  it('top-15 gets roughly 2 power users from 10', () => {
+    expect(calcThreshold(users, 'top-15').powerUserCount).toBe(2)
   })
 
   it('custom mode treats value as top-N%', () => {
@@ -136,7 +136,7 @@ describe('calcThreshold', () => {
   })
 
   it('handles empty input', () => {
-    const result = calcThreshold([], 'top-20')
+    const result = calcThreshold([], 'top-10')
     expect(result.powerUserCount).toBe(0)
     expect(result.regularUserCount).toBe(0)
   })

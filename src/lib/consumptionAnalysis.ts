@@ -49,7 +49,7 @@ export interface ThresholdResult {
   suggestedULB: number
 }
 
-export type ThresholdMode = 'top-10' | 'top-20' | 'top-30' | 'custom'
+export type ThresholdMode = 'top-5' | 'top-10' | 'top-15' | 'custom'
 
 // --- Adapter ---
 
@@ -149,16 +149,16 @@ export function calcThreshold(
   const sorted = [...users].sort((a, b) => b.totalAICs - a.totalAICs)
 
   switch (mode) {
+    case 'top-5': {
+      const count = Math.max(1, Math.ceil(sorted.length * 0.05))
+      return applyThreshold(users, sorted[count - 1].totalAICs)
+    }
     case 'top-10': {
       const count = Math.max(1, Math.ceil(sorted.length * 0.1))
       return applyThreshold(users, sorted[count - 1].totalAICs)
     }
-    case 'top-20': {
-      const count = Math.max(1, Math.ceil(sorted.length * 0.2))
-      return applyThreshold(users, sorted[count - 1].totalAICs)
-    }
-    case 'top-30': {
-      const count = Math.max(1, Math.ceil(sorted.length * 0.3))
+    case 'top-15': {
+      const count = Math.max(1, Math.ceil(sorted.length * 0.15))
       return applyThreshold(users, sorted[count - 1].totalAICs)
     }
     case 'custom': {

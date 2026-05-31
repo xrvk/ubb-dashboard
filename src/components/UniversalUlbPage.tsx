@@ -39,9 +39,9 @@ const AICS_PER_USD = 100
 const OUTLIER_BUFFER_PCT = 0.1
 
 const MODE_LABELS: Record<ThresholdMode, string> = {
+  'top-5': 'Top 5%',
   'top-10': 'Top 10%',
-  'top-20': 'Top 20%',
-  'top-30': 'Top 30%',
+  'top-15': 'Top 15%',
   custom: 'Custom',
 }
 
@@ -68,7 +68,7 @@ export function UniversalUlbPage() {
 
   const [editing, setEditing] = useState(false)
   const [cacheBust, setCacheBust] = useState(0)
-  const [thresholdMode, setThresholdMode] = useState<ThresholdMode>('top-20')
+  const [thresholdMode, setThresholdMode] = useState<ThresholdMode>('top-10')
   // Overrides are tagged with a session signature derived from the current
   // dataset; when the dataset changes (new CSV ingested, ent switched) the
   // tag no longer matches and the override naturally falls away. Lets us
@@ -474,7 +474,7 @@ export function UniversalUlbPage() {
             </div>
             {hasData ? (
               <div className="flex flex-wrap items-center gap-1.5">
-                {(['top-10', 'top-20', 'top-30', 'custom'] as ThresholdMode[]).map(mode => (
+                {(['top-5', 'top-10', 'top-15', 'custom'] as ThresholdMode[]).map(mode => (
                   <Button
                     key={mode}
                     size="sm"
