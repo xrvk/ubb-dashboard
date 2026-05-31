@@ -330,6 +330,8 @@ export function UniversalUlbPage() {
                     onClick={() => {
                       setThresholdMode(mode)
                       if (mode !== 'custom') setCustomThresholdEntry(null)
+                      // Snap ULB back to P95 for the new regular cohort.
+                      setUlbOverrideEntry(null)
                     }}
                   >
                     {MODE_LABELS[mode]}
@@ -358,6 +360,9 @@ export function UniversalUlbPage() {
                 ? aics => {
                     setThresholdMode('custom')
                     setCustomThresholdEntry({ sig: datasetSig, value: aics })
+                    // Snap ULB back to the recomputed P95 of regulars by
+                    // clearing any manual y override.
+                    setUlbOverrideEntry(null)
                   }
                 : undefined
             }
