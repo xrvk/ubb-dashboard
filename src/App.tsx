@@ -9,6 +9,7 @@ import { IndividualUlbPage } from '@/components/IndividualUlbPage'
 import { IndividualUlbTaskBanner } from '@/components/IndividualUlbTaskBanner'
 import { BudgetPlannerHintBanner } from '@/components/BudgetPlannerHintBanner'
 import { OverviewPage } from '@/components/OverviewPage'
+import { DashboardPage } from '@/components/DashboardPage'
 import { UniversalUlbPage } from '@/components/UniversalUlbPage'
 import { BudgetConstraintsHelpPage } from '@/components/BudgetConstraintsHelpPage'
 import { Button } from '@/components/ui/button'
@@ -25,10 +26,11 @@ import {
 } from '@/lib/navEvents'
 import type { BulkApplySnapshot } from '@/lib/snapshot'
 
-type Tab = 'overview' | 'individual' | 'universal' | 'budget-model'
+type Tab = 'dashboard' | 'overview' | 'individual' | 'universal' | 'budget-model'
 
 const TAB_LABELS: Record<Tab, string> = {
-  overview: 'Overview',
+  dashboard: 'Dashboard',
+  overview: 'Enterprise Budgets',
   individual: 'Individual ULBs',
   universal: 'Universal ULB',
   'budget-model': 'Budget model',
@@ -38,7 +40,7 @@ export function App() {
   const { credentials, refresh, disconnect, loading } = useCredentials()
   const { resolvedTheme, setTheme } = useTheme()
 
-  const [tab, setTab] = useState<Tab>('overview')
+  const [tab, setTab] = useState<Tab>('dashboard')
 
   /**
    * Switch tab AND scroll the page so the sticky tab bar pins at the very
@@ -188,7 +190,7 @@ export function App() {
         <div className="sticky top-0 z-10 border-b border-neutral-200 dark:border-neutral-800 bg-white/95 dark:bg-neutral-950/95 backdrop-blur supports-[backdrop-filter]:bg-white/80 dark:supports-[backdrop-filter]:bg-neutral-950/80">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 py-2 flex items-center gap-3">
             <div className="flex flex-1 sm:flex-initial gap-1 p-1 rounded-md bg-neutral-100 dark:bg-neutral-800">
-              {(['overview', 'universal', 'individual'] as const).map(t => (
+              {(['dashboard', 'overview', 'universal', 'individual'] as const).map(t => (
                 <button
                   key={t}
                   onClick={() => goToTab(t)}
@@ -257,7 +259,9 @@ export function App() {
         <ImportPanel />
 
         {credentials ? (
-          tab === 'overview' ? (
+          tab === 'dashboard' ? (
+            <DashboardPage />
+          ) : tab === 'overview' ? (
             <OverviewPage />
           ) : tab === 'individual' ? (
             <IndividualUlbPage
