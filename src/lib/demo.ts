@@ -88,6 +88,23 @@ export function readDemoCountFromUrl(): number | null {
  * excludeCostCenterUsage=true so CCs become independent pools instead of
  * sub-allocations of the umbrella.
  */
+/**
+ * Optional `?pool=N` query param (0-100) — target % drawn from the shared
+ * AI credit pool for the demo. When set, demo individual-budget and
+ * universal-ULB consumed amounts are scaled so total ULB consumption
+ * matches `N%` of the seat-derived pool value, and `aiCreditsNet` is
+ * forced to 0 (no metered overflow yet) when `N` is below 100.
+ */
+export function readDemoPoolPctFromUrl(): number | null {
+  if (typeof window === 'undefined') return null
+  const params = new URLSearchParams(window.location.search)
+  const v = params.get('pool')
+  if (v === null) return null
+  const n = Number(v)
+  if (!Number.isFinite(n)) return null
+  return Math.max(0, Math.min(100, n))
+}
+
 export function readDemoExcludeCcFromUrl(): boolean {
   if (typeof window === 'undefined') return false
   const params = new URLSearchParams(window.location.search)
@@ -186,6 +203,33 @@ export function generateDemoUniversalUlb(): UniversalUlb {
 }
 
 /**
+ * Scale the consumed amounts on demo budgets + universal ULB so that their
+ * sum matches `targetDollars`. Mutates inputs in place. Used when the demo
+ * is told (via `?pool=N`) to show a partially-drawn pool.
+ */
+export function scaleDemoConsumptionTo(
+  targetDollars: number,
+  budgets: UserBudget[],
+  universal: UniversalUlb,
+) {
+  const currentInd = budgets.reduce((s, b) => s + b.consumedAmount, 0)
+  if (targetDollars <= 0) {
+    universal.consumedAmount = 0
+    for (const b of budgets) b.consumedAmount = 0
+    return
+  }
+  // Hold universal at ~18% of total (matches generateDemoUsageSummary mix).
+  const targetUniv = Math.round(targetDollars * 0.18 * 100) / 100
+  const targetInd = Math.max(0, targetDollars - targetUniv)
+  universal.consumedAmount = targetUniv
+  if (currentInd <= 0) return
+  const scale = targetInd / currentInd
+  for (const b of budgets) {
+    b.consumedAmount = Math.round(b.consumedAmount * scale * 100) / 100
+  }
+}
+
+/**
  * Every CC carries a budget so the unassignedLeftover check stays vacuous.
  * Numbers sit in the realistic $3k–$8k per-CC band but their sum ($20k) is
  * deliberately above the $9k enterprise cap — that's the cc_vs_enterprise
@@ -214,13 +258,22 @@ export function generateDemoCostCenterBudgets(): Map<string, CostCenterBudget> {
 /**
  * Synthesize a plausible billing-usage summary for demo mode. AIC spend is
  * derived from the demo individual budgets plus a small "untracked CC-direct"
- * bucket so the dashboard's 3-way breakdown has data in every slice.
+ * bucket so the dashboard's 3-way breakdown has data in every slice. When
+ * `poolExhausted` is false (caller scaled consumption below pool capacity),
+ * we report `aiCreditsNet = 0` because metering only kicks in after the
+ * pool is empty.
  */
-export function generateDemoUsageSummary(budgets: UserBudget[]): CopilotUsageSummary {
+export function generateDemoUsageSummary(
+  budgets: UserBudget[],
+  opts?: { poolExhausted?: boolean },
+): CopilotUsageSummary {
+  const poolExhausted = opts?.poolExhausted ?? true
   const indivConsumed = budgets.reduce((s, b) => s + b.consumedAmount, 0)
   const universalConsumed = Math.round(indivConsumed * 0.18 * 100) / 100
   const ccRouted = Math.round(indivConsumed * 0.12 * 100) / 100
-  const aiCreditsNet = Math.round((indivConsumed + universalConsumed + ccRouted) * 100) / 100
+  const aiCreditsNet = poolExhausted
+    ? Math.round((indivConsumed + universalConsumed + ccRouted) * 100) / 100
+    : 0
   const aiCreditsGross = Math.round(aiCreditsNet * 1.05 * 100) / 100
   const now = new Date()
   const seatCount = Math.max(budgets.length, 1)

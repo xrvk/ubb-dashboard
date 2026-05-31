@@ -6,11 +6,6 @@ import {
   PieChart,
   ResponsiveContainer,
   Tooltip,
-  Bar,
-  BarChart,
-  CartesianGrid,
-  XAxis,
-  YAxis,
 } from 'recharts'
 import {
   Buildings,
@@ -29,7 +24,7 @@ import {
 } from '@/lib/pricing'
 import { forecastSummary } from '@/lib/status'
 import { projectMonthlyBudget } from '@/lib/projection'
-import { formatCurrency, formatCurrencyShort, formatPercent, cn } from '@/lib/utils'
+import { formatCurrency, formatPercent, cn } from '@/lib/utils'
 import {
   NAV_TO_BUDGET_MODEL_EVENT,
   NAV_TO_INDIVIDUAL_EVENT,
@@ -150,6 +145,7 @@ export function DashboardPage() {
         seatCost={seatCost}
         usage={usageSummary}
         meteredMtd={usageSummary?.aiCreditsNet ?? null}
+        ulbDrawnMtd={trackedForecast.universal.mtd + trackedForecast.individual.mtd}
       />
 
       {/* § 2 — Metered spend so far + forecast. KPIs scope to metered
@@ -214,7 +210,6 @@ export function DashboardPage() {
         budgets={budgets}
         loginToCostCenter={loginToCostCenter}
       />
-      <BudgetVsCapCard pool={pool} />
 
       {/* § 4 — Action items: blocked users, missing budgets, allocation
           risk. */}
@@ -464,85 +459,6 @@ function BreakdownStat({
   )
 }
 
-// CC palette retained for future use.
-
-function BudgetVsCapCard({ pool }: { pool: ReturnType<typeof computePoolSplit> }) {
-  const data = useMemo(
-    () =>
-      pool.costCenters.map(s => ({
-        name: s.name,
-        budget: s.budgetAmount ?? 0,
-        ulbCeiling: s.ulbCeiling,
-        uncapped: s.budgetAmount === null,
-      })),
-    [pool.costCenters],
-  )
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Budget vs. effective cap (ULB ceiling)</CardTitle>
-      </CardHeader>
-      <CardContent>
-        {data.length === 0 ? (
-          <EmptyChart message="No cost centers route Copilot today." />
-        ) : (
-          <>
-            <div style={{ height: Math.max(180, data.length * 38 + 40) }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart
-                  data={data}
-                  layout="vertical"
-                  margin={{ top: 8, right: 16, left: 8, bottom: 8 }}
-                  barGap={2}
-                  barCategoryGap="20%"
-                >
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e5e5" horizontal={false} />
-                  <XAxis
-                    type="number"
-                    stroke="#888"
-                    fontSize={11}
-                    tickFormatter={v => formatCurrencyShort(Number(v))}
-                  />
-                  <YAxis
-                    type="category"
-                    dataKey="name"
-                    stroke="#888"
-                    fontSize={11}
-                    width={110}
-                  />
-                  <Tooltip
-                    contentStyle={{
-                      fontSize: 12,
-                      borderRadius: 6,
-                      border: '1px solid #e5e5e5',
-                    }}
-                    formatter={(value: number, name: string, item) => {
-                      const datum = item?.payload as { uncapped: boolean } | undefined
-                      if (name === 'budget' && datum?.uncapped) {
-                        return ['Uncapped', 'CC budget']
-                      }
-                      return [formatCurrency(Number(value)), name === 'budget' ? 'CC budget' : 'ULB ceiling']
-                    }}
-                  />
-                  <Bar dataKey="budget" fill="#3b82f6" name="CC budget" radius={[0, 3, 3, 0]} />
-                  <Bar dataKey="ulbCeiling" fill="#10b981" name="ULB ceiling" radius={[0, 3, 3, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-            <div className="mt-2 flex gap-4 text-[11px] text-neutral-500">
-              <LegendDot color="#3b82f6" label="CC budget" />
-              <LegendDot color="#10b981" label="ULB ceiling (Σ seat caps)" />
-              <span className="ml-auto">
-                When ULB ceiling &lt; budget, ULBs bind spend below the budget.
-              </span>
-            </div>
-          </>
-        )}
-      </CardContent>
-    </Card>
-  )
-}
 
 function LegendDot({ color, label }: { color: string; label: string }) {
   return (
@@ -608,10 +524,12 @@ function PoolAndLicensesCard({
   seatCost,
   usage,
   meteredMtd,
+  ulbDrawnMtd,
 }: {
   seatCost: ReturnType<typeof seatCostBreakdown>
   usage: import('@/lib/api').CopilotUsageSummary | null
   meteredMtd: number | null
+  ulbDrawnMtd: number
 }) {
   const credits = includedAiCredits(seatCost.business, seatCost.enterprise)
   if (credits.totalCredits === 0) {
@@ -626,6 +544,16 @@ function PoolAndLicensesCard({
   const poolValueWhole = `$${Math.round(credits.totalDollars).toLocaleString('en-US')}`
   const poolExhausted = meteredMtd !== null && meteredMtd > 0
   const billedMtd = usage !== null ? usage.cbLicenseNet + usage.ceLicenseNet : null
+  // Pool drawdown so far. When metered charges exist the pool is fully drawn
+  // (metering only starts after exhaustion); otherwise we use the ULB-scope
+  // consumption the budgets API reports as a lower bound. CC-direct users
+  // without an individual ULB also draw the pool but aren't reported here.
+  const poolDrawn = poolExhausted
+    ? credits.totalDollars
+    : Math.min(ulbDrawnMtd, credits.totalDollars)
+  const poolPct = credits.totalDollars > 0
+    ? Math.min(100, (poolDrawn / credits.totalDollars) * 100)
+    : 0
 
   return (
     <Card>
@@ -729,44 +657,68 @@ function PoolAndLicensesCard({
           </table>
         </div>
 
-        {/* Status line — answers "how much pool used so far". Binary because
-            the billing API doesn't report pool drawdown directly. */}
-        <div
-          className={
-            'rounded-md border px-3 py-2 text-xs flex flex-wrap items-baseline gap-x-2 gap-y-1 ' +
-            (meteredMtd === null
-              ? 'border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900/40 text-neutral-600 dark:text-neutral-400'
-              : poolExhausted
-                ? 'border-amber-300 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200'
-                : 'border-emerald-300 dark:border-emerald-800/60 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-200')
-          }
-        >
-          {meteredMtd === null ? (
-            <span>
-              Metered status unknown — connect a billing-scope token to see
-              whether the pool has been exhausted.
-            </span>
-          ) : poolExhausted ? (
-            <>
-              <strong>Pool exhausted this period.</strong>
-              <span>
-                {formatCurrency(meteredMtd)} in metered charges so far — see
-                details below.
-              </span>
-            </>
-          ) : (
-            <>
-              <strong>Pool still funding all usage.</strong>
-              <span>$0 in metered charges so far this period.</span>
-            </>
-          )}
-          {billedMtd !== null ? (
-            <span className="ml-auto text-neutral-500 dark:text-neutral-400 text-[11px]">
-              License spend MTD {formatCurrency(billedMtd)} · full-month
-              estimate {formatCurrency(seatCost.monthlyCost)}
-            </span>
-          ) : null}
-        </div>
+        {/* Pool drawdown — answers "how much of the pool has been used so
+            far". We can only see ULB-scope consumption directly; once any
+            metered charges appear, the pool is fully drawn. */}
+        {meteredMtd === null ? (
+          <div className="rounded-md border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900/40 text-neutral-600 dark:text-neutral-400 px-3 py-2 text-xs">
+            Pool drawdown unknown — connect a billing-scope token to see
+            whether the pool has been exhausted.
+          </div>
+        ) : (
+          <div
+            className={cn(
+              'rounded-md border px-3 py-3 space-y-2',
+              poolExhausted
+                ? 'border-amber-300 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-950/40'
+                : poolPct >= 80
+                  ? 'border-amber-200 dark:border-amber-900/40 bg-amber-50/60 dark:bg-amber-950/20'
+                  : 'border-emerald-200 dark:border-emerald-900/60 bg-emerald-50/60 dark:bg-emerald-950/30',
+            )}
+          >
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-xs">
+              <div
+                className={cn(
+                  'font-medium',
+                  poolExhausted
+                    ? 'text-amber-900 dark:text-amber-200'
+                    : poolPct >= 80
+                      ? 'text-amber-900 dark:text-amber-200'
+                      : 'text-emerald-900 dark:text-emerald-200',
+                )}
+              >
+                Pool drawdown · {formatPercent(poolPct / 100)}
+              </div>
+              <div className="text-[11px] text-neutral-600 dark:text-neutral-400 tabular-nums">
+                {formatCurrency(poolDrawn)} of {poolValueWhole} drawn
+                {poolExhausted ? (
+                  <span className="ml-2 text-amber-800 dark:text-amber-300">
+                    · {formatCurrency(meteredMtd!)} metered overflow
+                  </span>
+                ) : null}
+              </div>
+            </div>
+            <div className="h-2 w-full rounded-full bg-neutral-200 dark:bg-neutral-800 overflow-hidden">
+              <div
+                className={cn(
+                  'h-full transition-all',
+                  poolExhausted
+                    ? 'bg-amber-500'
+                    : poolPct >= 80
+                      ? 'bg-amber-500'
+                      : 'bg-emerald-500',
+                )}
+                style={{ width: `${Math.max(2, poolPct)}%` }}
+              />
+            </div>
+            {billedMtd !== null ? (
+              <div className="text-[11px] text-neutral-500 dark:text-neutral-400">
+                License spend MTD {formatCurrency(billedMtd)} · full-month
+                estimate {formatCurrency(seatCost.monthlyCost)}
+              </div>
+            ) : null}
+          </div>
+        )}
       </CardContent>
     </Card>
   )

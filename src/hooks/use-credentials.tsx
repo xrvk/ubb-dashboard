@@ -30,7 +30,10 @@ import {
   generateDemoUsageSummary,
   readDemoCountFromUrl,
   readDemoExcludeCcFromUrl,
+  readDemoPoolPctFromUrl,
+  scaleDemoConsumptionTo,
 } from '@/lib/demo'
+import { includedAiCredits, seatCostBreakdown } from '@/lib/pricing'
 
 interface CredentialsContextValue {
   credentials: Credentials | null
@@ -94,14 +97,26 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
     if (credentials?.base === 'demo://') {
       const demoCount = readDemoCountFromUrl() ?? 0
       const demoBudgets = generateDemoBudgets(demoCount, Math.floor(Math.random() * 100_000))
+      const demoSeats = generateDemoSeats(demoCount)
+      const universal = generateDemoUniversalUlb()
+      const poolPct = readDemoPoolPctFromUrl()
+      if (poolPct !== null) {
+        const cost = seatCostBreakdown(demoSeats)
+        const credits = includedAiCredits(cost.business, cost.enterprise)
+        scaleDemoConsumptionTo((poolPct / 100) * credits.totalDollars, demoBudgets, universal)
+      }
       setBudgets(demoBudgets)
       setTotalBudgetCount(demoBudgets.length)
-      setSeats(generateDemoSeats(demoCount))
+      setSeats(demoSeats)
       setCostCenters(generateDemoCostCenters(demoCount))
-      setUniversalUlb(generateDemoUniversalUlb())
+      setUniversalUlb(universal)
       setEnterpriseBudget(generateDemoEnterpriseBudget())
       setCostCenterBudgetsByName(generateDemoCostCenterBudgets())
-      setUsageSummary(generateDemoUsageSummary(demoBudgets))
+      setUsageSummary(
+        generateDemoUsageSummary(demoBudgets, {
+          poolExhausted: poolPct === null ? true : poolPct >= 100,
+        }),
+      )
       return
     }
     if (!apiFetch) return
@@ -194,14 +209,26 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
       void Promise.resolve().then(() => {
         setCredentials({ base: 'demo://', ent: `demo-${demoCount}`, token: 'demo' })
         const demoBudgets = generateDemoBudgets(demoCount)
+        const demoSeats = generateDemoSeats(demoCount)
+        const universal = generateDemoUniversalUlb()
+        const poolPct = readDemoPoolPctFromUrl()
+        if (poolPct !== null) {
+          const cost = seatCostBreakdown(demoSeats)
+          const credits = includedAiCredits(cost.business, cost.enterprise)
+          scaleDemoConsumptionTo((poolPct / 100) * credits.totalDollars, demoBudgets, universal)
+        }
         setBudgets(demoBudgets)
         setTotalBudgetCount(demoBudgets.length)
-        setSeats(generateDemoSeats(demoCount))
+        setSeats(demoSeats)
         setCostCenters(generateDemoCostCenters(demoCount))
-        setUniversalUlb(generateDemoUniversalUlb())
+        setUniversalUlb(universal)
         setEnterpriseBudget(generateDemoEnterpriseBudget({ excludeCostCenterUsage: readDemoExcludeCcFromUrl() }))
         setCostCenterBudgetsByName(generateDemoCostCenterBudgets())
-        setUsageSummary(generateDemoUsageSummary(demoBudgets))
+        setUsageSummary(
+          generateDemoUsageSummary(demoBudgets, {
+            poolExhausted: poolPct === null ? true : poolPct >= 100,
+          }),
+        )
       })
       return
     }
