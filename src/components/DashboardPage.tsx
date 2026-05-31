@@ -566,10 +566,6 @@ function EmptyChart({ message }: { message: string }) {
 
 
 
- */
- */
-
-
 // ============================================================================
 // Reorganized dashboard sections — § 1 Pool & licenses · § 2 Metered ·
 // § 3 Cost centers · § 4 Action items.
