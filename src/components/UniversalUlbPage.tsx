@@ -23,6 +23,13 @@ import {
   toCsvUserUsage,
   type ThresholdMode,
 } from '@/lib/consumptionAnalysis'
+import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  DialogDescription,
+  DialogClose,
+} from '@/components/ui/dialog'
 import { EditUniversalUlbDialog } from '@/components/EditUniversalUlbDialog'
 import { UsageCsvImport } from '@/components/UsageCsvImport'
 import { ConsumptionCurve } from '@/components/ConsumptionCurve'
@@ -78,6 +85,7 @@ export function UniversalUlbPage() {
   const [applying, setApplying] = useState(false)
   const [batchProgress, setBatchProgress] = useState<{ done: number; total: number } | null>(null)
   const [outlierPage, setOutlierPage] = useState(0)
+  const [confirmCreateOpen, setConfirmCreateOpen] = useState(false)
   const OUTLIERS_PER_PAGE = 25
 
   // Reload cached months whenever import changes them.
@@ -202,18 +210,7 @@ export function UniversalUlbPage() {
    * or at the admin's edited amount if they've customized the row. */
   const handleCreateOutlierUlbs = async () => {
     if (!apiFetch) return
-    const targets = threshold.powerUsers
-      .filter(u => selectedOutliers.has(u.login))
-      .map(u => {
-        const suggested = Math.max(
-          1,
-          Math.ceil((u.totalAICs / AICS_PER_USD) * (1 + OUTLIER_BUFFER_PCT)),
-        )
-        return {
-          login: u.login,
-          amount: editedOutlierUlbs[u.login] ?? suggested,
-        }
-      })
+    const targets = outlierTargets
     if (targets.length === 0) {
       toast.error('Select at least one outlier.')
       return
@@ -246,6 +243,27 @@ export function UniversalUlbPage() {
       setBatchProgress(null)
     }
   }
+
+  // Resolved create-targets (selected outliers + their final $ amounts).
+  // Computed every render so the confirm dialog and the create call share
+  // the exact same numbers shown to the user. (React Compiler memoizes.)
+  const outlierTargets = threshold.powerUsers
+    .filter(u => selectedOutliers.has(u.login))
+    .map(u => {
+      const suggested = Math.max(
+        1,
+        Math.ceil((u.totalAICs / AICS_PER_USD) * (1 + OUTLIER_BUFFER_PCT)),
+      )
+      const edited = editedOutlierUlbs[u.login]
+      return {
+        login: u.login,
+        amount: edited ?? suggested,
+        isEdited: edited !== undefined,
+      }
+    })
+
+  const outlierTotalDollars = outlierTargets.reduce((sum, t) => sum + t.amount, 0)
+  const editedTargetCount = outlierTargets.filter(t => t.isEdited).length
 
   const toggleOutlier = (login: string) => {
     setDeselectedOutliers(prev => {
@@ -499,10 +517,10 @@ export function UniversalUlbPage() {
             </div>
             {threshold.powerUsers.length > 0 && (
               <Button
-                onClick={handleCreateOutlierUlbs}
+                onClick={() => setConfirmCreateOpen(true)}
                 disabled={selectedOutliers.size === 0 || batchProgress !== null}
               >
-                {batchProgress ? 'Creating…' : `Create individual ULBs (${selectedOutliers.size.toLocaleString()})`}
+                {batchProgress ? 'Creating…' : `Review & create (${selectedOutliers.size.toLocaleString()})`}
               </Button>
             )}
           </div>
@@ -672,6 +690,80 @@ export function UniversalUlbPage() {
         onOpenChange={setEditing}
         onSubmit={handleEditCap}
       />
+
+      <Dialog open={confirmCreateOpen} onOpenChange={setConfirmCreateOpen}>
+        <DialogContent>
+          <DialogTitle>Create {outlierTargets.length.toLocaleString()} individual ULB{outlierTargets.length === 1 ? '' : 's'}?</DialogTitle>
+          <DialogDescription>
+            This will create or update an individual ULB for each selected user.
+            Existing ULBs for these users would be overwritten.
+          </DialogDescription>
+
+          <div className="rounded-md border border-neutral-200 dark:border-neutral-800 p-3 text-xs grid gap-1.5 sm:grid-cols-2 mb-3">
+            <div>
+              <div className="text-neutral-500 dark:text-neutral-400">Total monthly cap</div>
+              <div className="font-semibold text-sm">
+                ${outlierTotalDollars.toLocaleString()}
+              </div>
+            </div>
+            <div>
+              <div className="text-neutral-500 dark:text-neutral-400">Users</div>
+              <div className="font-semibold text-sm">
+                {outlierTargets.length.toLocaleString()}
+                {editedTargetCount > 0 && (
+                  <span className="text-neutral-500 font-normal">
+                    {' '}· {editedTargetCount.toLocaleString()} edited
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-md border border-neutral-200 dark:border-neutral-800 max-h-56 overflow-y-auto text-xs">
+            <table className="w-full">
+              <thead className="bg-neutral-50 dark:bg-neutral-900/50 text-left sticky top-0">
+                <tr>
+                  <th className="px-3 py-1.5 font-medium">User</th>
+                  <th className="px-3 py-1.5 text-right font-medium">ULB</th>
+                </tr>
+              </thead>
+              <tbody>
+                {outlierTargets.map(t => (
+                  <tr key={t.login} className="border-t border-neutral-100 dark:border-neutral-800/50">
+                    <td className="px-3 py-1 font-medium">{t.login}</td>
+                    <td className="px-3 py-1 text-right tabular-nums">
+                      ${t.amount.toLocaleString()}
+                      {t.isEdited && (
+                        <span className="ml-1 text-amber-700 dark:text-amber-400" title="Edited">●</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="flex justify-end gap-2 mt-4">
+            <DialogClose asChild>
+              <Button type="button" variant="ghost" disabled={batchProgress !== null}>
+                Cancel
+              </Button>
+            </DialogClose>
+            <Button
+              type="button"
+              disabled={batchProgress !== null || outlierTargets.length === 0}
+              onClick={async () => {
+                setConfirmCreateOpen(false)
+                await handleCreateOutlierUlbs()
+              }}
+            >
+              {batchProgress
+                ? 'Creating…'
+                : `Create ${outlierTargets.length.toLocaleString()} ULBs · $${outlierTotalDollars.toLocaleString()}/mo`}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
