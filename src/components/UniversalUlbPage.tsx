@@ -38,7 +38,12 @@ export function UniversalUlbPage() {
   } = useCredentials()
 
   const [editing, setEditing] = useState(false)
-  const [month, setMonth] = useState(() => new Date())
+  // Default to the current month in UTC (matters near month boundaries
+  // where local time and UTC can disagree on which month we're in).
+  const [month, setMonth] = useState(() => {
+    const n = new Date()
+    return new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), 1))
+  })
   // Bump this when ReportPanel ingests a new file so the cache memo re-reads.
   const [cacheBust, setCacheBust] = useState(0)
   // Cache lookup derived from current ent + month — pure read, no effect needed.

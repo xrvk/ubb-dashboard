@@ -37,7 +37,8 @@ function formatRelative(ts: number): string {
   if (diff < 60_000) return 'just now'
   if (diff < ONE_HOUR_MS) return `${Math.floor(diff / 60_000)}m ago`
   if (diff < 24 * ONE_HOUR_MS) return `${Math.floor(diff / ONE_HOUR_MS)}h ago`
-  return new Date(ts).toLocaleString()
+  // UTC display so the dashboard is consistent across users in any timezone.
+  return `${new Date(ts).toISOString().slice(0, 16).replace('T', ' ')} UTC`
 }
 
 function formatCountdown(ms: number): string {
