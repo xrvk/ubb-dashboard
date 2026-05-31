@@ -15,6 +15,7 @@ import {
   NAV_TO_BUDGET_MODEL_EVENT,
   NAV_TO_INDIVIDUAL_EVENT,
   type NavToIndividualDetail,
+  type NavToIndividualTask,
 } from '@/lib/navEvents'
 import type { BulkApplySnapshot } from '@/lib/snapshot'
 
@@ -40,12 +41,16 @@ export function App() {
   // Pending filter set by deep-link events (e.g. from ConstraintsBanner).
   // Cleared by IndividualUlbPage once consumed.
   const [pendingIndividualFilter, setPendingIndividualFilter] = useState<TableFilters | null>(null)
+  // Active task context shown as a contextual banner on the Individual ULBs
+  // page so the user remembers what they came to fix.
+  const [activeTask, setActiveTask] = useState<NavToIndividualTask | null>(null)
 
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent<NavToIndividualDetail>).detail
       if (!detail) return
       setPendingIndividualFilter(detail.filter ?? EMPTY_FILTERS)
+      setActiveTask(detail.task ?? null)
       setTab('individual')
     }
     window.addEventListener(NAV_TO_INDIVIDUAL_EVENT, handler)
@@ -147,6 +152,8 @@ export function App() {
               onPendingRevertChange={setRevertCandidate}
               pendingFilter={pendingIndividualFilter}
               onPendingFilterConsumed={() => setPendingIndividualFilter(null)}
+              activeTask={activeTask}
+              onTaskDismiss={() => setActiveTask(null)}
             />
           ) : tab === 'budget-model' ? (
             <BudgetConstraintsHelpPage onBack={() => setTab('overview')} />

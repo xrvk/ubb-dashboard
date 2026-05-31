@@ -10,6 +10,7 @@ import {
   NAV_TO_BUDGET_MODEL_EVENT,
   NAV_TO_INDIVIDUAL_EVENT,
   type NavToIndividualDetail,
+  type NavToIndividualTask,
 } from '@/lib/navEvents'
 
 /**
@@ -154,8 +155,19 @@ export function ConstraintsBanner() {
         actions.push({
           label: `Reduce ULBs for ${c.memberCount} member${c.memberCount === 1 ? '' : 's'}`,
           onClick: () => {
+            const task: NavToIndividualTask = {
+              id: `cc-over:${c.costCenterId}`,
+              kind: 'cc-over',
+              costCenterId: c.costCenterId,
+              costCenterName: c.costCenterName,
+              memberCount: c.memberCount,
+              actualUlbSum: c.check.actual,
+              ccBudget: c.check.allowed,
+              overBy: c.check.overBy,
+            }
             const detail: NavToIndividualDetail = {
               filter: { ...EMPTY_FILTERS, costCenter: c.costCenterId },
+              task,
             }
             window.dispatchEvent(
               new CustomEvent<NavToIndividualDetail>(NAV_TO_INDIVIDUAL_EVENT, { detail }),

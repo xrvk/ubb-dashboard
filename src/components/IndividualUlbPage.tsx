@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Plus } from '@phosphor-icons/react'
+import { Plus, Target, X } from '@phosphor-icons/react'
 import { toast } from 'sonner'
 import { useCredentials } from '@/hooks/use-credentials'
 import { SummaryCards } from '@/components/SummaryCards'
@@ -12,7 +12,8 @@ import { BulkUnblockDialog } from '@/components/BulkUnblockDialog'
 import { RevertBulkDialog } from '@/components/RevertBulkDialog'
 import { Button } from '@/components/ui/button'
 import { summarize } from '@/lib/status'
-import { openExternal } from '@/lib/utils'
+import { formatCurrency, openExternal } from '@/lib/utils'
+import type { NavToIndividualTask } from '@/lib/navEvents'
 import {
   createUserBudget as apiCreateUserBudget,
   deleteUserBudget as apiDeleteUserBudget,
@@ -43,6 +44,10 @@ interface Props {
   pendingFilter?: TableFilters | null
   /** Called after pendingFilter has been applied so the parent can clear it. */
   onPendingFilterConsumed?: () => void
+  /** Active task that brought the user to this page (renders a contextual banner). */
+  activeTask?: NavToIndividualTask | null
+  /** Called when the user dismisses the task banner or clears the related filter. */
+  onTaskDismiss?: () => void
 }
 
 export function IndividualUlbPage({
@@ -53,6 +58,8 @@ export function IndividualUlbPage({
   onPendingRevertChange,
   pendingFilter,
   onPendingFilterConsumed,
+  activeTask,
+  onTaskDismiss,
 }: Props) {
   const {
     credentials,
@@ -65,6 +72,7 @@ export function IndividualUlbPage({
     loadProgress,
     apiFetch,
     refresh,
+    universalUlb,
   } = useCredentials()
 
   const [editing, setEditing] = useState<UserBudget | null>(null)
@@ -115,6 +123,47 @@ export function IndividualUlbPage({
     setSnapshot(s)
     onSnapshotChange?.(s)
   }
+
+  // Live recompute of the active task's progress so the contextual banner
+  // updates as the user lowers ULBs on this page. Returns null when there is
+  // no active task or when the user has navigated away from the linked filter
+  // (in which case the banner should disappear too).
+  const taskProgress = useMemo(() => {
+    if (!activeTask) return null
+    if (filters.costCenter !== activeTask.costCenterId) return null
+    const cc = costCenters.find(c => c.id === activeTask.costCenterId)
+    if (!cc) return null
+    const memberLogins = new Set(
+      cc.resources.filter(r => r.type === 'User').map(r => r.name.toLowerCase()),
+    )
+    const universalAmount = universalUlb?.budgetAmount ?? 0
+    const individualByUser = new Map(
+      budgets.map(b => [b.user.toLowerCase(), b.budgetAmount]),
+    )
+    let sum = 0
+    for (const login of memberLogins) {
+      const ind = individualByUser.get(login)
+      sum += ind !== undefined ? ind : universalAmount
+    }
+    const overBy = Math.max(0, sum - activeTask.ccBudget)
+    const reducedBy = Math.max(0, activeTask.actualUlbSum - sum)
+    const resolved = sum <= activeTask.ccBudget
+    return {
+      currentSum: sum,
+      overBy,
+      reducedBy,
+      resolved,
+    }
+  }, [activeTask, filters.costCenter, costCenters, budgets, universalUlb])
+
+  // If the user clears the cost-center filter that brought them here, also
+  // clear the task so the banner doesn't linger over an unrelated view.
+  useEffect(() => {
+    if (!activeTask) return
+    if (filters.costCenter !== activeTask.costCenterId) {
+      onTaskDismiss?.()
+    }
+  }, [activeTask, filters.costCenter, onTaskDismiss])
 
   const handleEdit = async (newAmount: number) => {
     if (!editing) return
@@ -276,6 +325,55 @@ export function IndividualUlbPage({
 
   return (
     <>
+      {activeTask && taskProgress ? (
+        <div
+          role="status"
+          className={
+            taskProgress.resolved
+              ? 'rounded-md border px-3 py-2 text-sm border-emerald-300 bg-emerald-50 text-emerald-900 dark:border-emerald-800/60 dark:bg-emerald-950/40 dark:text-emerald-200'
+              : 'rounded-md border px-3 py-2 text-sm border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-200'
+          }
+        >
+          <div className="flex items-start gap-2">
+            <Target size={18} weight="duotone" className="mt-0.5 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <div className="font-medium">
+                {taskProgress.resolved
+                  ? `Cost center "${activeTask.costCenterName}" now fits its budget`
+                  : `Reducing ULBs for cost center "${activeTask.costCenterName}"`}
+              </div>
+              <div className="mt-0.5 text-xs opacity-90">
+                {activeTask.memberCount} member{activeTask.memberCount === 1 ? '' : 's'},{' '}
+                effective ULBs total <span className="font-semibold">{formatCurrency(taskProgress.currentSum)}</span>{' '}
+                against a <span className="font-semibold">{formatCurrency(activeTask.ccBudget)}</span> cost center budget.{' '}
+                {taskProgress.resolved ? (
+                  <span>All set.</span>
+                ) : (
+                  <span>
+                    Reduce by another <span className="font-semibold">{formatCurrency(taskProgress.overBy)}</span> to fit.
+                  </span>
+                )}
+                {taskProgress.reducedBy > 0 ? (
+                  <span className="opacity-80"> (reduced {formatCurrency(taskProgress.reducedBy)} so far)</span>
+                ) : null}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                onTaskDismiss?.()
+                setFilters(EMPTY_FILTERS)
+              }}
+              className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-normal opacity-75 hover:opacity-100 hover:bg-black/5 dark:hover:bg-white/5"
+              title="Dismiss task"
+              aria-label="Dismiss task"
+            >
+              {taskProgress.resolved ? 'Done' : 'Dismiss'}
+              <X size={12} weight="bold" />
+            </button>
+          </div>
+        </div>
+      ) : null}
       {totalBudgetCount >= 9500 ? (
         <div
           role="alert"
