@@ -1013,7 +1013,12 @@ function CcBulletRowView({
   const mtdPct = Math.min(100, (mtd / scaleMax) * 100)
   const projPct = Math.min(100, (projected / scaleMax) * 100)
   const budgetPct = budget !== null ? Math.min(100, (budget / scaleMax) * 100) : null
-  const ceilingPct = ceiling > 0 ? Math.min(100, (ceiling / scaleMax) * 100) : null
+  // Show the ULB ceiling only when it's the binding constraint —
+  // i.e. no CC budget, or ceiling sits below the budget so ULBs throttle
+  // before the budget would. Otherwise the budget cap binds first and
+  // the ceiling tick is just noise.
+  const ceilingBinds = ceiling > 0 && (budget === null || ceiling < budget)
+  const ceilingPct = ceilingBinds ? Math.min(100, (ceiling / scaleMax) * 100) : null
 
   const overBudget = budget !== null && projected > budget
   const nearBudget = budget !== null && projected > budget * 0.8 && !overBudget
@@ -1044,8 +1049,11 @@ function CcBulletRowView({
       return (
         <span className="text-neutral-400">
           no spend yet
-          {budget !== null ? ` · budget ${formatCurrency(budget)}` : ''}
-          {ceiling > 0 ? ` · ceiling ${formatCurrency(ceiling)}` : ''}
+          {budget !== null
+            ? ` · budget ${formatCurrency(budget)}`
+            : ceiling > 0
+              ? ` · ceiling ${formatCurrency(ceiling)}`
+              : ''}
         </span>
       )
     }
@@ -1056,8 +1064,8 @@ function CcBulletRowView({
       <>
         <span className="text-neutral-700 dark:text-neutral-200">{left}</span>
         <span className="text-neutral-500"> · proj {formatCurrency(projected)}</span>
-        {ceiling > 0 ? (
-          <span className="text-neutral-500"> · ceiling {formatCurrency(ceiling)}</span>
+        {ceilingBinds ? (
+          <span className="text-amber-600 dark:text-amber-400"> · ULB ceiling {formatCurrency(ceiling)}</span>
         ) : null}
       </>
     )
@@ -1095,7 +1103,7 @@ function CcBulletRowView({
             title={`Budget ${formatCurrency(budget!)}`}
           />
         ) : null}
-        {/* ULB ceiling tick (amber vertical line) */}
+        {/* ULB ceiling tick — only when it binds before the budget cap */}
         {ceilingPct !== null ? (
           <div
             className="absolute inset-y-0 w-0.5 bg-amber-500"
