@@ -50,7 +50,7 @@ export function ConsumptionCurve({
 }: ConsumptionCurveProps) {
   const [hoverIndex, setHoverIndex] = useState<number | null>(null)
   const [dragging, setDragging] = useState<'ulb' | 'power' | 'threshold' | null>(null)
-  const [zoomTop80, setZoomTop80] = useState(true)
+  const [autoZoom, setAutoZoom] = useState(true)
   const svgRef = useRef<SVGSVGElement>(null)
 
   const totalN = sortedUsers.length
@@ -63,16 +63,22 @@ export function ConsumptionCurve({
   const plotW = VB_W - PAD_L - PAD_R
   const plotH = VB_H - PAD_T - PAD_B
 
-  // Lowest consumer on the left, heaviest on the right. Default zoom to the
-  // top 80% of consumers so the flat low-consumption tail doesn't squash the
-  // interesting curvature on the right. Toggle below the chart restores the
-  // full view. sortedUsers is desc, so the top 80% is the first 80% of the
-  // array; we then reverse for left-to-right rendering.
+  // Auto-zoom strategy: target the exponential takeoff (users with >= 10% of
+  // top-consumer AICs) to occupy ~25% of the chart width. We find that
+  // "knee" cohort then keep ~4x as many users in total, so the flat tail
+  // fills the left 75% and the curve fills the right 25%. Stable while the
+  // user drags ULB because the anchor is top-consumer AICs, not ULB.
   const trimmedSorted = useMemo(() => {
-    if (!zoomTop80 || totalN === 0) return sortedUsers
-    const keep = Math.max(powerUserCount + 1, Math.ceil(totalN * 0.8))
-    return sortedUsers.slice(0, Math.min(totalN, keep))
-  }, [sortedUsers, zoomTop80, totalN, powerUserCount])
+    if (!autoZoom || totalN === 0) return sortedUsers
+    const topAICs = sortedUsers[0].totalAICs
+    if (topAICs <= 0) return sortedUsers
+    const kneeFloor = topAICs * 0.1
+    const firstBelowKnee = sortedUsers.findIndex(u => u.totalAICs < kneeFloor)
+    const kneeCount = firstBelowKnee === -1 ? totalN : firstBelowKnee
+    const targetVisible = Math.max(20, kneeCount * 4)
+    const keep = Math.max(powerUserCount + 1, Math.min(totalN, targetVisible))
+    return sortedUsers.slice(0, keep)
+  }, [sortedUsers, autoZoom, totalN, powerUserCount])
   const hiddenTailCount = totalN - trimmedSorted.length
   const displayUsers = useMemo(() => [...trimmedSorted].reverse(), [trimmedSorted])
   const n = displayUsers.length
@@ -439,24 +445,24 @@ export function ConsumptionCurve({
         </svg>
       </div>
 
-      {/* Zoom toggle: trim the low-consumption tail by default so the curve
-          shape stays readable on long-tailed datasets. */}
+      {/* Zoom toggle: dynamically trim the flat low-consumption tail so the
+          exponential takeoff occupies the rightmost ~quarter of the chart. */}
       {totalN > 5 && (
         <div className="flex items-center justify-end gap-2 text-[11px] text-neutral-500 dark:text-neutral-400 px-1">
-          {zoomTop80 ? (
+          {autoZoom && hiddenTailCount > 0 ? (
             <span>
-              Zoomed to top 80% · {hiddenTailCount.toLocaleString()} low-consumption{' '}
-              {hiddenTailCount === 1 ? 'user' : 'users'} hidden
+              Auto-zoomed · showing top {n.toLocaleString()} of {totalN.toLocaleString()}{' '}
+              ({hiddenTailCount.toLocaleString()} low-consumption hidden)
             </span>
           ) : (
             <span>Showing all {totalN.toLocaleString()} users</span>
           )}
           <button
             type="button"
-            onClick={() => setZoomTop80(v => !v)}
+            onClick={() => setAutoZoom(v => !v)}
             className="underline underline-offset-2 hover:text-neutral-700 dark:hover:text-neutral-200"
           >
-            {zoomTop80 ? 'show all' : 'zoom to top 80%'}
+            {autoZoom ? 'show all' : 'auto-zoom'}
           </button>
         </div>
       )}
