@@ -995,24 +995,21 @@ function CcBulletRowView({
       )
     }
     if (!hasBudget) {
-      return measured ? (
+      return (
         <span className="text-neutral-500">
           {formatCurrencyWhole(mtd)} · uncapped
-        </span>
-      ) : (
-        <span className="text-neutral-400">no spend yet · uncapped</span>
-      )
-    }
-    if (!measured) {
-      return (
-        <span className="text-neutral-400">
-          no spend · budget {formatCurrencyWhole(budget!)}
         </span>
       )
     }
     return (
       <>
-        <span className="text-neutral-700 dark:text-neutral-200">
+        <span
+          className={cn(
+            measured
+              ? 'text-neutral-700 dark:text-neutral-200'
+              : 'text-neutral-400',
+          )}
+        >
           {formatCurrencyWhole(mtd)} / {formatCurrencyWhole(budget!)}
         </span>
         {projOverPct !== null ? (
