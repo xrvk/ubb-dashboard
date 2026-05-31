@@ -67,7 +67,30 @@ export function App() {
   }, [])
 
   useEffect(() => {
-    const handler = () => setTab('universal')
+    const handler = () => {
+      setTab('universal')
+      // Wait for the tab content to render, then flash the cap card so the
+      // user sees where to act after clicking 'Lower universal ULB to $X'.
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
+          const el = document.getElementById('uulb-cap')
+          if (!el) return
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          const cls = [
+            'ring-2',
+            'ring-amber-400',
+            'ring-offset-2',
+            'dark:ring-offset-neutral-950',
+            'bg-amber-100',
+            'dark:bg-amber-900/40',
+          ]
+          el.classList.add(...cls)
+          window.setTimeout(() => {
+            el.classList.remove(...cls)
+          }, 2000)
+        })
+      })
+    }
     window.addEventListener(NAV_TO_UNIVERSAL_EVENT, handler)
     return () => window.removeEventListener(NAV_TO_UNIVERSAL_EVENT, handler)
   }, [])

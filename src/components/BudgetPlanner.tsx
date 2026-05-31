@@ -226,6 +226,9 @@ export function BudgetPlanner() {
     costCenterBudgetsByName,
     costCenters,
     loginToCostCenter,
+    budgets,
+    seats,
+    universalUlb,
     apiFetch,
     credentials,
     refresh,
@@ -265,6 +268,27 @@ export function BudgetPlanner() {
   const constraintResult = useBudgetConstraints()
   const requiredMins = useMemo(() => computeRequiredMinimums(constraintResult), [constraintResult])
 
+  // Per-CC floor: sum of effective ULBs of all Copilot seats in that CC.
+  // For uncapped CCs this is the minimum spend that members will commit
+  // (assuming they each consume their full cap). Used to render
+  // "at least $X" hints + a column footer total.
+  const ccFloorByCcId = useMemo(() => {
+    const individualByLogin = new Map<string, number>()
+    for (const b of budgets) {
+      if (b.user) individualByLogin.set(b.user.toLowerCase(), b.budgetAmount)
+    }
+    const universal = universalUlb?.budgetAmount ?? 0
+    const sums = new Map<string, number>()
+    for (const seat of seats) {
+      const login = seat.login.toLowerCase()
+      const r = loginToCostCenter.get(login)
+      if (!r) continue
+      const eff = individualByLogin.get(login) ?? universal
+      sums.set(r.cc.id, (sums.get(r.cc.id) ?? 0) + eff)
+    }
+    return sums
+  }, [budgets, seats, loginToCostCenter, universalUlb])
+
   // Which cost centers actually route Copilot today?
   const ccIdsAffectingCopilot = useMemo(() => {
     const set = new Set<string>()
@@ -285,6 +309,7 @@ export function BudgetPlanner() {
     preventFurtherUsage: boolean
     seatCount: number
     affectsCopilot: boolean
+    floor: number
     willAlert: boolean
     alertRecipients: string[]
   }
@@ -307,6 +332,7 @@ export function BudgetPlanner() {
           preventFurtherUsage: b?.preventFurtherUsage ?? false,
           seatCount: seatsByCcId.get(cc.id) ?? 0,
           affectsCopilot: ccIdsAffectingCopilot.has(cc.id),
+          floor: ccFloorByCcId.get(cc.id) ?? 0,
           willAlert: b?.willAlert ?? false,
           alertRecipients: b?.alertRecipients ?? [],
         }
@@ -317,7 +343,7 @@ export function BudgetPlanner() {
         if (a.apiAmount !== b.apiAmount) return b.apiAmount - a.apiAmount
         return a.name.localeCompare(b.name)
       })
-  }, [costCenters, costCenterBudgetsByName, ccIdsAffectingCopilot])
+  }, [costCenters, costCenterBudgetsByName, ccIdsAffectingCopilot, ccFloorByCcId])
 
   const affectingCount = rows.filter(r => r.affectsCopilot).length
   const notAffectingCount = rows.length - affectingCount
@@ -796,7 +822,19 @@ export function BudgetPlanner() {
                                   />
                                 </div>
                               ) : (
-                                <div className="flex items-center justify-end">
+                                <div className="flex items-center justify-end gap-2">
+                                  {row.affectsCopilot && row.floor > 0 ? (
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <span className="text-[11px] font-mono text-neutral-500 cursor-help">
+                                          at least {formatCurrency(row.floor)}
+                                        </span>
+                                      </TooltipTrigger>
+                                      <TooltipContent>
+                                        Floor from per-user limits: {row.seatCount.toLocaleString()} Copilot seat{row.seatCount === 1 ? '' : 's'} × their effective ULBs.
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  ) : null}
                                   <button
                                     type="button"
                                     onClick={() => startCreating(row.key)}
@@ -858,6 +896,54 @@ export function BudgetPlanner() {
                         )
                       })}
                     </tbody>
+                    {(() => {
+                      let cappedTotal = 0
+                      let uncappedFloor = 0
+                      let uncappedCount = 0
+                      for (const row of visibleRows) {
+                        const draftVal = drafts.get(row.key)
+                        const isCreating = creating.has(row.key)
+                        const editable = !!row.budgetId || isCreating
+                        if (editable) {
+                          const n = Number(draftVal ?? row.apiAmount)
+                          if (Number.isFinite(n) && n >= 0) cappedTotal += n
+                        } else if (row.affectsCopilot) {
+                          uncappedFloor += row.floor
+                          uncappedCount += 1
+                        }
+                      }
+                      if (cappedTotal === 0 && uncappedCount === 0) return null
+                      return (
+                        <tfoot className="bg-neutral-50 dark:bg-neutral-900/40 border-t border-neutral-200 dark:border-neutral-800">
+                          <tr className="text-[11px]">
+                            <td className="px-3 py-1.5 font-medium text-neutral-600 dark:text-neutral-400">
+                              Total
+                              {uncappedCount > 0 && (
+                                <span className="ml-1.5 text-neutral-500">
+                                  · {uncappedCount} uncapped
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-3 py-1.5" />
+                            <td className="px-3 py-1.5 text-right font-mono">
+                              <div className="flex items-center justify-end gap-1.5">
+                                {uncappedCount > 0 ? (
+                                  <span className="text-neutral-500">at least</span>
+                                ) : null}
+                                <span className="font-semibold text-neutral-700 dark:text-neutral-200">
+                                  {formatCurrency(cappedTotal + uncappedFloor)}
+                                </span>
+                              </div>
+                            </td>
+                            <td colSpan={3} className="px-3 py-1.5 text-neutral-500">
+                              {uncappedCount > 0 && uncappedFloor > 0
+                                ? `Includes ${formatCurrency(uncappedFloor)} floor from uncapped cost centers`
+                                : null}
+                            </td>
+                          </tr>
+                        </tfoot>
+                      )
+                    })()}
                   </table>
                 </div>
               </div>

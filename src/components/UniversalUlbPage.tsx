@@ -404,7 +404,7 @@ export function UniversalUlbPage() {
       {/* Header tiles */}
       <div className="grid gap-3 grid-cols-1 md:grid-cols-3">
         <Card>
-          <CardContent className="flex items-start justify-between gap-3">
+          <CardContent className="flex items-start justify-between gap-3" id="uulb-cap" data-bp-target="uulb">
             <div>
               <div className="text-xs text-neutral-500 dark:text-neutral-400">Universal ULB cap</div>
               <div className="text-2xl font-semibold mt-1">
