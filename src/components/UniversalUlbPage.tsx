@@ -607,7 +607,7 @@ export function UniversalUlbPage() {
                 onClick={() => setConfirmCreateOpen(true)}
                 disabled={selectedOutliers.size === 0 || batchProgress !== null}
               >
-                {batchProgress ? 'Creating…' : `Checkout (${selectedOutliers.size.toLocaleString()})`}
+                {batchProgress ? 'Creating…' : `Apply ind ULB (${selectedOutliers.size.toLocaleString()})`}
               </Button>
             )}
           </div>
