@@ -18,13 +18,12 @@ export function generateDemoBudgets(count: number, seed = 42): UserBudget[] {
   }
 
   const tiers: Array<{ budget: number; weight: number }> = [
-    { budget: 1, weight: 0.05 },
-    { budget: 5, weight: 0.1 },
-    { budget: 25, weight: 0.3 },
-    { budget: 100, weight: 0.3 },
-    { budget: 500, weight: 0.15 },
-    { budget: 2000, weight: 0.07 },
-    { budget: 9001, weight: 0.03 },
+    { budget: 10, weight: 0.15 },
+    { budget: 25, weight: 0.25 },
+    { budget: 50, weight: 0.3 },
+    { budget: 100, weight: 0.2 },
+    { budget: 200, weight: 0.08 },
+    { budget: 500, weight: 0.02 },
   ]
 
   const pickTier = () => {
@@ -104,27 +103,29 @@ export function generateDemoSeats(count: number) {
 }
 
 /**
- * Build a deterministic set of cost centers whose member sums + budgets are
- * deliberately calibrated to trip two common constraint failures, so demo
- * mode shows the Overview banner with real action items:
+ * Build a deterministic set of cost centers that, combined with the demo
+ * budgets above, trip exactly two common constraint failures in the banner:
  *
- *   1. per_cc — both capped CCs (platform-eng, data-platform) have effective
- *      ULB sums (~$500 default × member count) that exceed their cost-center
- *      budgets, so they over-allocate.
- *   2. cc_vs_enterprise — sum of capped CC budgets + leftover users at the
- *      universal ULB exceeds the enterprise cap.
+ *   1. per_cc — platform-eng's members' effective ULBs exceed its CC budget.
+ *   2. cc_vs_enterprise — the sum of all four CC budgets exceeds the
+ *      enterprise envelope.
+ *
+ * All seats are assigned to a CC so the unassignedLeftover check passes
+ * trivially (it would otherwise piggyback on the cc_vs_enterprise breach
+ * and surface as a third banner item).
  *
  * Membership is keyed off the same `demo-user-NNNN` login scheme used by
  * generateDemoSeats so loginToCostCenter resolves cleanly.
  */
 export function generateDemoCostCenters(count: number): CostCenter[] {
   const totalSeats = Math.ceil(count * 1.5)
-  // Split the active seat pool four ways with one slice intentionally left
-  // unassigned so the cc_vs_enterprise leftover branch is exercised.
-  const peSize = Math.min(Math.round(totalSeats * 0.4), totalSeats)
-  const dpSize = Math.min(Math.round(totalSeats * 0.27), totalSeats - peSize)
-  const dxSize = Math.min(Math.round(totalSeats * 0.2), totalSeats - peSize - dpSize)
-  const secSize = Math.min(Math.round(totalSeats * 0.07), totalSeats - peSize - dpSize - dxSize)
+  // Split the entire seat pool across four CCs — no leftover users.
+  // platform-eng is intentionally largest and biased toward the override-bearing
+  // user range (1..count) so its effective ULB sum overshoots its budget.
+  const peSize = Math.min(Math.round(totalSeats * 0.44), totalSeats)
+  const dpSize = Math.min(Math.round(totalSeats * 0.36), totalSeats - peSize)
+  const dxSize = Math.min(Math.round(totalSeats * 0.13), totalSeats - peSize - dpSize)
+  const secSize = Math.max(0, totalSeats - peSize - dpSize - dxSize)
   const range = (start: number, n: number) =>
     Array.from({ length: n }, (_, i) => ({
       type: 'User' as const,
@@ -136,7 +137,6 @@ export function generateDemoCostCenters(count: number): CostCenter[] {
   const dataPlatform = range(cursor, dpSize); cursor += dpSize
   const devx = range(cursor, dxSize); cursor += dxSize
   const security = range(cursor, secSize)
-  // Anything past cursor + secSize stays unassigned (leftover users).
 
   return [
     { id: 'demo-cc-pe', name: 'platform-eng', state: 'active', resources: platformEng },
@@ -149,7 +149,7 @@ export function generateDemoCostCenters(count: number): CostCenter[] {
 export function generateDemoEnterpriseBudget(): EnterpriseBudget {
   return {
     id: 'demo-ent',
-    budgetAmount: 5000,
+    budgetAmount: 9000,
     excludeCostCenterUsage: false,
     preventFurtherUsage: true,
     willAlert: true,
@@ -160,7 +160,7 @@ export function generateDemoEnterpriseBudget(): EnterpriseBudget {
 export function generateDemoUniversalUlb(): UniversalUlb {
   return {
     id: 'demo-uulb',
-    budgetAmount: 500,
+    budgetAmount: 50,
     consumedAmount: 0,
     preventFurtherUsage: true,
     willAlert: false,
@@ -169,10 +169,11 @@ export function generateDemoUniversalUlb(): UniversalUlb {
 }
 
 /**
- * Two of the four CCs get budgets; the remaining two stay uncapped so the
- * uncapped-CC affordances ("at least $X", Set budget) also appear in demo.
- * Budgets are intentionally too low for the membership × universal-ULB math
- * to satisfy them — that's what produces the per_cc failures.
+ * Every CC carries a budget so the unassignedLeftover check stays vacuous.
+ * Numbers sit in the realistic $3k–$8k per-CC band but their sum ($20k) is
+ * deliberately above the $9k enterprise cap — that's the cc_vs_enterprise
+ * breach. platform-eng's $5k cap is intentionally below the effective ULB
+ * sum of its ~100 override-bearing members, which trips per_cc on it alone.
  */
 export function generateDemoCostCenterBudgets(): Map<string, CostCenterBudget> {
   const out = new Map<string, CostCenterBudget>()
@@ -187,6 +188,8 @@ export function generateDemoCostCenterBudgets(): Map<string, CostCenterBudget> {
     })
   }
   add('platform-eng', 5000, true, true)
-  add('data-platform', 20000, true, false)
+  add('data-platform', 7000, true, false)
+  add('devx', 5000, true, false)
+  add('security', 3000, true, false)
   return out
 }
