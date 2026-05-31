@@ -25,7 +25,7 @@ import {
 import { forecastSummary } from '@/lib/status'
 import { projectMonthlyBudget } from '@/lib/projection'
 import { readDemoAsofFromUrl } from '@/lib/demo'
-import { formatCurrency, formatCurrencyWhole, formatPercent, cn } from '@/lib/utils'
+import { formatCurrency, formatPercent, cn } from '@/lib/utils'
 import {
   NAV_TO_BUDGET_MODEL_EVENT,
   NAV_TO_INDIVIDUAL_EVENT,
@@ -794,29 +794,9 @@ function CostCenterStatusCard({
         <CardTitle>Cost centers</CardTitle>
         <p className="text-xs text-neutral-500 mt-1">
           {pool.costCenters.length} CC{pool.costCenters.length === 1 ? '' : 's'} routing Copilot today.
-          MTD comes from individual ULBs in each CC — universal-ULB users aren't reported per CC.
         </p>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* Bullet chart — one row per CC + unassigned. Each row normalized
-            to its own scale max so the budget vs ceiling vs projected
-            relationship is visible at a glance. */}
-        <CostCenterBulletList
-          rows={pool.costCenters.map(cc => {
-            const data = perCc.get(cc.costCenterId)
-            return {
-              key: cc.costCenterId,
-              name: cc.name,
-              budget: cc.budgetAmount,
-              ceiling: cc.ulbCeiling,
-              mtd: data?.ulbMtd ?? 0,
-              projected: data?.ulbProjected ?? 0,
-              measured: (data?.seatsWithUlb ?? 0) > 0,
-            }
-          })}
-          unassignedDraw={pool.unassignedTotal}
-        />
-
         <div className="rounded-md border border-neutral-200 dark:border-neutral-800 overflow-x-auto">
           <table className="w-full text-xs">
             <thead className="bg-neutral-50 dark:bg-neutral-900/40 text-neutral-500">
@@ -883,182 +863,7 @@ function CostCenterStatusCard({
   )
 }
 
-type CcBulletRow = {
-  key: string
-  name: string
-  budget: number | null
-  ceiling: number
-  mtd: number
-  projected: number
-  measured: boolean
-}
 
-/**
- * Bullet chart for cost centers. Per row: MTD as a solid bar, projected
- * as a lighter trailing segment, tick marks at the budget cap and the
- * ULB ceiling. Each row normalizes to its own scale (max of budget,
- * ceiling, projected) so the relationships are legible without a global
- * x-axis. The unassigned row is appended when there's effective draw from
- * seats not routed to any CC — it shows draw only (no budget/ceiling).
- */
-function CostCenterBulletList({
-  rows,
-  unassignedDraw,
-}: {
-  rows: CcBulletRow[]
-  unassignedDraw: number
-}) {
-  // Sort: budgeted CCs first (by budget desc), uncapped last.
-  const sorted = [...rows].sort((a, b) => {
-    if (a.budget === null && b.budget !== null) return 1
-    if (b.budget === null && a.budget !== null) return -1
-    return (b.budget ?? b.mtd) - (a.budget ?? a.mtd)
-  })
-  return (
-    <div className="rounded-md border border-neutral-200 dark:border-neutral-800 p-3 space-y-3">
-      <div className="flex items-center gap-4 text-[10px] text-neutral-500">
-        <span className="inline-flex items-center gap-1.5">
-          <span className="inline-block w-3 h-2 rounded-sm bg-emerald-500" />MTD
-        </span>
-        <span className="inline-flex items-center gap-1.5">
-          <span className="inline-block w-3 h-2 rounded-sm bg-emerald-300 dark:bg-emerald-500/40" />Projected
-        </span>
-        <span className="ml-auto">Each bar = 0 → CC budget</span>
-      </div>
-      {sorted.map(row => (
-        <CcBulletRowView key={row.key} row={row} />
-      ))}
-      {unassignedDraw > 0 ? (
-        <CcBulletRowView
-          key="__unassigned"
-          row={{
-            key: '__unassigned',
-            name: 'Unassigned',
-            budget: null,
-            ceiling: 0,
-            mtd: unassignedDraw,
-            projected: unassignedDraw,
-            measured: true,
-          }}
-          muted
-        />
-      ) : null}
-    </div>
-  )
-}
-
-function CcBulletRowView({
-  row,
-  muted = false,
-}: {
-  row: CcBulletRow
-  muted?: boolean
-}) {
-  const { name, budget, mtd, projected, measured } = row
-
-  // Per-row scale: budget = 100% of the bar. Overflow is clamped at 100%
-  // and surfaced via the right-side "112%" label. Uncapped CCs (and the
-  // muted unassigned row) get a faint full-width bar so the bar still
-  // reads — there's no cap to scale against.
-  const hasBudget = budget !== null && budget > 0
-  const mtdPct = hasBudget ? Math.min(100, (mtd / budget!) * 100) : 100
-  const projPct = hasBudget ? Math.min(100, (projected / budget!) * 100) : 100
-  const projOverPct = hasBudget && projected > budget!
-    ? Math.round((projected / budget!) * 100)
-    : null
-
-  const overBudget = hasBudget && projected > budget!
-  const nearBudget = hasBudget && projected > budget! * 0.8 && !overBudget
-  const fillColor = muted
-    ? 'bg-neutral-400 dark:bg-neutral-500'
-    : overBudget
-      ? 'bg-red-500'
-      : nearBudget
-        ? 'bg-amber-500'
-        : 'bg-emerald-500'
-  const trailColor = muted
-    ? 'bg-neutral-300 dark:bg-neutral-600/50'
-    : overBudget
-      ? 'bg-red-300 dark:bg-red-500/40'
-      : nearBudget
-        ? 'bg-amber-300 dark:bg-amber-500/40'
-        : 'bg-emerald-300 dark:bg-emerald-500/40'
-  // Uncapped: render a faint single-tone bar so we don't imply 100%.
-  const uncappedBar = !hasBudget && !muted
-
-  const numericLabel = (() => {
-    if (muted) {
-      return (
-        <span className="text-neutral-500">
-          {formatCurrencyWhole(mtd)} · no CC budget
-        </span>
-      )
-    }
-    if (!hasBudget) {
-      return (
-        <span className="text-neutral-500">
-          {formatCurrencyWhole(mtd)} · uncapped
-        </span>
-      )
-    }
-    return (
-      <>
-        <span
-          className={cn(
-            measured
-              ? 'text-neutral-700 dark:text-neutral-200'
-              : 'text-neutral-400',
-          )}
-        >
-          {formatCurrencyWhole(mtd)} / {formatCurrencyWhole(budget!)}
-        </span>
-        {projOverPct !== null ? (
-          <span className="ml-1.5 rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-medium text-red-700 dark:bg-red-900/40 dark:text-red-200">
-            proj {projOverPct}%
-          </span>
-        ) : null}
-      </>
-    )
-  })()
-
-  return (
-    <div className="grid grid-cols-[7rem_minmax(0,1fr)_10rem] items-center gap-3">
-      <div
-        className={cn(
-          'text-xs font-medium truncate',
-          muted ? 'text-neutral-500 italic' : 'text-neutral-700 dark:text-neutral-300',
-        )}
-        title={name}
-      >
-        {name}
-      </div>
-      <div
-        className={cn(
-          'relative h-3 rounded-sm overflow-hidden',
-          uncappedBar
-            ? 'bg-neutral-50 dark:bg-neutral-800/30 border border-dashed border-neutral-200 dark:border-neutral-700'
-            : 'bg-neutral-100 dark:bg-neutral-800/70',
-        )}
-      >
-        {/* Projected trail (lighter, behind MTD) */}
-        <div
-          className={cn('absolute inset-y-0 left-0', trailColor)}
-          style={{ width: `${projPct}%` }}
-          title={`Projected ${formatCurrency(projected)}`}
-        />
-        {/* MTD solid fill on top */}
-        <div
-          className={cn('absolute inset-y-0 left-0', fillColor)}
-          style={{ width: `${mtdPct}%` }}
-          title={`MTD ${formatCurrency(mtd)}`}
-        />
-      </div>
-      <div className="text-[11px] tabular-nums text-right whitespace-nowrap flex items-center justify-end gap-0 overflow-hidden">
-        {numericLabel}
-      </div>
-    </div>
-  )
-}
 
 /**
  * § 4 — Action items. Surfaces already-computed signals (forecast over,
