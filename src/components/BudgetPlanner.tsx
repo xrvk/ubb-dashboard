@@ -936,11 +936,11 @@ export function BudgetPlanner() {
                                     <Tooltip>
                                       <TooltipTrigger asChild>
                                         <span className="text-[11px] font-mono text-neutral-500 cursor-help">
-                                          at least {formatCurrency(row.floor)}
+                                          up to {formatCurrency(row.floor)}
                                         </span>
                                       </TooltipTrigger>
                                       <TooltipContent>
-                                        Floor from per-user limits: {row.seatCount.toLocaleString()} Copilot seat{row.seatCount === 1 ? '' : 's'} × their effective ULBs.
+                                        ULB ceiling: {row.seatCount.toLocaleString()} Copilot seat{row.seatCount === 1 ? '' : 's'} × their effective ULBs. Max this cost center could draw from the enterprise pool.
                                       </TooltipContent>
                                     </Tooltip>
                                   ) : null}
@@ -990,7 +990,7 @@ export function BudgetPlanner() {
                               )}
                               {uncappedCount > 0 && uncappedFloor > 0 ? (
                                 <span className="ml-1.5 text-neutral-500">
-                                  · Includes {formatCurrency(uncappedFloor)} floor from uncapped cost centers
+                                  · Includes {formatCurrency(uncappedFloor)} ULB ceiling from uncapped cost centers
                                 </span>
                               ) : null}
                             </td>
