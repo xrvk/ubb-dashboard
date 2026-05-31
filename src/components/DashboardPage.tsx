@@ -938,7 +938,7 @@ function CostCenterBulletList({
   // right edge feels stable.
   const rawMax = Math.max(
     1,
-    ...rows.flatMap(r => [r.budget ?? 0, r.ceiling, r.projected, r.mtd]),
+    ...rows.flatMap(r => [r.budget ?? 0, r.projected, r.mtd]),
     unassignedDraw,
   )
   const scaleMax = niceCeil(rawMax)
@@ -956,9 +956,6 @@ function CostCenterBulletList({
         </span>
         <span className="inline-flex items-center gap-1">
           <span className="inline-block w-0.5 h-3 bg-neutral-900 dark:bg-neutral-200" />Budget cap
-        </span>
-        <span className="inline-flex items-center gap-1">
-          <span className="inline-block w-0.5 h-3 bg-amber-500" />ULB ceiling
         </span>
         <span className="ml-auto tabular-nums">scale 0 – {formatCurrency(scaleMax)}</span>
       </div>
@@ -1009,16 +1006,10 @@ function CcBulletRowView({
   scaleMax: number
   muted?: boolean
 }) {
-  const { name, budget, ceiling, mtd, projected, measured } = row
+  const { name, budget, mtd, projected, measured } = row
   const mtdPct = Math.min(100, (mtd / scaleMax) * 100)
   const projPct = Math.min(100, (projected / scaleMax) * 100)
   const budgetPct = budget !== null ? Math.min(100, (budget / scaleMax) * 100) : null
-  // Show the ULB ceiling only when it's the binding constraint —
-  // i.e. no CC budget, or ceiling sits below the budget so ULBs throttle
-  // before the budget would. Otherwise the budget cap binds first and
-  // the ceiling tick is just noise.
-  const ceilingBinds = ceiling > 0 && (budget === null || ceiling < budget)
-  const ceilingPct = ceilingBinds ? Math.min(100, (ceiling / scaleMax) * 100) : null
 
   const overBudget = budget !== null && projected > budget
   const nearBudget = budget !== null && projected > budget * 0.8 && !overBudget
@@ -1049,11 +1040,7 @@ function CcBulletRowView({
       return (
         <span className="text-neutral-400">
           no spend yet
-          {budget !== null
-            ? ` · budget ${formatCurrency(budget)}`
-            : ceiling > 0
-              ? ` · ceiling ${formatCurrency(ceiling)}`
-              : ''}
+          {budget !== null ? ` · budget ${formatCurrency(budget)}` : ''}
         </span>
       )
     }
@@ -1064,9 +1051,6 @@ function CcBulletRowView({
       <>
         <span className="text-neutral-700 dark:text-neutral-200">{left}</span>
         <span className="text-neutral-500"> · proj {formatCurrency(projected)}</span>
-        {ceilingBinds ? (
-          <span className="text-amber-600 dark:text-amber-400"> · ULB ceiling {formatCurrency(ceiling)}</span>
-        ) : null}
       </>
     )
   })()
@@ -1101,14 +1085,6 @@ function CcBulletRowView({
             className="absolute inset-y-0 w-0.5 bg-neutral-900 dark:bg-neutral-200"
             style={{ left: `calc(${budgetPct}% - 1px)` }}
             title={`Budget ${formatCurrency(budget!)}`}
-          />
-        ) : null}
-        {/* ULB ceiling tick — only when it binds before the budget cap */}
-        {ceilingPct !== null ? (
-          <div
-            className="absolute inset-y-0 w-0.5 bg-amber-500"
-            style={{ left: `calc(${ceilingPct}% - 1px)` }}
-            title={`ULB ceiling ${formatCurrency(ceiling)}`}
           />
         ) : null}
       </div>
