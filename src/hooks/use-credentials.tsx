@@ -1,12 +1,17 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
+  buildCostCenterIndex,
   createApiFetch,
   fetchAllCopilotSeats,
+  fetchCostCenters,
   fetchUserBudgets,
   parseEnterpriseUrl,
+  resolveCostCenter,
   type ApiFetch,
   type CopilotSeat,
+  type CostCenter,
+  type CostCenterResolution,
   type Credentials,
   type UserBudget,
 } from '@/lib/api'
@@ -17,6 +22,14 @@ interface CredentialsContextValue {
   budgets: UserBudget[]
   totalBudgetCount: number
   seats: CopilotSeat[]
+  costCenters: CostCenter[]
+  /**
+   * Lowercased-login → resolved CC (or null if unassigned).
+   * Built from seats × cost-center index per the cost-center allocation docs:
+   * user-direct membership > org-inherited > null. Budget rows look up their
+   * login here without needing to know about the indexer.
+   */
+  loginToCostCenter: Map<string, CostCenterResolution | null>
   loading: boolean
   loadProgress: { loaded: number; total: number | undefined } | null
   error: string | null
@@ -33,6 +46,7 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
   const [budgets, setBudgets] = useState<UserBudget[]>([])
   const [totalBudgetCount, setTotalBudgetCount] = useState(0)
   const [seats, setSeats] = useState<CopilotSeat[]>([])
+  const [costCenters, setCostCenters] = useState<CostCenter[]>([])
   const [loading, setLoading] = useState(false)
   const [loadProgress, setLoadProgress] = useState<{ loaded: number; total: number | undefined } | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -49,6 +63,7 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
       setBudgets(demoBudgets)
       setTotalBudgetCount(demoBudgets.length)
       setSeats(generateDemoSeats(demoCount))
+      setCostCenters([])
       return
     }
     if (!apiFetch) return
@@ -56,15 +71,17 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
     setLoadProgress({ loaded: 0, total: undefined })
     setError(null)
     try {
-      const [result, seatList] = await Promise.all([
+      const [result, seatList, ccList] = await Promise.all([
         fetchUserBudgets(apiFetch, (loaded, total) =>
           setLoadProgress({ loaded, total }),
         ),
         fetchAllCopilotSeats(apiFetch).catch(() => [] as CopilotSeat[]),
+        fetchCostCenters(apiFetch).catch(() => [] as CostCenter[]),
       ])
       setBudgets(result.userBudgets)
       setTotalBudgetCount(result.totalBudgetCount)
       setSeats(seatList)
+      setCostCenters(ccList)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -85,16 +102,18 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
     setError(null)
     try {
       const fetcher = createApiFetch(creds)
-      const [result, seatList] = await Promise.all([
+      const [result, seatList, ccList] = await Promise.all([
         fetchUserBudgets(fetcher, (loaded, total) =>
           setLoadProgress({ loaded, total }),
         ),
         fetchAllCopilotSeats(fetcher).catch(() => [] as CopilotSeat[]),
+        fetchCostCenters(fetcher).catch(() => [] as CostCenter[]),
       ])
       setCredentials(creds)
       setBudgets(result.userBudgets)
       setTotalBudgetCount(result.totalBudgetCount)
       setSeats(seatList)
+      setCostCenters(ccList)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -108,6 +127,7 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
     setBudgets([])
     setTotalBudgetCount(0)
     setSeats([])
+    setCostCenters([])
     setError(null)
   }, [])
 
@@ -136,11 +156,26 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
     }
   }, [connect, credentials])
 
+  // Build login→CC resolution lazily from seats + cost centers. Seats carry
+  // the org that granted each user's Copilot license, which is the priority-2
+  // fallback per the cost-center allocation docs.
+  const loginToCostCenter = useMemo(() => {
+    const map = new Map<string, CostCenterResolution | null>()
+    if (costCenters.length === 0) return map
+    const index = buildCostCenterIndex(costCenters)
+    for (const s of seats) {
+      map.set(s.login.toLowerCase(), resolveCostCenter(s.login, s.orgLogin, index))
+    }
+    return map
+  }, [seats, costCenters])
+
   const value: CredentialsContextValue = {
     credentials,
     budgets,
     totalBudgetCount,
     seats,
+    costCenters,
+    loginToCostCenter,
     loading,
     loadProgress,
     error,

@@ -56,6 +56,16 @@ It is intentionally focused on **one job** and is meant to be a companion to the
 | Custom budget min/max range filter | Existing-ULB users disabled in the picker | Live progress bar, ETA, and cancel |
 | Sortable table, paginated 50/page | Optimistic refetch after every write | Rate-limit-aware: bounded concurrency + 429 retry |
 
+### Cost center attribution
+
+Each user row shows the cost center their Copilot usage is charged to, with a dropdown filter for any active CC or **Unassigned** (enterprise default). Resolution follows the [cost-center allocation rules](https://docs.github.com/en/billing/reference/cost-center-allocation):
+
+1. The CC that lists the **user** as a direct resource wins.
+2. Otherwise, the CC that lists the **org that granted the user's Copilot license** wins (shown with a "via org" badge).
+3. Otherwise, the user is shown as **Unassigned**.
+
+If the connected PAT lacks `manage_billing:enterprise` read scope, the cost-center column and filter are hidden gracefully — the rest of the dashboard keeps working.
+
 ### Status & utilization
 
 Each user is classified by `consumed_amount ÷ budget_amount`:
