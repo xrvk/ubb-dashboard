@@ -302,7 +302,7 @@ function ForecastBreakdownCard({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Metered forecast</CardTitle>
+        <CardTitle>Forecast breakdown</CardTitle>
       </CardHeader>
       <CardContent className="grid gap-4">
         <div className={cn('grid gap-4', tracked.hasActual ? 'md:grid-cols-4' : 'md:grid-cols-3')}>
@@ -324,7 +324,7 @@ function ForecastBreakdownCard({
             projected={tracked.individual.projected}
             sub={
               tracked.individual.count > 0
-                ? `${tracked.individual.count.toLocaleString()} users, ${pct(tracked.individual.projected, tracked.totalProjected)} of total`
+                ? `${tracked.individual.count.toLocaleString()} users · ${pct(tracked.individual.projected, tracked.totalProjected)} of total`
                 : 'No individual ULBs'
             }
           />
@@ -336,7 +336,7 @@ function ForecastBreakdownCard({
               projected={ccRoutedProjected}
               sub={
                 ccRoutedProjected > 0
-                  ? `${pct(ccRoutedProjected, tracked.totalProjected)} of total, outside budgets data`
+                  ? `${pct(ccRoutedProjected, tracked.totalProjected)} of total outside budget data`
                   : 'All spend attributed to a tracked scope'
               }
             />
@@ -348,19 +348,19 @@ function ForecastBreakdownCard({
             <div className="text-2xl font-semibold">
               {formatCurrency(tracked.totalProjected)}
             </div>
-            <div className="text-xs text-neutral-500">
-              MTD {formatCurrency(tracked.totalMtd)}
-              {entBudget !== null
-                ? ` · ${pct(tracked.totalProjected, entBudget)} of enterprise budget`
-                : ''}
-            </div>
+            <div className="text-xs text-neutral-500">MTD {formatCurrency(tracked.totalMtd)}</div>
+            {entBudget !== null ? (
+              <div className="text-[11px] text-neutral-500">
+                {pct(tracked.totalProjected, entBudget)} of enterprise budget
+              </div>
+            ) : null}
           </div>
         </div>
 
         {tracked.hasActual ? (
           <div className="text-[11px] text-neutral-500">
-            Totals from billing usage. CC-routed is residual spend outside ULB
-            scopes. CC budgets do not report consumed.
+            Totals come from billing usage. CC-routed is residual spend outside
+            ULB scopes; CC budgets do not report consumed spend.
           </div>
         ) : tracked.untrackedSeats > 0 ? (
           <div className="rounded-md border border-amber-200 dark:border-amber-900/60 bg-amber-50 dark:bg-amber-950/30 text-amber-900 dark:text-amber-200 px-3 py-2 text-xs">
@@ -402,9 +402,7 @@ function BreakdownStat({
         {label}
       </div>
       <div className="text-2xl font-semibold">{formatCurrency(projected)}</div>
-      <div className="text-xs text-neutral-500">
-        MTD {formatCurrency(mtd)} → projected EoM
-      </div>
+      <div className="text-xs text-neutral-500">MTD {formatCurrency(mtd)}</div>
       <div className="text-[11px] text-neutral-500">{sub}</div>
     </div>
   )
