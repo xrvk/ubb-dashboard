@@ -1,73 +1,19 @@
 import { useState } from 'react'
-import { Plug, PlugsConnected, ArrowsClockwise } from '@phosphor-icons/react'
+import { Plug } from '@phosphor-icons/react'
 import { useCredentials } from '@/hooks/use-credentials'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent } from '@/components/ui/card'
 
 export function ImportPanel() {
-  const { credentials, connect, disconnect, refresh, loading, error } = useCredentials()
+  const { credentials, connect, loading, error } = useCredentials()
   const [url, setUrl] = useState((import.meta.env.VITE_DEV_ENTERPRISE_URL as string) ?? '')
   const [token, setToken] = useState('')
 
-  if (credentials?.base === 'demo://') {
-    return (
-      <Card>
-        <CardContent className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <PlugsConnected size={22} weight="duotone" className="text-amber-500" />
-            <div>
-              <div className="text-sm font-medium">Demo mode</div>
-              <div className="text-xs text-neutral-500">
-                Generated dataset · {credentials.ent.replace('demo-', '')} users · writes are stubbed
-              </div>
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => void refresh()} disabled={loading}>
-              <ArrowsClockwise size={16} weight="duotone" />
-              Regenerate
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                window.location.search = ''
-              }}
-            >
-              Exit demo
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-    )
-  }
-
   if (credentials) {
-    return (
-      <Card>
-        <CardContent className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <PlugsConnected size={22} weight="duotone" className="text-emerald-600" />
-            <div>
-              <div className="text-sm font-medium">Connected</div>
-              <div className="text-xs text-neutral-500">
-                {credentials.ent} · {new URL(credentials.base).host}
-              </div>
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => void refresh()} disabled={loading}>
-              <ArrowsClockwise size={16} weight="duotone" />
-              Refresh
-            </Button>
-            <Button variant="ghost" size="sm" onClick={disconnect}>
-              Disconnect
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-    )
+    // When connected, the compact status chip lives in the tab bar (App.tsx).
+    // The ImportPanel only renders for the unauthenticated state.
+    return null
   }
 
   return (
@@ -109,8 +55,24 @@ export function ImportPanel() {
         </form>
         {error ? <p className="mt-3 text-sm text-red-600 dark:text-red-400">{error}</p> : null}
         <p className="mt-3 text-xs text-neutral-500">
-          Credentials are kept in memory only. They are never sent anywhere except api.&lt;your-host&gt;.
+          Credentials are kept in memory only. They are sent directly to GitHub's API.
         </p>
+        <div className="mt-4 pt-4 border-t border-neutral-200 dark:border-neutral-800 flex items-center justify-between gap-3 flex-wrap">
+          <div className="text-xs text-neutral-500">
+            No enterprise handy? Explore the dashboard with deterministic fake data.
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              const url = new URL(window.location.href)
+              url.searchParams.set('demo', '150')
+              window.location.assign(url.toString())
+            }}
+          >
+            Try demo mode
+          </Button>
+        </div>
       </CardContent>
     </Card>
   )

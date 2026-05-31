@@ -3,19 +3,38 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import {
   buildCostCenterIndex,
   createApiFetch,
+  fetchAllAiCreditsBudgets,
   fetchAllCopilotSeats,
+  fetchCopilotUsageSummary,
   fetchCostCenters,
-  fetchUserBudgets,
   parseEnterpriseUrl,
   resolveCostCenter,
   type ApiFetch,
   type CopilotSeat,
+  type CopilotUsageSummary,
   type CostCenter,
+  type CostCenterBudget,
   type CostCenterResolution,
   type Credentials,
+  type EnterpriseBudget,
+  type UniversalUlb,
   type UserBudget,
 } from '@/lib/api'
-import { generateDemoBudgets, generateDemoSeats, readDemoCountFromUrl } from '@/lib/demo'
+import {
+  generateDemoBudgets,
+  generateDemoCostCenterBudgets,
+  generateDemoCostCenters,
+  generateDemoEnterpriseBudget,
+  generateDemoSeats,
+  generateDemoUniversalUlb,
+  generateDemoUsageByCostCenter,
+  generateDemoUsageSummary,
+  readDemoCountFromUrl,
+  readDemoExcludeCcFromUrl,
+  readDemoPoolPctFromUrl,
+  scaleDemoConsumptionTo,
+} from '@/lib/demo'
+import { includedAiCredits, seatCostBreakdown } from '@/lib/pricing'
 
 interface CredentialsContextValue {
   credentials: Credentials | null
@@ -23,6 +42,29 @@ interface CredentialsContextValue {
   totalBudgetCount: number
   seats: CopilotSeat[]
   costCenters: CostCenter[]
+  /** Universal ULB (multi_user_customer scope) or null if not configured. */
+  universalUlb: UniversalUlb | null
+  setUniversalUlb: (u: UniversalUlb | null) => void
+  /** Enterprise-scope ai_credits budget or null if not configured. */
+  enterpriseBudget: EnterpriseBudget | null
+  /** Cost-center-scope ai_credits budgets, keyed by lowercased CC name. */
+  costCenterBudgetsByName: ReadonlyMap<string, CostCenterBudget>
+  /**
+   * Enterprise-wide Copilot billing usage summary for the current month, or
+   * `null` if not yet loaded / unavailable. Best-effort: a 403 (no enhanced
+   * billing access) leaves it null.
+   */
+  usageSummary: CopilotUsageSummary | null
+  /**
+   * Per-cost-center billing usage for the current month, keyed by cost
+   * center id. Populated after the initial load by issuing one
+   * `fetchCopilotUsageSummary({ costCenterId })` per CC in parallel. CCs
+   * whose fetch failed are absent from the map (caller should treat as
+   * unknown / show "—"). This is the authoritative per-CC MTD source —
+   * it covers individual ULB, universal ULB, and org-routed seats alike,
+   * unlike the user-budgets API which only reports individual-ULB users.
+   */
+  usageByCostCenterId: ReadonlyMap<string, CopilotUsageSummary>
   /**
    * Lowercased-login → resolved CC (or null if unassigned).
    * Built from seats × cost-center index per the cost-center allocation docs:
@@ -47,6 +89,15 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
   const [totalBudgetCount, setTotalBudgetCount] = useState(0)
   const [seats, setSeats] = useState<CopilotSeat[]>([])
   const [costCenters, setCostCenters] = useState<CostCenter[]>([])
+  const [universalUlb, setUniversalUlb] = useState<UniversalUlb | null>(null)
+  const [enterpriseBudget, setEnterpriseBudget] = useState<EnterpriseBudget | null>(null)
+  const [costCenterBudgetsByName, setCostCenterBudgetsByName] = useState<ReadonlyMap<string, CostCenterBudget>>(
+    new Map(),
+  )
+  const [usageSummary, setUsageSummary] = useState<CopilotUsageSummary | null>(null)
+  const [usageByCostCenterId, setUsageByCostCenterId] = useState<ReadonlyMap<string, CopilotUsageSummary>>(
+    new Map(),
+  )
   const [loading, setLoading] = useState(false)
   const [loadProgress, setLoadProgress] = useState<{ loaded: number; total: number | undefined } | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -60,10 +111,26 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
     if (credentials?.base === 'demo://') {
       const demoCount = readDemoCountFromUrl() ?? 0
       const demoBudgets = generateDemoBudgets(demoCount, Math.floor(Math.random() * 100_000))
+      const demoSeats = generateDemoSeats(demoCount)
+      const universal = generateDemoUniversalUlb()
+      const poolPct = readDemoPoolPctFromUrl()
+      if (poolPct !== null) {
+        const cost = seatCostBreakdown(demoSeats)
+        const credits = includedAiCredits(cost.business, cost.enterprise)
+        scaleDemoConsumptionTo((poolPct / 100) * credits.totalDollars, demoBudgets, universal)
+      }
       setBudgets(demoBudgets)
       setTotalBudgetCount(demoBudgets.length)
-      setSeats(generateDemoSeats(demoCount))
-      setCostCenters([])
+      setSeats(demoSeats)
+      setCostCenters(generateDemoCostCenters(demoCount))
+      setUniversalUlb(universal)
+      setEnterpriseBudget(generateDemoEnterpriseBudget())
+      setCostCenterBudgetsByName(generateDemoCostCenterBudgets())
+      setUsageSummary(
+        generateDemoUsageSummary(demoBudgets, {
+          poolExhausted: poolPct === null ? true : poolPct >= 100,
+        }),
+      )
       return
     }
     if (!apiFetch) return
@@ -71,17 +138,22 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
     setLoadProgress({ loaded: 0, total: undefined })
     setError(null)
     try {
-      const [result, seatList, ccList] = await Promise.all([
-        fetchUserBudgets(apiFetch, (loaded, total) =>
+      const [allBudgets, seatList, ccList, summary] = await Promise.all([
+        fetchAllAiCreditsBudgets(apiFetch, (loaded, total) =>
           setLoadProgress({ loaded, total }),
         ),
         fetchAllCopilotSeats(apiFetch).catch(() => [] as CopilotSeat[]),
         fetchCostCenters(apiFetch).catch(() => [] as CostCenter[]),
+        fetchCopilotUsageSummary(apiFetch).catch(() => null),
       ])
-      setBudgets(result.userBudgets)
-      setTotalBudgetCount(result.totalBudgetCount)
+      setBudgets(allBudgets.userBudgets)
+      setTotalBudgetCount(allBudgets.totalBudgetCount)
       setSeats(seatList)
       setCostCenters(ccList)
+      setUniversalUlb(allBudgets.universal)
+      setEnterpriseBudget(allBudgets.enterprise)
+      setCostCenterBudgetsByName(allBudgets.costCenterBudgetsByName)
+      setUsageSummary(summary)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -102,18 +174,23 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
     setError(null)
     try {
       const fetcher = createApiFetch(creds)
-      const [result, seatList, ccList] = await Promise.all([
-        fetchUserBudgets(fetcher, (loaded, total) =>
+      const [allBudgets, seatList, ccList, summary] = await Promise.all([
+        fetchAllAiCreditsBudgets(fetcher, (loaded, total) =>
           setLoadProgress({ loaded, total }),
         ),
         fetchAllCopilotSeats(fetcher).catch(() => [] as CopilotSeat[]),
         fetchCostCenters(fetcher).catch(() => [] as CostCenter[]),
+        fetchCopilotUsageSummary(fetcher).catch(() => null),
       ])
       setCredentials(creds)
-      setBudgets(result.userBudgets)
-      setTotalBudgetCount(result.totalBudgetCount)
+      setBudgets(allBudgets.userBudgets)
+      setTotalBudgetCount(allBudgets.totalBudgetCount)
       setSeats(seatList)
       setCostCenters(ccList)
+      setUniversalUlb(allBudgets.universal)
+      setEnterpriseBudget(allBudgets.enterprise)
+      setCostCenterBudgetsByName(allBudgets.costCenterBudgetsByName)
+      setUsageSummary(summary)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -128,6 +205,11 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
     setTotalBudgetCount(0)
     setSeats([])
     setCostCenters([])
+    setUniversalUlb(null)
+    setEnterpriseBudget(null)
+    setCostCenterBudgetsByName(new Map())
+    setUsageSummary(null)
+    setUsageByCostCenterId(new Map())
     setError(null)
   }, [])
 
@@ -142,9 +224,26 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
       void Promise.resolve().then(() => {
         setCredentials({ base: 'demo://', ent: `demo-${demoCount}`, token: 'demo' })
         const demoBudgets = generateDemoBudgets(demoCount)
+        const demoSeats = generateDemoSeats(demoCount)
+        const universal = generateDemoUniversalUlb()
+        const poolPct = readDemoPoolPctFromUrl()
+        if (poolPct !== null) {
+          const cost = seatCostBreakdown(demoSeats)
+          const credits = includedAiCredits(cost.business, cost.enterprise)
+          scaleDemoConsumptionTo((poolPct / 100) * credits.totalDollars, demoBudgets, universal)
+        }
         setBudgets(demoBudgets)
         setTotalBudgetCount(demoBudgets.length)
-        setSeats(generateDemoSeats(demoCount))
+        setSeats(demoSeats)
+        setCostCenters(generateDemoCostCenters(demoCount))
+        setUniversalUlb(universal)
+        setEnterpriseBudget(generateDemoEnterpriseBudget({ excludeCostCenterUsage: readDemoExcludeCcFromUrl() }))
+        setCostCenterBudgetsByName(generateDemoCostCenterBudgets())
+        setUsageSummary(
+          generateDemoUsageSummary(demoBudgets, {
+            poolExhausted: poolPct === null ? true : poolPct >= 100,
+          }),
+        )
       })
       return
     }
@@ -162,12 +261,70 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
   const loginToCostCenter = useMemo(() => {
     const map = new Map<string, CostCenterResolution | null>()
     if (costCenters.length === 0) return map
-    const index = buildCostCenterIndex(costCenters)
+    const index = buildCostCenterIndex(costCenters, costCenterBudgetsByName)
     for (const s of seats) {
       map.set(s.login.toLowerCase(), resolveCostCenter(s.login, s.orgLogin, index))
     }
     return map
-  }, [seats, costCenters])
+  }, [seats, costCenters, costCenterBudgetsByName])
+
+  // Per-CC seat counts, used both by the dashboard and to proportion demo
+  // usage across CCs. Built from the same login→CC resolution.
+  const ccSeatCounts = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const res of loginToCostCenter.values()) {
+      if (!res?.cc) continue
+      counts.set(res.cc.id, (counts.get(res.cc.id) ?? 0) + 1)
+    }
+    return counts
+  }, [loginToCostCenter])
+
+  // Fetch (or synthesize) per-CC billing usage whenever the CC list changes.
+  // Real mode: one `fetchCopilotUsageSummary({ costCenterId })` per CC in
+  // parallel; failures degrade per-CC to a missing map entry. Demo mode:
+  // distribute the top-line aiCreditsNet proportional to seat share.
+  //
+  // The synchronous resets below are intentional guards (no CCs, no usage
+  // summary in demo, no apiFetch). Refactoring to useMemo would lose the
+  // async-fetch path, so disable the rule for this effect.
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    if (costCenters.length === 0) {
+      setUsageByCostCenterId(new Map())
+      return
+    }
+    if (credentials?.base === 'demo://') {
+      if (!usageSummary) {
+        setUsageByCostCenterId(new Map())
+        return
+      }
+      setUsageByCostCenterId(
+        generateDemoUsageByCostCenter(costCenters, ccSeatCounts, usageSummary),
+      )
+      return
+    }
+    if (!apiFetch) {
+      setUsageByCostCenterId(new Map())
+      return
+    }
+    let cancelled = false
+    void Promise.all(
+      costCenters.map(cc =>
+        fetchCopilotUsageSummary(apiFetch, { costCenterId: cc.id })
+          .then(s => [cc.id, s] as const)
+          .catch(() => null),
+      ),
+    ).then(results => {
+      if (cancelled) return
+      const map = new Map<string, CopilotUsageSummary>()
+      for (const entry of results) if (entry) map.set(entry[0], entry[1])
+      setUsageByCostCenterId(map)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [credentials, apiFetch, costCenters, ccSeatCounts, usageSummary])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const value: CredentialsContextValue = {
     credentials,
@@ -176,6 +333,12 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
     seats,
     costCenters,
     loginToCostCenter,
+    universalUlb,
+    setUniversalUlb,
+    enterpriseBudget,
+    costCenterBudgetsByName,
+    usageSummary,
+    usageByCostCenterId,
     loading,
     loadProgress,
     error,

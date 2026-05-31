@@ -1,388 +1,287 @@
-import { useMemo, useRef, useState } from 'react'
-import { Plus, Gauge, Moon, Sun, ArrowCounterClockwise } from '@phosphor-icons/react'
-import { Toaster, toast } from 'sonner'
+import { useEffect, useState } from 'react'
+import { Gauge, Moon, Sun, ArrowCounterClockwise, BookOpen } from '@phosphor-icons/react'
+import { Toaster } from 'sonner'
 import { useTheme } from 'next-themes'
 import { useCredentials } from '@/hooks/use-credentials'
+import { ConnectionMenu } from '@/components/ConnectionMenu'
 import { ImportPanel } from '@/components/ImportPanel'
-import { SummaryCards } from '@/components/SummaryCards'
-import { UtilizationHistogram } from '@/components/UtilizationHistogram'
-import { BudgetsTable, EMPTY_FILTERS, type TableFilters } from '@/components/BudgetsTable'
-import { EditBudgetDialog } from '@/components/EditBudgetDialog'
-import { CreateBudgetDialog } from '@/components/CreateBudgetDialog'
-import { DeleteConfirmDialog } from '@/components/DeleteConfirmDialog'
-import { BulkUnblockDialog } from '@/components/BulkUnblockDialog'
-import { RevertBulkDialog } from '@/components/RevertBulkDialog'
+import { IndividualUlbPage } from '@/components/IndividualUlbPage'
+import { IndividualUlbTaskBanner } from '@/components/IndividualUlbTaskBanner'
+import { BudgetPlannerHintBanner } from '@/components/BudgetPlannerHintBanner'
+import { OverviewPage } from '@/components/OverviewPage'
+import { DashboardPage } from '@/components/DashboardPage'
+import { UniversalUlbPage } from '@/components/UniversalUlbPage'
+import { BudgetConstraintsHelpPage } from '@/components/BudgetConstraintsHelpPage'
 import { Button } from '@/components/ui/button'
-import { summarize } from '@/lib/status'
-import { createUserBudget as apiCreateUserBudget, deleteUserBudget as apiDeleteUserBudget, patchUserBudget as apiPatchUserBudget, type UserBudget } from '@/lib/api'
-import { runBatch, type BatchProgress } from '@/lib/batch'
-import { clearSnapshot, endOfMonth, loadSnapshot, saveSnapshot, type BulkApplySnapshot } from '@/lib/snapshot'
+import { cn, openExternal } from '@/lib/utils'
+import { EMPTY_FILTERS, type TableFilters } from '@/components/BudgetsTable'
+import {
+  NAV_TO_BUDGET_MODEL_EVENT,
+  NAV_TO_INDIVIDUAL_EVENT,
+  NAV_TO_UNIVERSAL_EVENT,
+  PLANNER_HIGHLIGHT_EVENT,
+  type NavToIndividualDetail,
+  type NavToIndividualTask,
+  type PlannerHighlightDetail,
+} from '@/lib/navEvents'
+import type { BulkApplySnapshot } from '@/lib/snapshot'
+
+type Tab = 'dashboard' | 'overview' | 'individual' | 'universal' | 'budget-model'
+
+const TAB_LABELS: Record<Tab, string> = {
+  dashboard: 'Dashboard',
+  overview: 'Enterprise Budgets',
+  individual: 'Individual ULBs',
+  universal: 'Universal ULB',
+  'budget-model': 'Budget model',
+}
 
 export function App() {
-  const { credentials, budgets, totalBudgetCount, seats, costCenters, loginToCostCenter, loading, loadProgress, apiFetch, refresh } = useCredentials()
+  const { credentials, refresh, disconnect, loading } = useCredentials()
   const { resolvedTheme, setTheme } = useTheme()
 
-  const [editing, setEditing] = useState<UserBudget | null>(null)
-  const [deleting, setDeleting] = useState<UserBudget | null>(null)
-  const [creating, setCreating] = useState(false)
-  const [bulkUnblock, setBulkUnblock] = useState<UserBudget[] | null>(null)
-  const [revertCandidate, setRevertCandidate] = useState<BulkApplySnapshot | null>(null)
-  const [snapshot, setSnapshot] = useState<BulkApplySnapshot | null>(null)
-  const [filters, setFilters] = useState<TableFilters>(EMPTY_FILTERS)
-  const tableRef = useRef<HTMLDivElement | null>(null)
+  const [tab, setTab] = useState<Tab>('dashboard')
 
-  const summary = useMemo(() => summarize(budgets), [budgets])
-  const existingUsernames = useMemo(() => new Set(budgets.map(b => b.user)), [budgets])
-
-  // Load the most recent snapshot for the connected enterprise.
-  // State-during-render keyed on credentials so we don't need useEffect.
-  const [snapshotFor, setSnapshotFor] = useState<string | null>(null)
-  const currentEnt = credentials?.ent ?? null
-  if (snapshotFor !== currentEnt) {
-    setSnapshotFor(currentEnt)
-    setSnapshot(currentEnt ? loadSnapshot(currentEnt) : null)
-  }
-
-  const scrollToTable = () => {
-    requestAnimationFrame(() => {
-      tableRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  /**
+   * Switch tab AND scroll the page so the sticky tab bar pins at the very
+   * top of the viewport. This lets the user re-click a tab to "jump to top"
+   * and ensures cross-tab clicks always start at the same anchor instead of
+   * dropping them into the middle of a long page.
+   */
+  const goToTab = (next: Tab) => {
+    setTab(next)
+    // Defer one frame so the new tab's layout is computed before we measure.
+    window.requestAnimationFrame(() => {
+      const header = document.querySelector<HTMLElement>('header')
+      const offset = header?.offsetHeight ?? 0
+      window.scrollTo({ top: offset, behavior: 'smooth' })
     })
   }
+  const [creating, setCreating] = useState(false)
+  // Snapshot is owned by IndividualUlbPage but surfaced here so the header
+  // can render the Revert button regardless of which tab is active.
+  const [snapshot, setSnapshot] = useState<BulkApplySnapshot | null>(null)
+  const [revertCandidate, setRevertCandidate] = useState<BulkApplySnapshot | null>(null)
+  // Pending filter set by deep-link events (e.g. from ConstraintsBanner).
+  // Cleared by IndividualUlbPage once consumed.
+  const [pendingIndividualFilter, setPendingIndividualFilter] = useState<TableFilters | null>(null)
+  // Active task context shown as a contextual banner on the Individual ULBs
+  // page so the user remembers what they came to fix.
+  const [activeTask, setActiveTask] = useState<NavToIndividualTask | null>(null)
+  // Active hint surfaced under the tab bar on the Budget model page after
+  // the user deep-links from an abstract constraint action.
+  const [plannerHint, setPlannerHint] = useState<PlannerHighlightDetail | null>(null)
 
-  const setFiltersAndScroll = (next: TableFilters) => {
-    setFilters(next)
-    scrollToTable()
-  }
-
-  const handleEdit = async (newAmount: number) => {
-    if (!editing) return
-    if (credentials?.base === 'demo://') {
-      toast.info(`Demo mode: would update ${editing.user} to $${newAmount}`)
-      return
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<NavToIndividualDetail>).detail
+      if (!detail) return
+      setPendingIndividualFilter(detail.filter ?? EMPTY_FILTERS)
+      setActiveTask(detail.task ?? null)
+      setTab('individual')
     }
-    if (!apiFetch) return
-    await apiPatchUserBudget(apiFetch, editing.id, newAmount)
-    toast.success(`Updated ${editing.user} to $${newAmount}`)
-    await refresh()
-  }
+    window.addEventListener(NAV_TO_INDIVIDUAL_EVENT, handler)
+    return () => window.removeEventListener(NAV_TO_INDIVIDUAL_EVENT, handler)
+  }, [])
 
-  const handleCreate = async (username: string, amount: number) => {
-    if (credentials?.base === 'demo://') {
-      toast.info(`Demo mode: would create budget for ${username}`)
-      return
-    }
-    if (!apiFetch) return
-    await apiCreateUserBudget(apiFetch, username, amount)
-    toast.success(`Created budget for ${username}`)
-    await refresh()
-  }
+  useEffect(() => {
+    const handler = () => setTab('budget-model')
+    window.addEventListener(NAV_TO_BUDGET_MODEL_EVENT, handler)
+    return () => window.removeEventListener(NAV_TO_BUDGET_MODEL_EVENT, handler)
+  }, [])
 
-  const handleDelete = async () => {
-    if (!deleting) return
-    if (credentials?.base === 'demo://') {
-      toast.info(`Demo mode: would delete budget for ${deleting.user}`)
-      return
-    }
-    if (!apiFetch) return
-    await apiDeleteUserBudget(apiFetch, deleting.id)
-    toast.success(`Deleted budget for ${deleting.user}`)
-    await refresh()
-  }
-
-  const handleBulkUnblock = async (
-    updates: Array<{ id: string; user: string; newAmount: number }>,
-    handle: { signal: AbortSignal; onProgress: (p: BatchProgress) => void },
-  ) => {
-    if (credentials?.base === 'demo://') {
-      let done = 0
-      for (let i = 0; i < updates.length; i += 1) {
-        if (handle.signal.aborted) break
-        await new Promise(r => setTimeout(r, 8))
-        done += 1
-        handle.onProgress({
-          total: updates.length,
-          completed: done,
-          succeeded: done,
-          failed: 0,
-          inFlight: 0,
-          retrying: 0,
-          startedAt: Date.now() - done * 8,
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<PlannerHighlightDetail>).detail
+      if (!detail) return
+      setPlannerHint(detail)
+      setTab('budget-model')
+      // Defer two frames so the planner tab has mounted before scrolling /
+      // flashing the target card.
+      const flashTarget = detail.target === 'cc-card' ? 'bp-cc-card' : 'bp-ent-card'
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
+          const el = document.getElementById(flashTarget)
+          if (!el) return
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          const cls = [
+            'ring-2',
+            'ring-amber-400',
+            'ring-offset-2',
+            'dark:ring-offset-neutral-950',
+          ]
+          el.classList.add(...cls)
+          window.setTimeout(() => el.classList.remove(...cls), 2000)
         })
-      }
-      toast.info(`Demo mode: would update ${updates.length.toLocaleString()} budgets`)
-      return
-    }
-    if (!apiFetch || !credentials) return
-
-    // Capture pre-apply state so admin can revert after cycle reset.
-    const previousById = new Map(budgets.map(b => [b.id, b]))
-    const snapshotEntries = updates
-      .map(u => {
-        const prev = previousById.get(u.id)
-        if (!prev) return null
-        return {
-          budgetId: u.id,
-          user: u.user,
-          previousAmount: prev.budgetAmount,
-          newAmount: u.newAmount,
-        }
       })
-      .filter((x): x is NonNullable<typeof x> => x !== null)
-
-    const results = await runBatch(
-      updates,
-      async u => {
-        await apiPatchUserBudget(apiFetch, u.id, u.newAmount)
-      },
-      {
-        concurrency: 5,
-        perTaskDelayMs: 50,
-        maxRetriesOn429: 2,
-        defaultRetryAfterMs: 60_000,
-        signal: handle.signal,
-        onProgress: handle.onProgress,
-      },
-    )
-    const failed = results.filter(r => !r.ok).length
-    const ok = results.length - failed
-    if (failed === 0) {
-      toast.success(`Unblocked ${ok.toLocaleString()} users`)
-    } else if (ok === 0) {
-      toast.error(`Failed to update ${failed.toLocaleString()} users`)
-    } else {
-      toast.warning(`Updated ${ok.toLocaleString()}, failed ${failed.toLocaleString()}`)
     }
+    window.addEventListener(PLANNER_HIGHLIGHT_EVENT, handler)
+    return () => window.removeEventListener(PLANNER_HIGHLIGHT_EVENT, handler)
+  }, [])
 
-    // Persist a snapshot of the successfully-applied updates.
-    const succeededIds = new Set(
-      results.filter(r => r.ok).map(r => (r.item as { id: string }).id),
-    )
-    const succeededEntries = snapshotEntries.filter(e => succeededIds.has(e.budgetId))
-    if (succeededEntries.length > 0) {
-      const snap: BulkApplySnapshot = {
-        id: `snap-${Date.now()}`,
-        enterprise: credentials.ent,
-        appliedAt: Date.now(),
-        cycleEndsAt: endOfMonth().getTime(),
-        entries: succeededEntries,
-      }
-      saveSnapshot(snap)
-      setSnapshot(snap)
+  useEffect(() => {
+    const handler = () => {
+      setTab('universal')
+      // Wait for the tab content to render, then flash the cap card so the
+      // user sees where to act after clicking 'Lower universal ULB to $X'.
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
+          const el = document.getElementById('uulb-cap')
+          if (!el) return
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          const cls = [
+            'ring-2',
+            'ring-amber-400',
+            'ring-offset-2',
+            'dark:ring-offset-neutral-950',
+            'bg-amber-100',
+            'dark:bg-amber-900/40',
+          ]
+          el.classList.add(...cls)
+          window.setTimeout(() => {
+            el.classList.remove(...cls)
+          }, 2000)
+        })
+      })
     }
-
-    await refresh()
-  }
-
-  const handleRevert = async (snap: BulkApplySnapshot) => {
-    if (credentials?.base === 'demo://') {
-      toast.info(`Demo mode: would revert ${snap.entries.length.toLocaleString()} budgets`)
-      clearSnapshot()
-      setSnapshot(null)
-      setRevertCandidate(null)
-      return
-    }
-    if (!apiFetch) return
-    const t = toast.loading(`Reverting ${snap.entries.length.toLocaleString()} budgets…`)
-    try {
-      const results = await runBatch(
-        snap.entries,
-        async e => {
-          await apiPatchUserBudget(apiFetch, e.budgetId, e.previousAmount)
-        },
-        { concurrency: 5, perTaskDelayMs: 50 },
-      )
-      const failed = results.filter(r => !r.ok).length
-      toast.dismiss(t)
-      if (failed === 0) {
-        toast.success(`Reverted ${snap.entries.length.toLocaleString()} budgets`)
-        clearSnapshot()
-        setSnapshot(null)
-      } else {
-        toast.warning(`Reverted ${snap.entries.length - failed}, failed ${failed}`)
-      }
-      setRevertCandidate(null)
-      await refresh()
-    } catch (e) {
-      toast.dismiss(t)
-      toast.error(e instanceof Error ? e.message : String(e))
-    }
-  }
-
+    window.addEventListener(NAV_TO_UNIVERSAL_EVENT, handler)
+    return () => window.removeEventListener(NAV_TO_UNIVERSAL_EVENT, handler)
+  }, [])
   return (
     <div className="min-h-screen">
       <Toaster richColors position="bottom-right" />
-      <header className="border-b border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
+      <header className="border-b border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center gap-3">
           <div className="flex items-center gap-2.5">
             <Gauge size={26} weight="duotone" className="text-emerald-600" />
             <div>
-              <h1 className="text-base font-semibold leading-tight">Individual ULB Dashboard</h1>
+              <h1 className="text-base font-semibold leading-tight">ULB Dashboard</h1>
               <p className="text-xs text-neutral-500 leading-tight">
-                Monitor per-user Copilot budgets across your enterprise
+                Monitor Copilot AI-credit budgets across your enterprise
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            {credentials ? (
-              <>
-                {snapshot ? (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setRevertCandidate(snapshot)}
-                    title={`Revert the most recent bulk apply (${snapshot.entries.length} budgets)`}
-                  >
-                    <ArrowCounterClockwise size={14} weight="duotone" />
-                    Revert ({snapshot.entries.length.toLocaleString()})
-                  </Button>
-                ) : null}
-                <Button
-                  onClick={() => setCreating(true)}
-                  size="sm"
-                  disabled={totalBudgetCount >= 10000}
-                  title={totalBudgetCount >= 10000 ? 'Budget limit of 10,000 reached for this enterprise' : undefined}
-                >
-                  <Plus size={16} weight="bold" />
-                  Add ULB
-                </Button>
-              </>
-            ) : null}
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label="Toggle theme"
-              onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
-            >
-              {resolvedTheme === 'dark' ? <Sun size={18} weight="duotone" /> : <Moon size={18} weight="duotone" />}
-            </Button>
-          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => goToTab('budget-model')}
+            title="How the budget constraint model works"
+            className={cn(
+              'ml-auto',
+              tab === 'budget-model' &&
+                'bg-neutral-100 text-neutral-900 dark:bg-neutral-800 dark:text-neutral-100',
+            )}
+          >
+            <BookOpen size={14} weight="duotone" />
+            <span className="hidden sm:inline">Budget model</span>
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Toggle theme"
+            onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
+          >
+            {resolvedTheme === 'dark' ? <Sun size={18} weight="duotone" /> : <Moon size={18} weight="duotone" />}
+          </Button>
         </div>
       </header>
+
+      {credentials ? (
+        <div className="sticky top-0 z-10 border-b border-neutral-200 dark:border-neutral-800 bg-white/95 dark:bg-neutral-950/95 backdrop-blur supports-[backdrop-filter]:bg-white/80 dark:supports-[backdrop-filter]:bg-neutral-950/80">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 py-2 flex items-center gap-3">
+            <div className="flex flex-1 sm:flex-initial gap-1 p-1 rounded-md bg-neutral-100 dark:bg-neutral-800">
+              {(['dashboard', 'overview', 'universal', 'individual'] as const).map(t => (
+                <button
+                  key={t}
+                  onClick={() => goToTab(t)}
+                  className={cn(
+                    'flex-1 sm:flex-initial px-3 py-1 text-sm font-medium rounded transition-colors',
+                    tab === t
+                      ? 'bg-white dark:bg-neutral-700 text-neutral-900 dark:text-neutral-100 shadow-sm'
+                      : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100',
+                  )}
+                >
+                  {TAB_LABELS[t]}
+                </button>
+              ))}
+            </div>
+            <div className="ml-auto flex items-center gap-2">
+              {snapshot ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setRevertCandidate(snapshot)}
+                  title={`Revert the most recent bulk apply (${snapshot.entries.length} budgets)`}
+                >
+                  <ArrowCounterClockwise size={14} weight="duotone" />
+                  <span className="hidden sm:inline">Revert ({snapshot.entries.length.toLocaleString()})</span>
+                </Button>
+              ) : null}
+              <ConnectionMenu
+                isDemo={credentials.base === 'demo://'}
+                label={
+                  credentials.base === 'demo://'
+                    ? `Demo · ${credentials.ent.replace('demo-', '')} users`
+                    : new URL(credentials.base).host
+                }
+                loading={loading}
+                onRefresh={() => void refresh()}
+                onDisconnect={() => {
+                  if (credentials.base === 'demo://') {
+                    window.location.search = ''
+                  } else {
+                    disconnect()
+                  }
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {credentials && tab === 'individual' && activeTask ? (
+        <div className="sticky top-[49px] z-10 border-b border-neutral-200 dark:border-neutral-800 bg-white/95 dark:bg-neutral-950/95 backdrop-blur supports-[backdrop-filter]:bg-white/80 dark:supports-[backdrop-filter]:bg-neutral-950/80">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 py-2">
+            <IndividualUlbTaskBanner task={activeTask} onDismiss={() => setActiveTask(null)} />
+          </div>
+        </div>
+      ) : null}
+
+      {credentials && tab === 'budget-model' && plannerHint ? (
+        <div className="sticky top-[49px] z-10 border-b border-neutral-200 dark:border-neutral-800 bg-white/95 dark:bg-neutral-950/95 backdrop-blur supports-[backdrop-filter]:bg-white/80 dark:supports-[backdrop-filter]:bg-neutral-950/80">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 py-2">
+            <BudgetPlannerHintBanner hint={plannerHint} onDismiss={() => setPlannerHint(null)} />
+          </div>
+        </div>
+      ) : null}
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 grid gap-6">
         <ImportPanel />
 
         {credentials ? (
-          loading && budgets.length === 0 ? (
-            <div className="text-center text-sm text-neutral-500 py-12">
-              {loadProgress
-                ? loadProgress.total
-                  ? `Loading budgets… ${loadProgress.loaded} of ${loadProgress.total}`
-                  : `Loading budgets… ${loadProgress.loaded}`
-                : 'Loading budgets…'}
-            </div>
+          tab === 'dashboard' ? (
+            <DashboardPage />
+          ) : tab === 'overview' ? (
+            <OverviewPage />
+          ) : tab === 'individual' ? (
+            <IndividualUlbPage
+              creating={creating}
+              onCreatingChange={setCreating}
+              onSnapshotChange={setSnapshot}
+              pendingRevert={revertCandidate}
+              onPendingRevertChange={setRevertCandidate}
+              pendingFilter={pendingIndividualFilter}
+              onPendingFilterConsumed={() => setPendingIndividualFilter(null)}
+              activeTask={activeTask}
+              onTaskDismiss={() => setActiveTask(null)}
+            />
+          ) : tab === 'budget-model' ? (
+            <BudgetConstraintsHelpPage onBack={() => goToTab('overview')} />
           ) : (
-            <>
-              {totalBudgetCount >= 9500 ? (
-                <div
-                  role="alert"
-                  className={
-                    totalBudgetCount >= 10000
-                      ? 'rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-900 dark:border-red-800/60 dark:bg-red-950/40 dark:text-red-200'
-                      : 'rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-200'
-                  }
-                >
-                  <strong className="font-medium">
-                    {totalBudgetCount >= 10000 ? 'Budget limit reached:' : 'Approaching budget limit:'}
-                  </strong>{' '}
-                  {totalBudgetCount.toLocaleString()} of 10,000 budgets used across this
-                  enterprise (all types).{' '}
-                  {totalBudgetCount >= 10000
-                    ? 'New budgets cannot be created until existing ones are removed.'
-                    : `${(10000 - totalBudgetCount).toLocaleString()} remaining.`}{' '}
-                  <a
-                    href="https://docs.github.com/en/billing/concepts/budgets-and-alerts#budget-limitation"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="underline underline-offset-2 hover:no-underline"
-                  >
-                    Learn more
-                  </a>
-                </div>
-              ) : null}
-              <SummaryCards
-                summary={summary}
-                onReset={() => setFiltersAndScroll(EMPTY_FILTERS)}
-                onSelectOver={() => setFiltersAndScroll({ ...EMPTY_FILTERS, status: 'over' })}
-                onSelectNear={() => setFiltersAndScroll({ ...EMPTY_FILTERS, status: 'near' })}
-              />
-              {budgets.length > 0 ? (
-                <>
-                  <UtilizationHistogram
-                    budgets={budgets}
-                    selectedBucketId={filters.bucketId}
-                    onSelectBucket={id =>
-                      setFiltersAndScroll({ ...filters, bucketId: id, status: 'all' })
-                    }
-                  />
-                  <div ref={tableRef}>
-                    <BudgetsTable
-                      budgets={budgets}
-                      filters={filters}
-                      onFiltersChange={setFilters}
-                      onEdit={setEditing}
-                      onDelete={setDeleting}
-                      onBulkUnblock={items => setBulkUnblock(items)}
-                      costCenters={costCenters}
-                      loginToCostCenter={loginToCostCenter}
-                    />
-                  </div>
-                </>
-              ) : (
-                <div className="rounded-lg border border-dashed border-neutral-300 dark:border-neutral-700 p-12 text-center">
-                  <p className="text-sm text-neutral-500">
-                    No individual ULBs found for this enterprise.
-                  </p>
-                  <Button className="mt-4" onClick={() => setCreating(true)}>
-                    <Plus size={16} weight="bold" />
-                    Add the first one
-                  </Button>
-                </div>
-              )}
-            </>
+            <UniversalUlbPage />
           )
         ) : null}
       </main>
-
-      <EditBudgetDialog
-        budget={editing}
-        open={editing !== null}
-        onOpenChange={open => !open && setEditing(null)}
-        onSubmit={handleEdit}
-      />
-      <CreateBudgetDialog
-        open={creating}
-        onOpenChange={setCreating}
-        onSubmit={handleCreate}
-        seats={seats}
-        existingUsernames={existingUsernames}
-      />
-      <DeleteConfirmDialog
-        budget={deleting}
-        open={deleting !== null}
-        onOpenChange={open => !open && setDeleting(null)}
-        onConfirm={handleDelete}
-      />
-      <BulkUnblockDialog
-        open={bulkUnblock !== null}
-        onOpenChange={open => !open && setBulkUnblock(null)}
-        selected={bulkUnblock ?? []}
-        onApply={handleBulkUnblock}
-      />
-
-      <RevertBulkDialog
-        snapshot={revertCandidate}
-        onCancel={() => setRevertCandidate(null)}
-        onConfirm={() => {
-          if (revertCandidate) return handleRevert(revertCandidate)
-        }}
-        onDiscard={() => {
-          clearSnapshot()
-          setSnapshot(null)
-          setRevertCandidate(null)
-          toast.info('Snapshot discarded')
-        }}
-      />
 
       <footer className="border-t border-neutral-200 dark:border-neutral-800 mt-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 space-y-3 text-center text-xs text-neutral-500">
@@ -395,6 +294,7 @@ export function App() {
               href="https://docs.github.com"
               target="_blank"
               rel="noopener noreferrer"
+              onClick={openExternal('https://docs.github.com')}
               className="underline hover:text-neutral-900 dark:hover:text-neutral-100 transition-colors"
             >
               GitHub's official documentation
@@ -407,6 +307,7 @@ export function App() {
               href="https://github.com/xrvk"
               target="_blank"
               rel="noopener noreferrer"
+              onClick={openExternal('https://github.com/xrvk')}
               className="hover:text-neutral-900 dark:hover:text-neutral-100 hover:underline underline-offset-2 transition-colors"
             >
               @xrvk
@@ -416,6 +317,7 @@ export function App() {
               href="https://github.com/xrvk/ind-ulb-dashboard"
               target="_blank"
               rel="noopener noreferrer"
+              onClick={openExternal('https://github.com/xrvk/ind-ulb-dashboard')}
               className="hover:text-neutral-900 dark:hover:text-neutral-100 hover:underline underline-offset-2 transition-colors"
             >
               Source

@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { UserCombobox } from '@/components/ui/user-combobox'
 import type { CopilotSeat } from '@/lib/api'
+import { openExternal } from '@/lib/utils'
 
 interface Props {
   open: boolean
@@ -54,6 +55,7 @@ export function CreateBudgetDialog({ open, onOpenChange, onSubmit, seats, existi
             href="https://docs.github.com/en/billing/concepts/budgets-and-alerts#your-first-billing-cycle-after-creating-a-budget"
             target="_blank"
             rel="noreferrer"
+            onClick={openExternal('https://docs.github.com/en/billing/concepts/budgets-and-alerts#your-first-billing-cycle-after-creating-a-budget')}
             className="underline underline-offset-2 hover:no-underline"
           >
             Learn more

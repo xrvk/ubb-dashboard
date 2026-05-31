@@ -262,7 +262,7 @@ src/
 │   ├── DeleteConfirmDialog.tsx
 │   ├── EditBudgetDialog.tsx
 │   ├── ImportPanel.tsx
-│   ├── SummaryCards.tsx
+│   ├── FilterChips.tsx
 │   ├── UtilizationHistogram.tsx
 │   └── ui/                   # Button, Card, Dialog, Input, StatusBadge, UserCombobox
 ├── hooks/
