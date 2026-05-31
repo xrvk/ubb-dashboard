@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
-import { Gauge, Moon, Sun, ArrowCounterClockwise, BookOpen, ArrowsClockwise, PlugsConnected } from '@phosphor-icons/react'
+import { Gauge, Moon, Sun, ArrowCounterClockwise, BookOpen } from '@phosphor-icons/react'
 import { Toaster } from 'sonner'
 import { useTheme } from 'next-themes'
 import { useCredentials } from '@/hooks/use-credentials'
+import { ConnectionMenu } from '@/components/ConnectionMenu'
 import { ImportPanel } from '@/components/ImportPanel'
 import { IndividualUlbPage } from '@/components/IndividualUlbPage'
 import { IndividualUlbTaskBanner } from '@/components/IndividualUlbTaskBanner'
@@ -140,42 +141,23 @@ export function App() {
                   <span className="hidden sm:inline">Revert ({snapshot.entries.length.toLocaleString()})</span>
                 </Button>
               ) : null}
-              <div className="hidden md:flex items-center gap-1.5 px-2 py-1 rounded-md border border-neutral-200 dark:border-neutral-800 text-xs">
-                <PlugsConnected
-                  size={14}
-                  weight="duotone"
-                  className={credentials.base === 'demo://' ? 'text-amber-500' : 'text-emerald-600'}
-                />
-                <span className="font-medium text-neutral-700 dark:text-neutral-200">
-                  {credentials.base === 'demo://'
+              <ConnectionMenu
+                isDemo={credentials.base === 'demo://'}
+                label={
+                  credentials.base === 'demo://'
                     ? `Demo · ${credentials.ent.replace('demo-', '')} users`
-                    : new URL(credentials.base).host}
-                </span>
-              </div>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => void refresh()}
-                disabled={loading}
-                title={credentials.base === 'demo://' ? 'Regenerate demo dataset' : 'Refresh data from API'}
-                aria-label="Refresh"
-              >
-                <ArrowsClockwise size={14} weight="duotone" />
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => {
+                    : new URL(credentials.base).host
+                }
+                loading={loading}
+                onRefresh={() => void refresh()}
+                onDisconnect={() => {
                   if (credentials.base === 'demo://') {
                     window.location.search = ''
                   } else {
                     disconnect()
                   }
                 }}
-                title={credentials.base === 'demo://' ? 'Exit demo mode' : 'Disconnect from enterprise'}
-              >
-                {credentials.base === 'demo://' ? 'Exit demo' : 'Disconnect'}
-              </Button>
+              />
             </div>
           </div>
         </div>
