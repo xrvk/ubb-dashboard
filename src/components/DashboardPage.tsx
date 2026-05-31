@@ -16,8 +16,10 @@ import {
   Buildings,
   CurrencyDollar,
   Receipt,
+  Stack,
   TrendUp,
   UsersThree,
+  WarningCircle,
 } from '@phosphor-icons/react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useCredentials } from '@/hooks/use-credentials'
@@ -161,52 +163,64 @@ export function DashboardPage() {
 
   return (
     <div className="grid gap-6">
-      {/* Hero KPIs */}
+      {/* Two-tier model primer — most dashboards only show overage. Make the
+          pool-vs-overage distinction visible so the rest of the page reads
+          correctly. */}
+      <TwoTierBanner
+        hasUsage={trackedForecast.hasActual}
+        overageMtd={usageSummary?.aiCreditsNet ?? 0}
+      />
+
+      {/* Hero KPIs — all overage-tier metrics. Ent budget caps overage only. */}
       <div className="grid gap-3 grid-cols-1 md:grid-cols-4">
         <KpiTile
-          label="Enterprise budget"
+          label="Overage budget cap"
           value={entAmount === null ? 'Not set' : formatCurrency(entAmount)}
           hint={
             entAmount === null
               ? 'No enterprise-scope ai_credits budget'
-              : `${costCenters.length.toLocaleString()} cost centers · ${seats.length.toLocaleString()} seats`
+              : `Caps metered AIC charges only · ${costCenters.length.toLocaleString()} CCs · ${seats.length.toLocaleString()} seats`
           }
           icon={<Buildings size={22} weight="duotone" className="text-neutral-400" />}
         />
         <KpiTile
-          label="Spend to date"
+          label="Metered overage MTD"
           value={formatCurrency(trackedForecast.totalMtd)}
           hint={
             trackedForecast.hasActual
-              ? `Day ${forecast.daysElapsed} of ${forecast.daysInMonth} · billing usage API`
-              : `Day ${forecast.daysElapsed} of ${forecast.daysInMonth} · tracked scopes only`
+              ? `Day ${forecast.daysElapsed} of ${forecast.daysInMonth} · billing usage API (post-pool)`
+              : `Day ${forecast.daysElapsed} of ${forecast.daysInMonth} · tracked ULB scopes (proxy)`
           }
           icon={<CurrencyDollar size={22} weight="duotone" className="text-neutral-400" />}
         />
         <KpiTile
-          label="Projected end-of-month"
+          label="Projected overage"
           value={formatCurrency(trackedForecast.totalProjected)}
           hint={
             entAmount === null
-              ? 'No enterprise cap to compare against'
+              ? 'No overage cap to compare against'
               : overDelta > 0
-                ? `${formatCurrency(overDelta)} over ent budget`
-                : `${formatCurrency(-overDelta)} under ent budget`
+                ? `${formatCurrency(overDelta)} over cap`
+                : `${formatCurrency(-overDelta)} under cap`
           }
           tone={entAmount !== null && overDelta > 0 ? 'warn' : 'neutral'}
           icon={<TrendUp size={22} weight="duotone" className="text-neutral-400" />}
         />
         <KpiTile
-          label="Headroom today"
+          label="Overage headroom"
           value={headroomVsEnt === null ? '—' : formatCurrency(headroomVsEnt)}
           hint={
             entAmount === null
-              ? 'Requires enterprise budget'
-              : `${formatPercent(trackedForecast.totalMtd / Math.max(1, entAmount))} of ent budget spent`
+              ? 'Requires overage budget'
+              : `${formatPercent(trackedForecast.totalMtd / Math.max(1, entAmount))} of cap spent`
           }
           icon={<Receipt size={22} weight="duotone" className="text-neutral-400" />}
         />
       </div>
+
+      {/* Entitlement pool — drawn first, governed by ULBs only. Sits above
+          the overage forecast so readers see the upstream tier first. */}
+      <EntitlementReservoirCard seatCost={seatCost} overageMtd={usageSummary?.aiCreditsNet ?? null} />
 
       <ForecastBreakdownCard tracked={trackedForecast} entBudget={entAmount} />
 
@@ -349,7 +363,11 @@ function ForecastBreakdownCard({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Forecasted end-of-month spend</CardTitle>
+        <CardTitle>Forecasted metered overage</CardTitle>
+        <p className="text-xs text-neutral-500 mt-1">
+          Tier 2 only — where overage will accrue if the pool is (or becomes)
+          exhausted. Pool drawdown above is not reflected here.
+        </p>
       </CardHeader>
       <CardContent className="grid gap-4">
         <div className={cn('grid gap-4', tracked.hasActual ? 'md:grid-cols-4' : 'md:grid-cols-3')}>
@@ -861,17 +879,10 @@ function LicenseCostCard({
   const headlineCost = billedMtd ?? seatCost.monthlyCost
   const ratio =
     entBudget !== null && headlineCost > 0 ? entBudget / headlineCost : null
-  const credits = includedAiCredits(seatCost.business, seatCost.enterprise)
-  // What fraction of the included pool has been consumed so far this month
-  // (informational — pool is shared, so any AIC spend draws from it before
-  // overage kicks in).
-  const aicNet = usage?.aiCreditsNet ?? null
-  const poolUsedRatio =
-    aicNet !== null && credits.totalDollars > 0 ? aicNet / credits.totalDollars : null
   return (
     <Card>
       <CardHeader>
-        <CardTitle>License cost vs. AI credit budget</CardTitle>
+        <CardTitle>License cost vs. overage budget</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="grid gap-3 grid-cols-1 sm:grid-cols-4">
@@ -880,14 +891,12 @@ function LicenseCostCard({
             count={seatCost.business}
             unitPrice={COPILOT_BUSINESS_LIST_PRICE}
             billed={usage?.cbLicenseNet ?? null}
-            creditsPerSeat={credits.perBusiness}
           />
           <LicenseRow
             label="Copilot Enterprise"
             count={seatCost.enterprise}
             unitPrice={COPILOT_ENTERPRISE_LIST_PRICE}
             billed={usage?.ceLicenseNet ?? null}
-            creditsPerSeat={credits.perEnterprise}
           />
           {seatCost.other > 0 ? (
             <LicenseRow
@@ -896,7 +905,6 @@ function LicenseCostCard({
               unitPrice={0}
               unitLabel="—"
               billed={null}
-              creditsPerSeat={null}
             />
           ) : (
             <div />
@@ -916,59 +924,12 @@ function LicenseCostCard({
           </div>
         </div>
 
-        {/* Included AI credit pool — the metered allowance each seat brings */}
-        {credits.totalCredits > 0 ? (
-          <div className="rounded-md border border-indigo-200 dark:border-indigo-900/60 bg-indigo-50/60 dark:bg-indigo-950/30 px-3 py-2 text-xs grid gap-1.5">
-            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-              <div className="font-medium text-indigo-900 dark:text-indigo-200">
-                Included AI credits this month
-              </div>
-              <div className="text-indigo-900 dark:text-indigo-200">
-                <span className="tabular-nums font-semibold">
-                  {credits.totalCredits.toLocaleString()}
-                </span>{' '}
-                credits ≈{' '}
-                <span className="tabular-nums font-semibold">
-                  {formatCurrency(credits.totalDollars)}
-                </span>{' '}
-                pool
-                {credits.promoActive ? (
-                  <span className="ml-1.5 inline-flex items-center rounded bg-indigo-200/70 dark:bg-indigo-800/60 px-1.5 py-0.5 text-[10px] uppercase tracking-wide">
-                    Promo rate
-                  </span>
-                ) : null}
-              </div>
-            </div>
-            <div className="text-[11px] text-indigo-800/80 dark:text-indigo-300/80 leading-snug">
-              Pooled at the enterprise level — {seatCost.business.toLocaleString()}{' '}
-              CB × {credits.perBusiness.toLocaleString()} +{' '}
-              {seatCost.enterprise.toLocaleString()} CE ×{' '}
-              {credits.perEnterprise.toLocaleString()}. AIC spend draws from this
-              pool before any cost-center or enterprise budget is charged for overage.
-            </div>
-            {poolUsedRatio !== null ? (
-              <div className="text-[11px] text-indigo-900 dark:text-indigo-200">
-                <span className="tabular-nums font-semibold">
-                  {formatCurrency(aicNet ?? 0)}
-                </span>{' '}
-                AIC spent MTD ={' '}
-                <span className="tabular-nums font-semibold">
-                  {formatPercent(poolUsedRatio)}
-                </span>{' '}
-                of pool
-                {poolUsedRatio < 1
-                  ? ` · ${formatCurrency(credits.totalDollars - (aicNet ?? 0))} of pool remaining`
-                  : ` · pool exhausted, overage in effect`}
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-
         {ratio !== null ? (
           <div className="text-xs text-neutral-600 dark:text-neutral-400">
-            Enterprise AI credit budget ({formatCurrency(entBudget ?? 0)}) is{' '}
+            Overage budget ({formatCurrency(entBudget ?? 0)}) is{' '}
             <span className="font-medium tabular-nums">{formatPercent(ratio)}</span> of
-            monthly license spend.
+            monthly license spend — caps metered AIC charges only, not the
+            pool itself (see Entitlement Pool above).
           </div>
         ) : null}
         <p className="text-[11px] text-neutral-500 dark:text-neutral-500 leading-snug">
@@ -985,17 +946,7 @@ function LicenseCostCard({
                 list pricing
               </a>
               {' '}(${COPILOT_BUSINESS_LIST_PRICE}/seat/mo Business, $
-              {COPILOT_ENTERPRISE_LIST_PRICE}/seat/mo Enterprise). AI credit
-              amounts per the{' '}
-              <a
-                href="https://docs.github.com/en/copilot/concepts/billing/usage-based-billing-for-organizations-and-enterprises#how-do-ai-credits-work"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline hover:text-neutral-800 dark:hover:text-neutral-300"
-              >
-                included-credits docs
-              </a>
-              .
+              {COPILOT_ENTERPRISE_LIST_PRICE}/seat/mo Enterprise).
             </>
           ) : (
             <>
@@ -1010,16 +961,7 @@ function LicenseCostCard({
               </a>{' '}
               (${COPILOT_BUSINESS_LIST_PRICE}/seat/mo Business, $
               {COPILOT_ENTERPRISE_LIST_PRICE}/seat/mo Enterprise) — your negotiated
-              rate may differ. AI credit amounts per the{' '}
-              <a
-                href="https://docs.github.com/en/copilot/concepts/billing/usage-based-billing-for-organizations-and-enterprises#how-do-ai-credits-work"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline hover:text-neutral-800 dark:hover:text-neutral-300"
-              >
-                included-credits docs
-              </a>
-              .
+              rate may differ.
             </>
           )}
         </p>
@@ -1034,7 +976,6 @@ function LicenseRow({
   unitPrice,
   unitLabel,
   billed,
-  creditsPerSeat,
 }: {
   label: string
   count: number
@@ -1042,8 +983,6 @@ function LicenseRow({
   unitLabel?: string
   /** Actual MTD billed amount from the usage summary API, when available. */
   billed: number | null
-  /** Included AI credits per seat per month, or null if not applicable. */
-  creditsPerSeat: number | null
 }) {
   return (
     <div className="rounded-md border border-neutral-200 dark:border-neutral-800 p-3">
@@ -1064,17 +1003,247 @@ function LicenseRow({
           <span className="tabular-nums">{formatCurrency(count * unitPrice)}</span>
         </div>
       )}
-      {creditsPerSeat !== null && count > 0 ? (
-        <div className="text-[11px] text-neutral-500 mt-0.5">
-          +{' '}
-          <span className="tabular-nums">{creditsPerSeat.toLocaleString()}</span>{' '}
-          credits/seat ={' '}
-          <span className="tabular-nums font-medium text-neutral-700 dark:text-neutral-300">
-            {(count * creditsPerSeat).toLocaleString()}
-          </span>{' '}
-          pooled
+    </div>
+  )
+}
+
+/**
+ * TwoTierBanner — primer explaining the pool-vs-overage model so the
+ * "overage budget" framing of the hero KPIs makes sense at a glance.
+ * Compact, dismissible-feeling, with a clear status line based on whether
+ * metered overage has kicked in yet.
+ */
+function TwoTierBanner({
+  hasUsage,
+  overageMtd,
+}: {
+  hasUsage: boolean
+  overageMtd: number
+}) {
+  const overageActive = hasUsage && overageMtd > 0
+  return (
+    <div className="rounded-md border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900/40 px-3 py-2 text-xs flex items-start gap-2">
+      <Stack
+        size={16}
+        weight="duotone"
+        className="mt-0.5 shrink-0 text-neutral-500"
+      />
+      <div className="flex-1 min-w-0 leading-relaxed text-neutral-700 dark:text-neutral-300">
+        <span className="font-medium text-neutral-900 dark:text-neutral-100">
+          AI credits bill in two tiers.
+        </span>{' '}
+        <span className="text-neutral-600 dark:text-neutral-400">
+          Tier&nbsp;1 — the <strong>entitlement pool</strong> from CB/CE licenses —
+          is drawn first and is only constrained by per-user ULBs. Tier&nbsp;2 —{' '}
+          <strong>metered overage</strong> at $0.01/AIC — is what enterprise and
+          cost-center budgets actually cap. The KPIs below all describe Tier&nbsp;2.
+        </span>
+        <span className="ml-2 inline-flex items-center gap-1 align-middle">
+          {hasUsage ? (
+            overageActive ? (
+              <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-900 dark:text-amber-200 px-2 py-0.5 text-[10px] font-medium">
+                <WarningCircle size={11} weight="fill" />
+                Overage active · pool exhausted
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-900 dark:text-emerald-200 px-2 py-0.5 text-[10px] font-medium">
+                Pool still funding usage · $0 overage
+              </span>
+            )
+          ) : (
+            <span className="inline-flex items-center gap-1 rounded-full bg-neutral-200 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 px-2 py-0.5 text-[10px] font-medium">
+              Overage status unknown · billing API not reachable
+            </span>
+          )}
+        </span>
+        <a
+          href="https://docs.github.com/en/copilot/concepts/billing/usage-based-billing-for-organizations-and-enterprises#how-do-ai-credits-work"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="ml-2 underline-offset-2 hover:underline text-neutral-500"
+        >
+          Docs ↗
+        </a>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * EntitlementReservoirCard — visualizes the upstream (Tier 1) pool that the
+ * enterprise's CB/CE licenses entitle the organization to consume before any
+ * metered overage begins. Modeled after the Tier Planner's ReservoirCard in
+ * xrvk/copilot-budget-command-calculator.
+ *
+ * We intentionally do NOT display a "drawdown percentage" against this pool:
+ * the billing usage summary API only reports post-pool overage. The closest
+ * inference is binary — if `overageMtd > 0`, the pool was exhausted at some
+ * point this period; otherwise it's still funding usage. Surfacing a
+ * fabricated drawdown ratio would mislead, so we stick to the binary signal.
+ */
+function EntitlementReservoirCard({
+  seatCost,
+  overageMtd,
+}: {
+  seatCost: ReturnType<typeof seatCostBreakdown>
+  overageMtd: number | null
+}) {
+  const credits = includedAiCredits(seatCost.business, seatCost.enterprise)
+  if (credits.totalCredits === 0) {
+    return null
+  }
+  const avgCreditsPerSeat =
+    seatCost.total > 0 ? credits.totalCredits / seatCost.total : 0
+  const poolExhausted = overageMtd !== null && overageMtd > 0
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <CardTitle>Entitlement pool · Tier 1</CardTitle>
+            <p className="text-xs text-neutral-500 mt-1 max-w-2xl">
+              Included AI credits from your CB and CE licenses, pooled at the
+              enterprise. Drawn before any metered charges.{' '}
+              <strong className="text-neutral-700 dark:text-neutral-300">
+                Enterprise and cost-center budgets do not govern this tier
+              </strong>{' '}
+              — only per-user ULBs cap individual drawdown.
+            </p>
+          </div>
+          {credits.promoActive ? (
+            <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 dark:bg-violet-900/40 text-violet-900 dark:text-violet-200 px-2 py-0.5 text-[10px] font-medium whitespace-nowrap">
+              Promotional credits · Jun 1 – Sep 1 2026
+            </span>
+          ) : null}
         </div>
-      ) : null}
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {/* 3-tile primary readout */}
+        <div className="grid gap-3 grid-cols-1 sm:grid-cols-3">
+          <div className="rounded-md border border-indigo-200 dark:border-indigo-900/60 bg-indigo-50/60 dark:bg-indigo-950/30 p-3">
+            <div className="text-[11px] uppercase tracking-wide text-indigo-700 dark:text-indigo-300">
+              Total AI credits / month
+            </div>
+            <div className="text-2xl font-semibold mt-1 tabular-nums text-indigo-950 dark:text-indigo-100">
+              {credits.totalCredits.toLocaleString()}
+            </div>
+            <div className="text-[11px] text-indigo-700 dark:text-indigo-300 mt-0.5">
+              pooled across all seats
+            </div>
+          </div>
+          <div className="rounded-md border border-emerald-200 dark:border-emerald-900/60 bg-emerald-50/60 dark:bg-emerald-950/30 p-3">
+            <div className="text-[11px] uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
+              Pool value
+            </div>
+            <div className="text-2xl font-semibold mt-1 tabular-nums text-emerald-950 dark:text-emerald-100">
+              {formatCurrency(credits.totalDollars)}
+            </div>
+            <div className="text-[11px] text-emerald-700 dark:text-emerald-300 mt-0.5">
+              @ $0.01 per AI credit
+            </div>
+          </div>
+          <div className="rounded-md border border-neutral-200 dark:border-neutral-800 p-3">
+            <div className="text-[11px] uppercase tracking-wide text-neutral-500">
+              Avg per user
+            </div>
+            <div className="text-2xl font-semibold mt-1 tabular-nums">
+              {Math.round(avgCreditsPerSeat).toLocaleString()}
+            </div>
+            <div className="text-[11px] text-neutral-500 mt-0.5">
+              credits/seat · {formatCurrency(avgCreditsPerSeat * 0.01)} value
+            </div>
+          </div>
+        </div>
+
+        {/* Per-license breakdown rows */}
+        <div className="space-y-2">
+          {seatCost.business > 0 ? (
+            <ReservoirLicenseRow
+              label="Copilot Business"
+              seats={seatCost.business}
+              creditsPerSeat={credits.perBusiness}
+            />
+          ) : null}
+          {seatCost.enterprise > 0 ? (
+            <ReservoirLicenseRow
+              label="Copilot Enterprise"
+              seats={seatCost.enterprise}
+              creditsPerSeat={credits.perEnterprise}
+            />
+          ) : null}
+        </div>
+
+        {/* Status line — binary, not a fabricated percentage. */}
+        <div
+          className={
+            'rounded-md border px-3 py-2 text-xs ' +
+            (overageMtd === null
+              ? 'border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900/40 text-neutral-600 dark:text-neutral-400'
+              : poolExhausted
+                ? 'border-amber-300 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200'
+                : 'border-emerald-300 dark:border-emerald-800/60 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-200')
+          }
+        >
+          {overageMtd === null ? (
+            <>
+              Pool drawdown is not directly reported by the billing API. Connect
+              billing scope to see whether the pool has been exhausted.
+            </>
+          ) : poolExhausted ? (
+            <>
+              <strong>Pool exhausted this billing period.</strong>{' '}
+              {formatCurrency(overageMtd)} of metered overage has been charged so
+              far — see Tier 2 metrics above and the forecast below.
+            </>
+          ) : (
+            <>
+              <strong>Pool is still funding all AIC usage this period.</strong>{' '}
+              $0 metered overage so far — the Tier 2 budget caps below are
+              precautionary until the pool runs out.
+            </>
+          )}
+        </div>
+
+        <p className="text-[11px] text-neutral-500 dark:text-neutral-500 leading-snug">
+          Included credits per{' '}
+          <a
+            href="https://docs.github.com/en/copilot/concepts/billing/usage-based-billing-for-organizations-and-enterprises#how-do-ai-credits-work"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline hover:text-neutral-700 dark:hover:text-neutral-300"
+          >
+            GitHub Copilot billing docs
+          </a>
+          : {credits.promoActive ? '3,000' : '1,900'} AICs/seat/mo Business,{' '}
+          {credits.promoActive ? '7,000' : '3,900'} AICs/seat/mo Enterprise.
+        </p>
+      </CardContent>
+    </Card>
+  )
+}
+
+function ReservoirLicenseRow({
+  label,
+  seats,
+  creditsPerSeat,
+}: {
+  label: string
+  seats: number
+  creditsPerSeat: number
+}) {
+  const total = seats * creditsPerSeat
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-md border border-neutral-200 dark:border-neutral-800 px-3 py-2 text-xs">
+      <div className="font-medium text-neutral-700 dark:text-neutral-300">
+        {label}
+      </div>
+      <div className="text-neutral-500 tabular-nums">
+        {seats.toLocaleString()} seats × {creditsPerSeat.toLocaleString()} AICs ={' '}
+        <span className="font-semibold text-neutral-800 dark:text-neutral-200">
+          {total.toLocaleString()}
+        </span>{' '}
+        AICs <span className="text-neutral-400">({formatCurrency(total * 0.01)})</span>
+      </div>
     </div>
   )
 }
