@@ -29,7 +29,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { useCredentials } from '@/hooks/use-credentials'
 import { useBudgetConstraints } from '@/hooks/use-budget-constraints'
 import { computeRequiredMinimums } from '@/lib/budgetAutoFix'
-import { formatCurrency, cn, openExternal } from '@/lib/utils'
+import { formatCurrency, formatCurrencyShort, cn, openExternal } from '@/lib/utils'
 import {
   patchEnterpriseBudget,
   patchCostCenterBudget,
@@ -652,7 +652,6 @@ export function BudgetPlanner() {
                 <div>
                   <div className="text-xs text-neutral-500 dark:text-neutral-400">
                     Currently {formatCurrency(enterpriseBudget.budgetAmount)}
-                    {enterpriseBudget.excludeCostCenterUsage ? ' · Cost center exclusion on' : ''}
                   </div>
                   <div className="mt-1 flex items-center gap-2 flex-wrap text-xs">
                     <CapToggle
@@ -666,6 +665,26 @@ export function BudgetPlanner() {
                         willAlert={enterpriseBudget.willAlert}
                         alertRecipients={enterpriseBudget.alertRecipients}
                       />
+                    ) : null}
+                    {enterpriseBudget.excludeCostCenterUsage && credentials ? (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <a
+                            href={budgetEditUrl(credentials.base, credentials.ent, enterpriseBudget.id)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={openExternal(budgetEditUrl(credentials.base, credentials.ent, enterpriseBudget.id))}
+                            className="inline-flex items-center gap-1 rounded border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-200 px-1.5 py-0.5 hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors"
+                          >
+                            CC exclusion on
+                            <ArrowSquareOut size={10} weight="bold" className="opacity-70" />
+                          </a>
+                        </TooltipTrigger>
+                        <TooltipContent className="max-w-xs">
+                          Cost centers are billed independently and don't draw from this
+                          enterprise pool. Click to edit on github.com.
+                        </TooltipContent>
+                      </Tooltip>
                     ) : null}
                   </div>
                 </div>
@@ -1049,7 +1068,7 @@ export function BudgetPlanner() {
 
         {/* Review dialog */}
         <Dialog open={confirmOpen} onOpenChange={o => !applying && setConfirmOpen(o)}>
-        <DialogContent>
+        <DialogContent className="max-w-2xl">
           <DialogTitle>Apply budget changes</DialogTitle>
           <DialogDescription>
             Review the diff below — applying will write each change to GitHub. New cost-center
@@ -1080,7 +1099,7 @@ export function BudgetPlanner() {
                           <td className="px-3 py-1.5 font-medium">{p.name} <span className="text-neutral-500">({scope})</span></td>
                           <td className="px-3 py-1.5 text-neutral-500">Budget</td>
                           <td className="px-3 py-1.5 text-right font-mono text-neutral-500">—</td>
-                          <td className="px-3 py-1.5 text-right font-mono">{formatCurrency(p.amountAfter)}</td>
+                          <td className="px-3 py-1.5 text-right font-mono" title={formatCurrency(p.amountAfter)}>{formatCurrencyShort(p.amountAfter)}</td>
                         </tr>,
                       )
                       rows.push(
@@ -1100,12 +1119,12 @@ export function BudgetPlanner() {
                             <td className="px-3 py-1.5 text-neutral-500">{action}</td>
                             <td className="px-3 py-1.5 font-medium">{p.name} <span className="text-neutral-500">({scope})</span></td>
                             <td className="px-3 py-1.5 text-neutral-500">Budget</td>
-                            <td className="px-3 py-1.5 text-right font-mono text-neutral-500">{formatCurrency(p.amountBefore)}</td>
+                            <td className="px-3 py-1.5 text-right font-mono text-neutral-500" title={formatCurrency(p.amountBefore)}>{formatCurrencyShort(p.amountBefore)}</td>
                             <td className={cn(
                               'px-3 py-1.5 text-right font-mono',
                               delta > 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-amber-700 dark:text-amber-400',
-                            )}>
-                              {formatCurrency(p.amountAfter)} ({delta > 0 ? '+' : ''}{formatCurrency(delta)})
+                            )} title={`${formatCurrency(p.amountAfter)} (${delta > 0 ? '+' : ''}${formatCurrency(delta)})`}>
+                              {formatCurrencyShort(p.amountAfter)} ({delta > 0 ? '+' : ''}{formatCurrencyShort(delta)})
                             </td>
                           </tr>,
                         )
