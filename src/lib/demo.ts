@@ -106,10 +106,13 @@ export function readDemoPoolPctFromUrl(): number | null {
 }
 
 export function readDemoExcludeCcFromUrl(): boolean {
-  if (typeof window === 'undefined') return false
+  if (typeof window === 'undefined') return true
   const params = new URLSearchParams(window.location.search)
   const v = params.get('exclude')
-  return v === '1' || v === 'true'
+  // Default ON in demo mode: independent CC pools is the more interesting
+  // story for the dashboard. Pass `?exclude=0` to opt out.
+  if (v === null) return true
+  return v !== '0' && v !== 'false'
 }
 
 /**
