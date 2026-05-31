@@ -688,7 +688,7 @@ export function BudgetPlanner() {
                     ) : null}
                   </div>
                 </div>
-                <div className="text-right text-xs px-3">
+                <div className="text-center text-xs px-3">
                   <SeatsLink
                     seats={seats.length}
                     href={credentials ? enterpriseSeatsUrl(credentials.base, credentials.ent) : null}
@@ -823,7 +823,7 @@ export function BudgetPlanner() {
                     <thead className="bg-neutral-100/60 dark:bg-neutral-900/60">
                       <tr className="text-left text-[10px] uppercase tracking-wide text-neutral-500">
                         <th className="px-3 py-1.5 font-medium">Cost center</th>
-                        <th className="px-3 py-1.5 font-medium text-right" style={{ width: '5.5rem' }}>Seats</th>
+                        <th className="px-3 py-1.5 font-medium text-center" style={{ width: '5.5rem' }}>Seats</th>
                         <th className="px-3 py-1.5 font-medium text-right" style={{ width: '23rem' }}>Budget ($)</th>
                       </tr>
                     </thead>
@@ -876,7 +876,7 @@ export function BudgetPlanner() {
                                 ) : null}
                               </div>
                             </td>
-                            <td className="px-3 py-2 text-right">
+                            <td className="px-3 py-2 text-center">
                               <SeatsLink
                                 seats={row.seatCount}
                                 href={credentials ? costCenterUrl(credentials.base, credentials.ent, row.ccId) : null}
