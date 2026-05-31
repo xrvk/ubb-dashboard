@@ -678,9 +678,19 @@ export function BudgetPlanner() {
                           const el = document.getElementById(`bp-cc-${r.ccId}`)
                           if (!el) return
                           el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-                          el.classList.add('ring-2', 'ring-amber-400', 'ring-offset-2', 'dark:ring-offset-neutral-950')
+                          // bg flash because ring doesn't render on <tr> in
+                          // collapsed tables; keep ring too for non-tr targets.
+                          const cls = [
+                            'ring-2',
+                            'ring-amber-400',
+                            'ring-offset-2',
+                            'dark:ring-offset-neutral-950',
+                            'bg-amber-100',
+                            'dark:bg-amber-900/40',
+                          ]
+                          el.classList.add(...cls)
                           window.setTimeout(() => {
-                            el.classList.remove('ring-2', 'ring-amber-400', 'ring-offset-2', 'dark:ring-offset-neutral-950')
+                            el.classList.remove(...cls)
                           }, 2000)
                         }}
                         className="underline-offset-2 hover:underline font-medium"

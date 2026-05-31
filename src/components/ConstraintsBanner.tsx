@@ -19,13 +19,25 @@ import {
  * highlight ring so the user can see where to type the fix. The id is set on
  * the row container by BudgetPlanner.
  */
+const HIGHLIGHT_CLASSES = [
+  'ring-2',
+  'ring-amber-400',
+  'ring-offset-2',
+  'dark:ring-offset-neutral-950',
+  'bg-amber-100',
+  'dark:bg-amber-900/40',
+] as const
+
 function scrollToPlanner(targetId: string) {
   const el = document.getElementById(targetId)
   if (!el) return
   el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-  el.classList.add('ring-2', 'ring-amber-400', 'ring-offset-2', 'dark:ring-offset-neutral-950')
+  // Ring (box-shadow) doesn't render on <tr> in collapsed tables, and the
+  // enterprise row is a div — so apply both ring + bg flash and let
+  // whichever is visible do the job.
+  el.classList.add(...HIGHLIGHT_CLASSES)
   window.setTimeout(() => {
-    el.classList.remove('ring-2', 'ring-amber-400', 'ring-offset-2', 'dark:ring-offset-neutral-950')
+    el.classList.remove(...HIGHLIGHT_CLASSES)
   }, 2000)
 }
 
