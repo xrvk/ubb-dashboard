@@ -36,6 +36,22 @@ export function App() {
   const { resolvedTheme, setTheme } = useTheme()
 
   const [tab, setTab] = useState<Tab>('overview')
+
+  /**
+   * Switch tab AND scroll the page so the sticky tab bar pins at the very
+   * top of the viewport. This lets the user re-click a tab to "jump to top"
+   * and ensures cross-tab clicks always start at the same anchor instead of
+   * dropping them into the middle of a long page.
+   */
+  const goToTab = (next: Tab) => {
+    setTab(next)
+    // Defer one frame so the new tab's layout is computed before we measure.
+    window.requestAnimationFrame(() => {
+      const header = document.querySelector<HTMLElement>('header')
+      const offset = header?.offsetHeight ?? 0
+      window.scrollTo({ top: offset, behavior: 'smooth' })
+    })
+  }
   const [creating, setCreating] = useState(false)
   // Snapshot is owned by IndividualUlbPage but surfaced here so the header
   // can render the Revert button regardless of which tab is active.
@@ -111,7 +127,7 @@ export function App() {
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => setTab('budget-model')}
+            onClick={() => goToTab('budget-model')}
             title="How the budget constraint model works"
             className={cn(
               'ml-auto',
@@ -140,7 +156,7 @@ export function App() {
               {(['overview', 'universal', 'individual'] as const).map(t => (
                 <button
                   key={t}
-                  onClick={() => setTab(t)}
+                  onClick={() => goToTab(t)}
                   className={cn(
                     'flex-1 sm:flex-initial px-3 py-1 text-sm font-medium rounded transition-colors',
                     tab === t
@@ -213,7 +229,7 @@ export function App() {
               onTaskDismiss={() => setActiveTask(null)}
             />
           ) : tab === 'budget-model' ? (
-            <BudgetConstraintsHelpPage onBack={() => setTab('overview')} />
+            <BudgetConstraintsHelpPage onBack={() => goToTab('overview')} />
           ) : (
             <UniversalUlbPage />
           )

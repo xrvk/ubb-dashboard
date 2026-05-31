@@ -400,7 +400,7 @@ export function UniversalUlbPage() {
   const ulbDeltaUsd = Math.ceil(ulbAICs / AICS_PER_USD)
 
   return (
-    <div className="grid gap-6">
+    <div className="grid gap-6 min-h-[calc(100vh-7rem)]">
       {/* Header tiles */}
       <div className="grid gap-3 grid-cols-1 md:grid-cols-3">
         <Card>
