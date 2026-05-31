@@ -7,7 +7,7 @@ import {
   TreeStructure,
 } from '@phosphor-icons/react'
 import { useCredentials } from '@/hooks/use-credentials'
-import { formatCurrency, cn } from '@/lib/utils'
+import { formatCurrency, formatCurrencyShort, cn } from '@/lib/utils'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 
 /**
@@ -28,6 +28,7 @@ export function BudgetStructureDiagram() {
     costCenterBudgetsByName,
     costCenters,
     loginToCostCenter,
+    universalUlb,
   } = useCredentials()
 
   // Count Copilot-affecting seats per CC (a CC "affects Copilot" if any seat
@@ -72,6 +73,27 @@ export function BudgetStructureDiagram() {
   const entBarPercent = entAmount > 0 ? Math.max(2, (entAmount / maxBar) * 100) : 0
 
   const segmentsForBar = excludeCcUsage ? data.segments : data.capped
+
+  // Compact label rendered inside a bar segment. Name is the primary signal
+  // (so users can identify which CC each block represents); the amount is
+  // appended in $1.2k shorthand only when there's room. Below ~10% width
+  // there's no useful room for text, so we render nothing and rely on the
+  // tooltip.
+  function segmentLabel(seg: { name: string; budget: number; uncapped: boolean }, percent: number): string {
+    if (percent < 10) return ''
+    const suffix = seg.uncapped ? 'no cap' : formatCurrencyShort(seg.budget)
+    if (percent < 22) return seg.name
+    return `${seg.name} · ${suffix}`
+  }
+
+  // Effective cap for an uncapped CC = its Copilot seat count × universal ULB.
+  // This is the implicit ceiling once universal ULB is set; without it the CC
+  // has no per-CC bound at all.
+  function uncappedBackstopLine(seatCount: number): string | null {
+    const ulb = universalUlb?.budgetAmount ?? null
+    if (ulb === null || ulb <= 0 || seatCount <= 0) return null
+    return `Effective cap: ${seatCount.toLocaleString()} seat${seatCount === 1 ? '' : 's'} × ${formatCurrencyShort(ulb)} = ${formatCurrencyShort(seatCount * ulb)}`
+  }
 
   // CC sub-segment widths
   const ccSegments = useMemo(() => {
@@ -166,7 +188,7 @@ export function BudgetStructureDiagram() {
                       <Tooltip key={seg.id}>
                         <TooltipTrigger asChild>
                           <div
-                            className="h-full flex items-center justify-center text-[10px] font-medium bg-amber-500/25 text-amber-900 dark:bg-amber-400/25 dark:text-amber-200 cursor-help transition-all duration-200"
+                            className="h-full flex items-center justify-center px-1 text-[10px] font-medium bg-amber-500/25 text-amber-900 dark:bg-amber-400/25 dark:text-amber-200 cursor-help transition-all duration-200 truncate"
                             style={{
                               width: `${seg.percent}%`,
                               minWidth: ccSegments.length <= 6 ? '2rem' : '0.5rem',
@@ -178,7 +200,7 @@ export function BudgetStructureDiagram() {
                                     : 0,
                             }}
                           >
-                            {seg.percent > 15 && formatCurrency(seg.budget)}
+                            {segmentLabel(seg, seg.percent)}
                           </div>
                         </TooltipTrigger>
                         <TooltipContent>
@@ -253,7 +275,7 @@ export function BudgetStructureDiagram() {
                       <TooltipTrigger asChild>
                         <div
                           className={cn(
-                            'h-full flex items-center justify-center text-[10px] font-medium cursor-help transition-all duration-200',
+                            'h-full flex items-center justify-center px-1 text-[10px] font-medium cursor-help transition-all duration-200 truncate',
                             seg.uncapped
                               ? 'text-red-700 dark:text-red-300'
                               : 'bg-amber-500/30 text-amber-900 dark:bg-amber-400/30 dark:text-amber-200',
@@ -275,16 +297,21 @@ export function BudgetStructureDiagram() {
                               : {}),
                           }}
                         >
-                          {seg.percent > 15 && (seg.uncapped ? 'no cap' : formatCurrency(seg.budget))}
+                          {segmentLabel(seg, seg.percent)}
                         </div>
                       </TooltipTrigger>
                       <TooltipContent>
                         <div className="font-medium">{seg.name}</div>
                         <div className="opacity-80">
                           {seg.uncapped
-                            ? 'No per-CC cap (universal ULB is the only backstop)'
+                            ? 'No per-CC cap (universal ULB is the backstop)'
                             : `${formatCurrency(seg.budget)} independent cap · ${seg.preventFurtherUsage ? 'Hard cap' : 'Soft cap'}`}
                         </div>
+                        {seg.uncapped && uncappedBackstopLine(seg.seatCount) ? (
+                          <div className="opacity-80 text-[10px] mt-0.5">
+                            {uncappedBackstopLine(seg.seatCount)}
+                          </div>
+                        ) : null}
                         <div className="opacity-70 text-[10px] mt-0.5">
                           {seg.seatCount.toLocaleString()} Copilot seat{seg.seatCount === 1 ? '' : 's'}
                         </div>

@@ -15,6 +15,22 @@ export function formatCurrency(amount: number): string {
   }).format(amount)
 }
 
+/**
+ * Compact currency for tight spaces (bar segments, chips). Examples:
+ *   42        → $42
+ *   1234      → $1.2k
+ *   12500     → $12.5k
+ *   1230000   → $1.2M
+ * Always prefixed with $; precision is one decimal for k/M, none for <1k.
+ */
+export function formatCurrencyShort(amount: number): string {
+  const abs = Math.abs(amount)
+  const sign = amount < 0 ? '-' : ''
+  if (abs >= 1_000_000) return `${sign}$${(abs / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`
+  if (abs >= 1_000) return `${sign}$${(abs / 1_000).toFixed(1).replace(/\.0$/, '')}k`
+  return `${sign}$${Math.round(abs)}`
+}
+
 export function formatPercent(ratio: number): string {
   return new Intl.NumberFormat('en-US', {
     style: 'percent',
