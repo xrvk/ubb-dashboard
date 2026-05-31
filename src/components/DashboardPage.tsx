@@ -106,10 +106,13 @@ export function DashboardPage() {
       const cc = loginToCostCenter.get(s.login.toLowerCase())?.cc
       if (cc && costCenterBudgetsByName.has(cc.name.toLowerCase())) untrackedSeats += 1
     }
-    // When the billing usage summary is available it's the truth-of-record
-    // for total MTD AIC spend — including the CC-routed slice the budgets API
-    // can't report. We project it forward with the same straight-line model.
-    const actualMtd = usageSummary?.aiCreditsNet ?? null
+    // Billing usage summary is the truth-of-record for total AIC pool draw,
+    // including the CC-routed slice the budgets API can't report. Use
+    // aiCreditsGross so the enterprise total sums the SAME units the
+    // per-scope tiles render (pool drawdown). aiCreditsNet is metered
+    // overage only and is 0 until the pool exhausts, which makes for a
+    // misleading total.
+    const actualMtd = usageSummary?.aiCreditsGross ?? null
     const actualProjected =
       actualMtd !== null ? projectMonthlyBudget(actualMtd, 0).projectedMonthTotal : null
     return {
