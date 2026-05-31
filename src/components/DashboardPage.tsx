@@ -24,7 +24,7 @@ import {
 } from '@/lib/pricing'
 import { forecastSummary } from '@/lib/status'
 import { projectMonthlyBudget } from '@/lib/projection'
-import { formatCurrency, formatPercent, cn } from '@/lib/utils'
+import { formatCurrency, formatCurrencyWhole, formatPercent, cn } from '@/lib/utils'
 import {
   NAV_TO_BUDGET_MODEL_EVENT,
   NAV_TO_INDIVIDUAL_EVENT,
@@ -988,14 +988,14 @@ function CcBulletRowView({
     if (muted) {
       return (
         <span className="text-neutral-500">
-          {formatCurrency(mtd)} draw · no CC budget
+          {formatCurrencyWhole(mtd)} draw · no CC budget
         </span>
       )
     }
     if (!hasBudget) {
       return measured ? (
         <span className="text-neutral-500">
-          {formatCurrency(mtd)} spend · proj {formatCurrency(projected)} · uncapped
+          {formatCurrencyWhole(mtd)} spend · proj {formatCurrencyWhole(projected)} · uncapped
         </span>
       ) : (
         <span className="text-neutral-400">no spend yet · uncapped</span>
@@ -1004,19 +1004,19 @@ function CcBulletRowView({
     if (!measured) {
       return (
         <span className="text-neutral-400">
-          no spend yet · budget {formatCurrency(budget!)}
+          no spend yet · budget {formatCurrencyWhole(budget!)}
         </span>
       )
     }
     return (
       <>
         <span className="text-neutral-700 dark:text-neutral-200">
-          {formatCurrency(mtd)} / {formatCurrency(budget!)}
+          {formatCurrencyWhole(mtd)} / {formatCurrencyWhole(budget!)}
         </span>
-        <span className="text-neutral-500"> · proj {formatCurrency(projected)}</span>
+        <span className="text-neutral-500"> · proj {formatCurrencyWhole(projected)}</span>
         {projOverPct !== null ? (
           <span className="ml-1.5 rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-medium text-red-700 dark:bg-red-900/40 dark:text-red-200">
-            {projOverPct}% of budget
+            {projOverPct}%
           </span>
         ) : null}
       </>
@@ -1024,7 +1024,7 @@ function CcBulletRowView({
   })()
 
   return (
-    <div className="grid grid-cols-[7rem_minmax(0,1fr)_auto] items-center gap-3">
+    <div className="grid grid-cols-[7rem_minmax(0,1fr)_14rem] items-center gap-3">
       <div
         className={cn(
           'text-xs font-medium truncate',
@@ -1055,7 +1055,7 @@ function CcBulletRowView({
           title={`MTD ${formatCurrency(mtd)}`}
         />
       </div>
-      <div className="text-[11px] tabular-nums text-right whitespace-nowrap flex items-center justify-end gap-0">
+      <div className="text-[11px] tabular-nums text-right whitespace-nowrap flex items-center justify-end gap-0 overflow-hidden">
         {numericLabel}
       </div>
     </div>

@@ -16,6 +16,20 @@ export function formatCurrency(amount: number): string {
 }
 
 /**
+ * Whole-dollar currency for dashboard summaries — same as formatCurrency
+ * but without cents (e.g. $1,118 instead of $1,117.97). Use this for
+ * compact bullet/summary labels where decimals add noise without value.
+ */
+export function formatCurrencyWhole(amount: number): string {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(amount)
+}
+
+/**
  * Compact currency for tight spaces (bar segments, chips). Examples:
  *   42        → $42
  *   1234      → $1.2k
