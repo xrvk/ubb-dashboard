@@ -38,7 +38,7 @@ export function SummaryCards({ summary, onSelectOver, onSelectNear, onReset }: P
       hint: 'Filter to users over budget',
     },
     {
-      label: 'Near limit',
+      label: 'Users reaching limit',
       value: summary.near.toLocaleString(),
       icon: <Gauge size={20} weight="duotone" className="text-amber-600" />,
       accent: summary.near > 0 ? 'text-amber-600 dark:text-amber-400' : '',
