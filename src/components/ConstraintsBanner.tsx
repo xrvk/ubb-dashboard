@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { CheckCircle, Warning, XCircle, CaretDown, CaretUp, ArrowDown, ArrowSquareOut } from '@phosphor-icons/react'
 import { useCredentials } from '@/hooks/use-credentials'
 import { buildCostCenterIndex, budgetEditUrl } from '@/lib/api'
@@ -30,7 +30,50 @@ interface FailingCheck {
     href?: string
     icon?: 'scroll' | 'external'
     primary?: boolean
+    // If set, this action will be hidden when the element with this id is
+    // already in the viewport — no point scrolling to something the user can
+    // already see.
+    scrollTargetId?: string
   }>
+}
+
+/**
+ * Track which of the given DOM ids are currently in the viewport.
+ * Used to hide "scroll to row" actions when the target is already visible.
+ */
+function useVisibleTargets(targetIds: string[]): Set<string> {
+  const key = targetIds.slice().sort().join('|')
+  const [visible, setVisible] = useState<Set<string>>(new Set())
+  useEffect(() => {
+    if (targetIds.length === 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setVisible(prev => (prev.size === 0 ? prev : new Set()))
+      return
+    }
+    const observer = new IntersectionObserver(
+      entries => {
+        // IntersectionObserver callbacks run async (microtask after layout),
+        // not during render — setState here is safe.
+        setVisible(prev => {
+          const next = new Set(prev)
+          for (const entry of entries) {
+            if (entry.isIntersecting) next.add(entry.target.id)
+            else next.delete(entry.target.id)
+          }
+          return next
+        })
+      },
+      { threshold: 0.5 },
+    )
+    for (const id of targetIds) {
+      const el = document.getElementById(id)
+      if (el) observer.observe(el)
+    }
+    return () => observer.disconnect()
+    // targetIds identity changes every render; key is the stable comparator.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key])
+  return visible
 }
 
 /**
@@ -85,82 +128,102 @@ export function ConstraintsBanner() {
   // (e.g. demo mode, or a freshly connected enterprise before data loads)
   const hasAnyEnvelope =
     enterpriseBudget !== null || costCenterBudgetsByName.size > 0 || universalUlb !== null
-  if (!hasAnyEnvelope) return null
 
-  const failingChecks: FailingCheck[] = []
-  for (const c of result.checks.perCc) {
-    if (!c.check.ok) {
-      const required = requiredMins.perCc.get(c.costCenterId)
-      const ccBudget = costCenterBudgetsByName.get(c.costCenterName)
-      const actions: FailingCheck['actions'] = []
-      if (required !== undefined) {
-        actions.push({
-          label: `Raise CC budget to ${formatCurrency(required)}`,
-          onClick: () => scrollToPlanner(`bp-cc-${c.costCenterId}`),
-          icon: 'scroll',
-          primary: true,
+  const failingChecks: FailingCheck[] = useMemo(() => {
+    const arr: FailingCheck[] = []
+    for (const c of result.checks.perCc) {
+      if (!c.check.ok) {
+        const required = requiredMins.perCc.get(c.costCenterId)
+        const ccBudget = costCenterBudgetsByName.get(c.costCenterName)
+        const actions: FailingCheck['actions'] = []
+        if (required !== undefined) {
+          actions.push({
+            label: `Raise CC budget to ${formatCurrency(required)}`,
+            onClick: () => scrollToPlanner(`bp-cc-${c.costCenterId}`),
+            icon: 'scroll',
+            primary: true,
+            scrollTargetId: `bp-cc-${c.costCenterId}`,
+          })
+        }
+        if (ccBudget && credentials) {
+          actions.push({
+            label: 'Edit on github.com',
+            href: budgetEditUrl(credentials.base, credentials.ent, ccBudget.id),
+            icon: 'external',
+          })
+        }
+        arr.push({
+          kind: 'cc-over',
+          message: `Cost center "${c.costCenterName}" is over by ${formatCurrency(c.check.overBy)} — ${c.memberCount} member${c.memberCount === 1 ? '' : 's'} have effective ULBs totaling ${formatCurrency(c.check.actual)} against a ${formatCurrency(c.check.allowed)} budget.`,
+          actions,
         })
       }
-      if (ccBudget && credentials) {
+    }
+    if (result.checks.ccVsEnterprise && !result.checks.ccVsEnterprise.ok) {
+      const actions: FailingCheck['actions'] = []
+      if (requiredMins.enterprise !== null) {
+        actions.push({
+          label: `Raise enterprise budget to ${formatCurrency(requiredMins.enterprise)}`,
+          onClick: () => scrollToPlanner('bp-ent'),
+          icon: 'scroll',
+          primary: true,
+          scrollTargetId: 'bp-ent',
+        })
+      }
+      if (enterpriseBudget && credentials) {
         actions.push({
           label: 'Edit on github.com',
-          href: budgetEditUrl(credentials.base, credentials.ent, ccBudget.id),
+          href: budgetEditUrl(credentials.base, credentials.ent, enterpriseBudget.id),
           icon: 'external',
         })
       }
-      failingChecks.push({
-        kind: 'cc-over',
-        message: `Cost center "${c.costCenterName}" is over by ${formatCurrency(c.check.overBy)} — ${c.memberCount} member${c.memberCount === 1 ? '' : 's'} have effective ULBs totaling ${formatCurrency(c.check.actual)} against a ${formatCurrency(c.check.allowed)} budget.`,
+      arr.push({
+        kind: 'cc-vs-ent',
+        message: `Cost-center budgets total ${formatCurrency(result.checks.ccVsEnterprise.actual)}, which exceeds the enterprise budget of ${formatCurrency(result.checks.ccVsEnterprise.allowed)} by ${formatCurrency(result.checks.ccVsEnterprise.overBy)}.`,
         actions,
       })
     }
-  }
-  if (result.checks.ccVsEnterprise && !result.checks.ccVsEnterprise.ok) {
-    const actions: FailingCheck['actions'] = []
-    if (requiredMins.enterprise !== null) {
-      actions.push({
-        label: `Raise enterprise budget to ${formatCurrency(requiredMins.enterprise)}`,
-        onClick: () => scrollToPlanner('bp-ent'),
-        icon: 'scroll',
-        primary: true,
+    if (result.checks.unassignedLeftover && !result.checks.unassignedLeftover.ok) {
+      const actions: FailingCheck['actions'] = []
+      if (requiredMins.enterprise !== null) {
+        actions.push({
+          label: `Raise enterprise budget to ${formatCurrency(requiredMins.enterprise)}`,
+          onClick: () => scrollToPlanner('bp-ent'),
+          icon: 'scroll',
+          primary: true,
+          scrollTargetId: 'bp-ent',
+        })
+      }
+      if (enterpriseBudget && credentials) {
+        actions.push({
+          label: 'Edit on github.com',
+          href: budgetEditUrl(credentials.base, credentials.ent, enterpriseBudget.id),
+          icon: 'external',
+        })
+      }
+      arr.push({
+        kind: 'leftover',
+        message: `Users outside a budgeted cost center have effective ULBs totaling ${formatCurrency(result.checks.unassignedLeftover.actual)}, exceeding the ${result.mode === 'umbrella' ? 'leftover enterprise allowance' : 'enterprise budget'} of ${formatCurrency(result.checks.unassignedLeftover.allowed)} by ${formatCurrency(result.checks.unassignedLeftover.overBy)}.`,
+        actions,
       })
     }
-    if (enterpriseBudget && credentials) {
-      actions.push({
-        label: 'Edit on github.com',
-        href: budgetEditUrl(credentials.base, credentials.ent, enterpriseBudget.id),
-        icon: 'external',
-      })
+    return arr
+  }, [result, requiredMins, costCenterBudgetsByName, credentials, enterpriseBudget])
+
+  // Watch the scroll-action targets so we can hide the "scroll to row" buttons
+  // when the row is already in view.
+  const scrollTargetIds = useMemo(() => {
+    const ids = new Set<string>()
+    for (const fc of failingChecks) {
+      for (const a of fc.actions) {
+        if (a.scrollTargetId) ids.add(a.scrollTargetId)
+      }
     }
-    failingChecks.push({
-      kind: 'cc-vs-ent',
-      message: `Cost-center budgets total ${formatCurrency(result.checks.ccVsEnterprise.actual)}, which exceeds the enterprise budget of ${formatCurrency(result.checks.ccVsEnterprise.allowed)} by ${formatCurrency(result.checks.ccVsEnterprise.overBy)}.`,
-      actions,
-    })
-  }
-  if (result.checks.unassignedLeftover && !result.checks.unassignedLeftover.ok) {
-    const actions: FailingCheck['actions'] = []
-    if (requiredMins.enterprise !== null) {
-      actions.push({
-        label: `Raise enterprise budget to ${formatCurrency(requiredMins.enterprise)}`,
-        onClick: () => scrollToPlanner('bp-ent'),
-        icon: 'scroll',
-        primary: true,
-      })
-    }
-    if (enterpriseBudget && credentials) {
-      actions.push({
-        label: 'Edit on github.com',
-        href: budgetEditUrl(credentials.base, credentials.ent, enterpriseBudget.id),
-        icon: 'external',
-      })
-    }
-    failingChecks.push({
-      kind: 'leftover',
-      message: `Users outside a budgeted cost center have effective ULBs totaling ${formatCurrency(result.checks.unassignedLeftover.actual)}, exceeding the ${result.mode === 'umbrella' ? 'leftover enterprise allowance' : 'enterprise budget'} of ${formatCurrency(result.checks.unassignedLeftover.allowed)} by ${formatCurrency(result.checks.unassignedLeftover.overBy)}.`,
-      actions,
-    })
-  }
+    return Array.from(ids)
+  }, [failingChecks])
+  const visibleTargets = useVisibleTargets(scrollTargetIds)
+
+  if (!hasAnyEnvelope) return null
 
   const hasFailure = failingChecks.length > 0
   const hasWarning = result.warnings.length > 0
@@ -217,12 +280,16 @@ export function ConstraintsBanner() {
                 <div>
                   <div className="text-xs font-semibold uppercase tracking-wide opacity-70">Failing checks</div>
                   <ul className="mt-1 space-y-2">
-                    {failingChecks.map((fc, i) => (
+                    {failingChecks.map((fc, i) => {
+                      const visibleActions = fc.actions.filter(
+                        a => !a.scrollTargetId || !visibleTargets.has(a.scrollTargetId),
+                      )
+                      return (
                       <li key={i} className="rounded border border-current/20 bg-white/40 dark:bg-black/20 px-2.5 py-2 text-xs">
                         <div>{fc.message}</div>
-                        {fc.actions.length > 0 ? (
+                        {visibleActions.length > 0 ? (
                           <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
-                            {fc.actions.map((a, j) => {
+                            {visibleActions.map((a, j) => {
                               const baseClass = cn(
                                 'inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-medium transition-colors',
                                 a.primary
@@ -265,7 +332,8 @@ export function ConstraintsBanner() {
                           </div>
                         ) : null}
                       </li>
-                    ))}
+                      )
+                    })}
                   </ul>
                 </div>
               ) : null}
