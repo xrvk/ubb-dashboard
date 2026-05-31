@@ -347,15 +347,47 @@ export function ConstraintsBanner() {
                   </ul>
                 </div>
               ) : null}
-              {result.maxSafeUniversalUlb !== Infinity ? (
-                <div className="text-xs opacity-90">
-                  <span className="font-semibold">Max safe universal ULB:</span>{' '}
-                  {formatCurrency(result.maxSafeUniversalUlb)}{' '}
-                  <span className="opacity-70">
-                    (the largest universal ULB value that keeps every check passing, holding individual ULBs and budgets constant)
-                  </span>
-                </div>
-              ) : null}
+              {result.maxSafeUniversalUlb !== Infinity ? (() => {
+                const safe = result.maxSafeUniversalUlb
+                const currentUlb = universalUlb?.budgetAmount ?? null
+                // Three meaningful cases:
+                //  1. hasFailure && safe === 0: even universal=$0 wouldn't fix
+                //     things — the failure is driven by individual ULBs alone.
+                //  2. hasFailure && safe > 0 && current > safe: lowering the
+                //     universal ULB to $safe would resolve the per-CC failures.
+                //  3. all clear: headroom indicator.
+                if (hasFailure && safe === 0) {
+                  return (
+                    <div className="text-xs opacity-90">
+                      <span className="font-semibold">Universal ULB won't help here:</span>{' '}
+                      individual ULBs alone exceed the per-cost-center budgets, so even
+                      lowering the universal ULB to $0 wouldn't satisfy the constraints.
+                      Reduce individual ULBs (on the Individual ULBs tab) or raise the
+                      affected cost-center budgets above.
+                    </div>
+                  )
+                }
+                if (hasFailure && safe > 0 && currentUlb !== null && currentUlb > safe) {
+                  return (
+                    <div className="text-xs opacity-90">
+                      <span className="font-semibold">Alternative fix:</span>{' '}
+                      lowering the universal ULB from {formatCurrency(currentUlb)} to{' '}
+                      {formatCurrency(safe)} would satisfy the per-cost-center budgets
+                      (edit it on the Universal ULB tab).
+                    </div>
+                  )
+                }
+                return (
+                  <div className="text-xs opacity-90">
+                    <span className="font-semibold">Max safe universal ULB:</span>{' '}
+                    {formatCurrency(safe)}{' '}
+                    <span className="opacity-70">
+                      (the largest universal ULB value that keeps every check passing,
+                      holding individual ULBs and budgets constant)
+                    </span>
+                  </div>
+                )
+              })() : null}
               <div className="text-xs opacity-75">
                 See <code className="rounded bg-black/5 px-1 py-0.5 dark:bg-white/5">docs/budget-constraints.md</code> for the constraint model.
               </div>
