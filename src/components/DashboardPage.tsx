@@ -718,11 +718,10 @@ function LicenseContribRow({
 
 /**
  * § 3 — Cost centers status. Per-CC rollup answering "how are my cost
- * centers doing today". MTD/Projected come from the billing usage
- * summary API filtered per cost center — the authoritative source that
- * covers every routing path (individual ULB, universal ULB, org-routed
- * seats). CCs whose per-CC fetch hasn't resolved yet (or failed) render
- * as "—".
+ * centers doing today". MTD/Projected use gross AI credit pool draw
+ * from the billing usage summary API filtered per cost center, which is
+ * what CC budgets actually cap. CCs whose per-CC fetch hasn't resolved
+ * yet (or failed) render as "—".
  */
 function CostCenterStatusCard({
   pool,
@@ -738,7 +737,7 @@ function CostCenterStatusCard({
     for (const cc of pool.costCenters) {
       const usage = usageByCostCenterId.get(cc.costCenterId)
       if (!usage) continue
-      const mtd = usage.aiCreditsNet
+      const mtd = usage.aiCreditsGross
       const projected = projectMonthlyBudget(mtd, 0, asof).projectedMonthTotal
       rows.set(cc.costCenterId, { mtd, projected, measured: true })
     }

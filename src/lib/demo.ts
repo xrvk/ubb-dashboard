@@ -223,13 +223,18 @@ export function generateDemoUniversalUlb(): UniversalUlb {
  * Scale the consumed amounts on demo budgets + universal ULB so that their
  * sum matches `targetDollars`. Mutates inputs in place. Used when the demo
  * is told (via `?pool=N`) to show a partially-drawn pool.
+ *
+ * Preserves users who are already at/over their budget at exactly their
+ * budget amount or above. The scale factor is applied only to under-budget
+ * users so the demo keeps a meaningful "blocked" / "projected over" tail
+ * regardless of the pool fill %, while the total still lands near
+ * targetDollars.
  */
 export function scaleDemoConsumptionTo(
   targetDollars: number,
   budgets: UserBudget[],
   universal: UniversalUlb,
 ) {
-  const currentInd = budgets.reduce((s, b) => s + b.consumedAmount, 0)
   if (targetDollars <= 0) {
     universal.consumedAmount = 0
     for (const b of budgets) b.consumedAmount = 0
@@ -239,9 +244,18 @@ export function scaleDemoConsumptionTo(
   const targetUniv = Math.round(targetDollars * 0.18 * 100) / 100
   const targetInd = Math.max(0, targetDollars - targetUniv)
   universal.consumedAmount = targetUniv
-  if (currentInd <= 0) return
-  const scale = targetInd / currentInd
-  for (const b of budgets) {
+
+  // Split users into those at/over budget (preserved) and under-budget
+  // (scaled). "At/over" means consumed >= 0.95 of budget so the
+  // about-to-block tail is also kept.
+  const overUsers = budgets.filter(b => b.consumedAmount >= b.budgetAmount * 0.95)
+  const underUsers = budgets.filter(b => b.consumedAmount < b.budgetAmount * 0.95)
+  const preservedInd = overUsers.reduce((s, b) => s + b.consumedAmount, 0)
+  const currentUnder = underUsers.reduce((s, b) => s + b.consumedAmount, 0)
+  const remainingTarget = Math.max(0, targetInd - preservedInd)
+  if (currentUnder <= 0) return
+  const scale = remainingTarget / currentUnder
+  for (const b of underUsers) {
     b.consumedAmount = Math.round(b.consumedAmount * scale * 100) / 100
   }
 }
@@ -281,13 +295,26 @@ export function generateDemoCostCenterBudgets(): Map<string, CostCenterBudget> {
  * pool is empty.
  */
 /**
- * Distribute a top-line `aiCreditsNet` across the demo cost centers
- * proportional to seat share, returning a per-CC usage map. Mirrors
- * what `fetchCopilotUsageSummary({ costCenterId })` would return in real
- * mode: each entry is a `CopilotUsageSummary` filtered to that CC. CCs
- * with zero seats get a zeroed entry rather than being omitted so the
- * dashboard renders them as "$0" instead of "—".
+ * Hand-crafted per-CC pool drawdown for the demo cost centers, so the
+ * Dashboard CC bullet chart lands each CC at a deliberately different
+ * health state for review/testing:
+ *   platform-eng  ~$5,750 / $5,000 -> 115% (over)
+ *   data-platform ~$7,000 / $7,000 -> 100% (at)
+ *   devx          ~$4,000 / $5,000 ->  80% (near)
+ *   security      ~$1,500 / $3,000 ->  50% (well under)
+ * Amounts represent gross AI credit pool draw, which is what CC budgets
+ * cap (and what the billing usage API returns as `aiCreditsGross` when
+ * filtered by `cost_center_id`). Unknown CC names fall back to a seat
+ * proportional split of `totalUsage.aiCreditsGross` so non-demo CCs that
+ * sneak in still get a non-zero row.
  */
+const DEMO_CC_GROSS_TARGETS: Record<string, number> = {
+  'platform-eng': 5750,
+  'data-platform': 7000,
+  devx: 4000,
+  security: 1500,
+}
+
 export function generateDemoUsageByCostCenter(
   costCenters: CostCenter[],
   ccSeatCounts: ReadonlyMap<string, number>,
@@ -298,12 +325,21 @@ export function generateDemoUsageByCostCenter(
   for (const cc of costCenters) {
     const seats = ccSeatCounts.get(cc.id) ?? 0
     const share = totalSeats > 0 ? seats / totalSeats : 0
+    const targetGross = DEMO_CC_GROSS_TARGETS[cc.name.toLowerCase()]
+    const gross =
+      typeof targetGross === 'number'
+        ? targetGross
+        : Math.round(totalUsage.aiCreditsGross * share * 100) / 100
+    // Metered overage is only the share of `aiCreditsNet`, which is 0
+    // until the pool is exhausted. Keep the proportional split so the
+    // numbers stay self-consistent with the top-line.
+    const net = Math.round(totalUsage.aiCreditsNet * share * 100) / 100
     out.set(cc.id, {
       year: totalUsage.year,
       month: totalUsage.month,
       costCenterId: cc.id,
-      aiCreditsNet: Math.round(totalUsage.aiCreditsNet * share * 100) / 100,
-      aiCreditsGross: Math.round(totalUsage.aiCreditsGross * share * 100) / 100,
+      aiCreditsNet: net,
+      aiCreditsGross: gross,
       codingAgentNet: Math.round(totalUsage.codingAgentNet * share * 100) / 100,
       cbLicenseNet: Math.round(totalUsage.cbLicenseNet * share * 100) / 100,
       ceLicenseNet: Math.round(totalUsage.ceLicenseNet * share * 100) / 100,
@@ -321,10 +357,15 @@ export function generateDemoUsageSummary(
   const indivConsumed = budgets.reduce((s, b) => s + b.consumedAmount, 0)
   const universalConsumed = Math.round(indivConsumed * 0.18 * 100) / 100
   const ccRouted = Math.round(indivConsumed * 0.12 * 100) / 100
-  const aiCreditsNet = poolExhausted
-    ? Math.round((indivConsumed + universalConsumed + ccRouted) * 100) / 100
-    : 0
-  const aiCreditsGross = Math.round(aiCreditsNet * 1.05 * 100) / 100
+  const totalPoolDraw = Math.round((indivConsumed + universalConsumed + ccRouted) * 100) / 100
+  const aiCreditsNet = poolExhausted ? totalPoolDraw : 0
+  // Gross = full pool drawdown regardless of whether metering kicked in.
+  // CC budgets cap gross draw, so this is what the per-CC bullets compare
+  // against. After exhaustion, gross still includes the in-pool portion
+  // plus the metered overage (modeled here as a 5% bump).
+  const aiCreditsGross = poolExhausted
+    ? Math.round(totalPoolDraw * 1.05 * 100) / 100
+    : totalPoolDraw
   const now = new Date()
   const seatCount = Math.max(budgets.length, 1)
   const cbSeats = Math.round(seatCount * 0.7)
