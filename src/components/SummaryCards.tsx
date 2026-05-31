@@ -1,6 +1,6 @@
-import { Users, Warning, Gauge, CurrencyDollar, Coins } from '@phosphor-icons/react'
+import { Users, Warning, Gauge } from '@phosphor-icons/react'
 import { Card, CardContent } from '@/components/ui/card'
-import { formatCurrency, cn } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 import type { Summary } from '@/lib/status'
 
 interface Props {
@@ -46,19 +46,9 @@ export function SummaryCards({ summary, onSelectOver, onSelectNear, onReset }: P
       clickable: Boolean(onSelectNear && summary.near > 0),
       hint: 'Filter to users near limit',
     },
-    {
-      label: 'Total consumed',
-      value: formatCurrency(summary.totalConsumed),
-      icon: <CurrencyDollar size={20} weight="duotone" className="text-neutral-500" />,
-    },
-    {
-      label: 'ULB total',
-      value: formatCurrency(summary.totalBudgeted),
-      icon: <Coins size={20} weight="duotone" className="text-neutral-500" />,
-    },
   ]
   return (
-    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
       {items.map(item => {
         const interactive = item.clickable && item.onClick
         const Comp = interactive ? 'button' : 'div'
