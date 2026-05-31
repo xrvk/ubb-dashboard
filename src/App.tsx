@@ -26,7 +26,7 @@ export function App() {
   return (
     <div className="min-h-screen">
       <Toaster richColors position="bottom-right" />
-      <header className="border-b border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 sticky top-0 z-10">
+      <header className="border-b border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center gap-3">
           <div className="flex items-center gap-2.5">
             <Gauge size={26} weight="duotone" className="text-emerald-600" />
@@ -37,15 +37,28 @@ export function App() {
               </p>
             </div>
           </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Toggle theme"
+            onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
+            className="ml-auto"
+          >
+            {resolvedTheme === 'dark' ? <Sun size={18} weight="duotone" /> : <Moon size={18} weight="duotone" />}
+          </Button>
+        </div>
+      </header>
 
-          {credentials ? (
-            <div className="hidden sm:flex gap-1 p-1 rounded-md bg-neutral-100 dark:bg-neutral-800 ml-2">
+      {credentials ? (
+        <div className="sticky top-0 z-10 border-b border-neutral-200 dark:border-neutral-800 bg-white/95 dark:bg-neutral-950/95 backdrop-blur supports-[backdrop-filter]:bg-white/80 dark:supports-[backdrop-filter]:bg-neutral-950/80">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 py-2 flex items-center gap-3">
+            <div className="flex flex-1 sm:flex-initial gap-1 p-1 rounded-md bg-neutral-100 dark:bg-neutral-800">
               {(['individual', 'universal'] as const).map(t => (
                 <button
                   key={t}
                   onClick={() => setTab(t)}
                   className={cn(
-                    'px-3 py-1 text-sm font-medium rounded transition-colors',
+                    'flex-1 sm:flex-initial px-3 py-1 text-sm font-medium rounded transition-colors',
                     tab === t
                       ? 'bg-white dark:bg-neutral-700 text-neutral-900 dark:text-neutral-100 shadow-sm'
                       : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100',
@@ -55,66 +68,33 @@ export function App() {
                 </button>
               ))}
             </div>
-          ) : null}
-
-          <div className="flex items-center gap-2 ml-auto">
-            {credentials ? (
-              <>
-                {snapshot ? (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setRevertCandidate(snapshot)}
-                    title={`Revert the most recent bulk apply (${snapshot.entries.length} budgets)`}
-                  >
-                    <ArrowCounterClockwise size={14} weight="duotone" />
-                    Revert ({snapshot.entries.length.toLocaleString()})
-                  </Button>
-                ) : null}
-                {tab === 'individual' ? (
-                  <Button
-                    onClick={() => setCreating(true)}
-                    size="sm"
-                    disabled={totalBudgetCount >= 10000}
-                    title={totalBudgetCount >= 10000 ? 'Budget limit of 10,000 reached for this enterprise' : undefined}
-                  >
-                    <Plus size={16} weight="bold" />
-                    Add ULB
-                  </Button>
-                ) : null}
-              </>
-            ) : null}
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label="Toggle theme"
-              onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
-            >
-              {resolvedTheme === 'dark' ? <Sun size={18} weight="duotone" /> : <Moon size={18} weight="duotone" />}
-            </Button>
+            <div className="ml-auto flex items-center gap-2">
+              {snapshot ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setRevertCandidate(snapshot)}
+                  title={`Revert the most recent bulk apply (${snapshot.entries.length} budgets)`}
+                >
+                  <ArrowCounterClockwise size={14} weight="duotone" />
+                  <span className="hidden sm:inline">Revert ({snapshot.entries.length.toLocaleString()})</span>
+                </Button>
+              ) : null}
+              {tab === 'individual' ? (
+                <Button
+                  onClick={() => setCreating(true)}
+                  size="sm"
+                  disabled={totalBudgetCount >= 10000}
+                  title={totalBudgetCount >= 10000 ? 'Budget limit of 10,000 reached for this enterprise' : undefined}
+                >
+                  <Plus size={16} weight="bold" />
+                  <span className="hidden sm:inline">Add ULB</span>
+                </Button>
+              ) : null}
+            </div>
           </div>
         </div>
-
-        {/* Mobile tab row */}
-        {credentials ? (
-          <div className="sm:hidden max-w-7xl mx-auto px-4 pb-2 flex gap-1 p-1 rounded-md bg-neutral-100 dark:bg-neutral-800">
-            {(['individual', 'universal'] as const).map(t => (
-              <button
-                key={t}
-                onClick={() => setTab(t)}
-                className={cn(
-                  'flex-1 px-3 py-1 text-sm font-medium rounded transition-colors',
-                  tab === t
-                    ? 'bg-white dark:bg-neutral-700 text-neutral-900 dark:text-neutral-100 shadow-sm'
-                    : 'text-neutral-600 dark:text-neutral-400',
-                )}
-              >
-                {t === 'individual' ? 'Individual ULBs' : 'Universal ULB'}
-              </button>
-            ))}
-          </div>
-        ) : null}
-      </header>
+      ) : null}
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 grid gap-6">
         <ImportPanel />
