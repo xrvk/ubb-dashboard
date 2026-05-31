@@ -32,3 +32,4 @@ dist-ssr
 .env
 .env.local
 .env.*.local
+probe-budgets-output*.json

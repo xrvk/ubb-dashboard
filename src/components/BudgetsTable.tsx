@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { formatCurrency, formatPercent, cn } from '@/lib/utils'
 import { classifyStatus, utilization, type Status } from '@/lib/status'
+import { projectMonthlyBudget } from '@/lib/projection'
 import { bucketForBudget } from '@/components/UtilizationHistogram'
 import type { CostCenter, CostCenterResolution, UserBudget } from '@/lib/api'
 
@@ -30,6 +31,13 @@ export interface TableFilters {
    * no resolved CC, any other value = a specific CC id.
    */
   costCenter: string
+  /**
+   * When true, restrict to users at risk by end-of-month: currently over OR
+   * projected to exceed cap at the current burn rate. Mutually exclusive
+   * with the categorical `status` filter — turning this on resets status
+   * to 'all'.
+   */
+  atRiskByEom: boolean
 }
 
 export const EMPTY_FILTERS: TableFilters = {
@@ -39,6 +47,7 @@ export const EMPTY_FILTERS: TableFilters = {
   maxBudget: null,
   query: '',
   costCenter: '',
+  atRiskByEom: false,
 }
 
 interface Props {
@@ -132,6 +141,17 @@ export function BudgetsTable({ budgets, filters, onFiltersChange, onEdit, onDele
   const allRows = useMemo(() => {
     const filtered = budgets.filter(b => {
       if (filters.status !== 'all' && classifyStatus(b) !== filters.status) return false
+      if (filters.atRiskByEom) {
+        const currentlyOver = b.budgetAmount > 0
+          ? b.consumedAmount >= b.budgetAmount
+          : b.consumedAmount > 0
+        if (!currentlyOver) {
+          // Match the ForecastHero's projectedOver definition exactly.
+          if (b.budgetAmount <= 0) return false
+          const proj = projectMonthlyBudget(b.consumedAmount, 0)
+          if (proj.projectedMonthTotal <= b.budgetAmount) return false
+        }
+      }
       if (filters.query && !b.user.toLowerCase().includes(filters.query.toLowerCase())) return false
       if (filters.minBudget !== null && b.budgetAmount < filters.minBudget) return false
       if (filters.maxBudget !== null && b.budgetAmount > filters.maxBudget) return false
@@ -363,6 +383,16 @@ export function BudgetsTable({ budgets, filters, onFiltersChange, onEdit, onDele
                 title="Clear utilization bucket filter"
               >
                 Bucket
+                <X size={12} weight="bold" />
+              </button>
+            ) : null}
+            {filters.atRiskByEom ? (
+              <button
+                onClick={() => setFilter({ atRiskByEom: false })}
+                className="inline-flex items-center gap-1 h-8 px-2.5 rounded-md border border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-950/50 text-xs text-red-800 dark:text-red-200"
+                title="Clear at-risk filter"
+              >
+                At risk by EoM
                 <X size={12} weight="bold" />
               </button>
             ) : null}

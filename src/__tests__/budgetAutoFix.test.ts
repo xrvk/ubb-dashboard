@@ -1,0 +1,313 @@
+import { describe, expect, it } from 'vitest'
+import {
+  computeBudgetConstraints,
+  type ComputeBudgetConstraintsInput,
+} from '../lib/budgetConstraints'
+import {
+  proposeRaiseEnt,
+  proposeRaiseCc,
+  proposeLowerUniversalUlb,
+  computeRequiredMinimums,
+} from '../lib/budgetAutoFix'
+import type {
+  CopilotSeat,
+  CostCenter,
+  CostCenterBudget,
+  CostCenterIndex,
+  EnterpriseBudget,
+  UniversalUlb,
+  UserBudget,
+} from '../lib/api'
+
+// --- Fixture builders (mirroring budgetConstraints.test.ts) ---
+
+const seat = (login: string, orgLogin: string | null = 'org1'): CopilotSeat => ({
+  login,
+  orgLogin,
+  lastActivityAt: null,
+  planType: null,
+})
+
+const cc = (id: string, name: string): CostCenter => ({
+  id,
+  name,
+  state: 'active',
+  resources: [],
+})
+
+const ccBudget = (id: string, name: string, amount: number): CostCenterBudget => ({
+  id,
+  costCenterName: name,
+  budgetAmount: amount,
+  preventFurtherUsage: true,
+  willAlert: false,
+  alertRecipients: [],
+})
+
+const entBudget = (amount: number, excludeCostCenterUsage = false): EnterpriseBudget => ({
+  id: 'ent-1',
+  budgetAmount: amount,
+  excludeCostCenterUsage,
+  preventFurtherUsage: true,
+  willAlert: false,
+  alertRecipients: [],
+})
+
+const universal = (amount: number): UniversalUlb => ({
+  id: 'uni-1',
+  budgetAmount: amount,
+  consumedAmount: 0,
+  preventFurtherUsage: true,
+  willAlert: false,
+  alertRecipients: [],
+})
+
+const userBudget = (login: string, amount: number): UserBudget => ({
+  id: `ub-${login}`,
+  user: login,
+  budgetAmount: amount,
+  consumedAmount: 0,
+  preventFurtherUsage: true,
+  willAlert: false,
+  alertRecipients: [],
+})
+
+const idx = (
+  userToCC: Array<[string, CostCenter]> = [],
+  orgToCC: Array<[string, CostCenter]> = [],
+): CostCenterIndex => ({
+  userToCC: new Map(userToCC.map(([k, v]) => [k.toLowerCase(), v])),
+  orgToCC: new Map(orgToCC.map(([k, v]) => [k.toLowerCase(), v])),
+  orgBudgetedCollisions: [],
+})
+
+const baseInput = (
+  overrides: Partial<ComputeBudgetConstraintsInput> = {},
+): ComputeBudgetConstraintsInput => ({
+  enterpriseBudget: null,
+  universalUlb: null,
+  costCenters: [],
+  costCenterIndex: idx(),
+  ccBudgetsByName: new Map(),
+  seats: [],
+  userBudgets: [],
+  ...overrides,
+})
+
+describe('proposeRaiseEnt', () => {
+  it('returns null when there is no enterprise budget', () => {
+    const r = computeBudgetConstraints(baseInput())
+    expect(proposeRaiseEnt(r)).toBeNull()
+  })
+
+  it('returns null when ent already covers everything (umbrella)', () => {
+    const r = computeBudgetConstraints(
+      baseInput({
+        enterpriseBudget: entBudget(1000),
+        universalUlb: universal(10),
+        seats: [seat('alice'), seat('bob')],
+      }),
+    )
+    expect(proposeRaiseEnt(r)).toBeNull()
+  })
+
+  it('proposes the sum of CC budgets + unassigned ULBs (umbrella)', () => {
+    // CC "foo" with $50 budget; alice routed to it with universal ULB $10.
+    // bob is unassigned with universal ULB $10. Ent budget too low at $40.
+    const ccFoo = cc('cc1', 'foo')
+    const r = computeBudgetConstraints(
+      baseInput({
+        enterpriseBudget: entBudget(40),
+        universalUlb: universal(10),
+        costCenters: [ccFoo],
+        costCenterIndex: idx([['alice', ccFoo]]),
+        ccBudgetsByName: new Map([['foo', ccBudget('b1', 'foo', 50)]]),
+        seats: [seat('alice'), seat('bob')],
+      }),
+    )
+    const proposal = proposeRaiseEnt(r)
+    // Required = sum CC budgets ($50) + unassigned ULBs (bob $10) = $60.
+    expect(proposal).not.toBeNull()
+    expect(proposal!.newValue).toBe(60)
+    expect(proposal!.scope).toBe('enterprise')
+  })
+
+  it('proposes only Σ unassigned ULBs in independent mode', () => {
+    const ccFoo = cc('cc1', 'foo')
+    const r = computeBudgetConstraints(
+      baseInput({
+        enterpriseBudget: entBudget(5, /* excludeCostCenterUsage */ true),
+        universalUlb: universal(10),
+        costCenters: [ccFoo],
+        costCenterIndex: idx([['alice', ccFoo]]),
+        ccBudgetsByName: new Map([['foo', ccBudget('b1', 'foo', 50)]]),
+        seats: [seat('alice'), seat('bob')],
+      }),
+    )
+    const proposal = proposeRaiseEnt(r)
+    // independent mode: only bob ($10) counts against ent.
+    expect(proposal!.newValue).toBe(10)
+  })
+
+  it('rounds up to the next cent', () => {
+    const r = computeBudgetConstraints(
+      baseInput({
+        enterpriseBudget: entBudget(1),
+        universalUlb: universal(3.333),
+        seats: [seat('a'), seat('b'), seat('c')],
+      }),
+    )
+    const proposal = proposeRaiseEnt(r)
+    // 3.333 * 3 = 9.999 → ceil to 10.00.
+    expect(proposal!.newValue).toBe(10)
+  })
+})
+
+describe('proposeRaiseCc', () => {
+  it('returns null when CC is ok', () => {
+    const ccFoo = cc('cc1', 'foo')
+    const r = computeBudgetConstraints(
+      baseInput({
+        enterpriseBudget: entBudget(1000),
+        universalUlb: universal(10),
+        costCenters: [ccFoo],
+        costCenterIndex: idx([['alice', ccFoo]]),
+        ccBudgetsByName: new Map([['foo', ccBudget('b1', 'foo', 50)]]),
+        seats: [seat('alice')],
+      }),
+    )
+    expect(proposeRaiseCc(r, 'cc1')).toBeNull()
+  })
+
+  it('proposes the sum of member ULBs when CC is over', () => {
+    const ccFoo = cc('cc1', 'foo')
+    const r = computeBudgetConstraints(
+      baseInput({
+        enterpriseBudget: entBudget(1000),
+        universalUlb: universal(25),
+        costCenters: [ccFoo],
+        costCenterIndex: idx([
+          ['alice', ccFoo],
+          ['bob', ccFoo],
+        ]),
+        ccBudgetsByName: new Map([['foo', ccBudget('b1', 'foo', 10)]]),
+        seats: [seat('alice'), seat('bob')],
+      }),
+    )
+    const proposal = proposeRaiseCc(r, 'cc1')
+    expect(proposal).not.toBeNull()
+    expect(proposal!.newValue).toBe(50) // 25 + 25
+    expect(proposal!.scope).toBe('cost_center')
+    expect(proposal!.targetId).toBe('cc1')
+  })
+
+  it('returns null for an unknown CC id', () => {
+    const r = computeBudgetConstraints(baseInput({ enterpriseBudget: entBudget(100) }))
+    expect(proposeRaiseCc(r, 'nope')).toBeNull()
+  })
+})
+
+describe('proposeLowerUniversalUlb', () => {
+  it('returns null when no current universal', () => {
+    const r = computeBudgetConstraints(baseInput({ enterpriseBudget: entBudget(100) }))
+    expect(proposeLowerUniversalUlb(r, null)).toBeNull()
+  })
+
+  it('returns null when nothing binds the universal', () => {
+    // No envelope binds universal because no seats / no enterprise.
+    const r = computeBudgetConstraints(baseInput({ universalUlb: universal(10) }))
+    expect(proposeLowerUniversalUlb(r, 10)).toBeNull()
+  })
+
+  it('proposes the floor-cent of maxSafeUniversalUlb when current exceeds it', () => {
+    // Ent $30, 3 seats, universal $20 → max safe = 10. Currently $20.
+    const r = computeBudgetConstraints(
+      baseInput({
+        enterpriseBudget: entBudget(30),
+        universalUlb: universal(20),
+        seats: [seat('a'), seat('b'), seat('c')],
+      }),
+    )
+    expect(r.maxSafeUniversalUlb).toBe(10)
+    const proposal = proposeLowerUniversalUlb(r, 20)
+    expect(proposal!.newValue).toBe(10)
+    expect(proposal!.scope).toBe('universal_ulb')
+  })
+
+  it('returns null when already at or below safe max', () => {
+    const r = computeBudgetConstraints(
+      baseInput({
+        enterpriseBudget: entBudget(30),
+        universalUlb: universal(10),
+        seats: [seat('a'), seat('b'), seat('c')],
+      }),
+    )
+    expect(proposeLowerUniversalUlb(r, 10)).toBeNull()
+  })
+
+  it('returns null when safe max would be $0 (no real fix)', () => {
+    // Ent $0.01, 3 seats, universal $1. Max safe universal ≈ $0.003, floors
+    // to $0 → lowering to $0 isn't a real fix, so the proposal should be
+    // suppressed and the caller should suggest raising the enterprise budget
+    // (or setting per-CC budgets) instead.
+    const r = computeBudgetConstraints(
+      baseInput({
+        enterpriseBudget: entBudget(0.01),
+        universalUlb: universal(1),
+        seats: [seat('a'), seat('b'), seat('c')],
+      }),
+    )
+    expect(proposeLowerUniversalUlb(r, 1)).toBeNull()
+  })
+})
+
+describe('computeRequiredMinimums', () => {
+  it('returns null enterprise when no ent budget', () => {
+    const r = computeBudgetConstraints(baseInput())
+    expect(computeRequiredMinimums(r).enterprise).toBeNull()
+  })
+
+  it('sums CC budgets + unassigned ULBs in umbrella', () => {
+    const ccFoo = cc('cc1', 'foo')
+    const r = computeBudgetConstraints(
+      baseInput({
+        enterpriseBudget: entBudget(1000),
+        universalUlb: universal(7),
+        costCenters: [ccFoo],
+        costCenterIndex: idx([['alice', ccFoo]]),
+        ccBudgetsByName: new Map([['foo', ccBudget('b1', 'foo', 50)]]),
+        seats: [seat('alice'), seat('bob')],
+      }),
+    )
+    const min = computeRequiredMinimums(r)
+    expect(min.enterprise).toBe(57) // 50 + 7
+    expect(min.perCc.get('cc1')).toBe(7) // alice's ULB
+  })
+
+  it('only Σ unassigned ULBs in independent', () => {
+    const ccFoo = cc('cc1', 'foo')
+    const r = computeBudgetConstraints(
+      baseInput({
+        enterpriseBudget: entBudget(1000, true),
+        universalUlb: universal(7),
+        costCenters: [ccFoo],
+        costCenterIndex: idx([['alice', ccFoo]]),
+        ccBudgetsByName: new Map([['foo', ccBudget('b1', 'foo', 50)]]),
+        seats: [seat('alice'), seat('bob')],
+      }),
+    )
+    expect(computeRequiredMinimums(r).enterprise).toBe(7)
+  })
+
+  it('individual ULBs override universal when computing required', () => {
+    const r = computeBudgetConstraints(
+      baseInput({
+        enterpriseBudget: entBudget(1000),
+        universalUlb: universal(10),
+        seats: [seat('a'), seat('b')],
+        userBudgets: [userBudget('a', 50)], // a overrides universal
+      }),
+    )
+    expect(computeRequiredMinimums(r).enterprise).toBe(60) // 50 + 10
+  })
+})
