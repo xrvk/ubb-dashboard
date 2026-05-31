@@ -158,9 +158,21 @@ export function IndividualUlbPage({
 
   // If the user clears the cost-center filter that brought them here, also
   // clear the task so the banner doesn't linger over an unrelated view.
+  // Guard with a ref so we don't dismiss before the deep-link pendingFilter
+  // has had a chance to apply on first mount (otherwise activeTask gets nuked
+  // immediately because filters.costCenter is still "" while activeTask just
+  // arrived from App.tsx).
+  const taskMatchedOnceRef = useRef(false)
   useEffect(() => {
-    if (!activeTask) return
-    if (filters.costCenter !== activeTask.costCenterId) {
+    if (!activeTask) {
+      taskMatchedOnceRef.current = false
+      return
+    }
+    if (filters.costCenter === activeTask.costCenterId) {
+      taskMatchedOnceRef.current = true
+      return
+    }
+    if (taskMatchedOnceRef.current) {
       onTaskDismiss?.()
     }
   }, [activeTask, filters.costCenter, onTaskDismiss])
