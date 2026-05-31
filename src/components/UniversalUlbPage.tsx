@@ -63,6 +63,7 @@ export function UniversalUlbPage() {
     seats,
     universalUlb,
     setUniversalUlb,
+    loginToCostCenter,
   } = useCredentials()
 
   const [editing, setEditing] = useState(false)
@@ -86,6 +87,9 @@ export function UniversalUlbPage() {
   const [batchProgress, setBatchProgress] = useState<{ done: number; total: number } | null>(null)
   const [outlierPage, setOutlierPage] = useState(0)
   const [confirmCreateOpen, setConfirmCreateOpen] = useState(false)
+  /** Cost-center filter for the outliers table.
+   *  null = all, '' = unassigned (no CC), otherwise CC id. */
+  const [costCenterFilter, setCostCenterFilter] = useState<string | null>(null)
   const OUTLIERS_PER_PAGE = 25
 
   // Reload cached months whenever import changes them.
@@ -275,11 +279,44 @@ export function UniversalUlbPage() {
     })
   }
 
+  // CC resolution helpers. `loginToCostCenter` is keyed by lowercased login.
+  const getCC = (login: string) => loginToCostCenter.get(login.toLowerCase()) ?? null
+
+  // Cost centers that any outlier resolves to (used to populate the filter
+  // dropdown). Deduped by id, alphabetized by name.
+  const outlierCostCenters = useMemo(() => {
+    const byId = new Map<string, { id: string; name: string }>()
+    for (const u of threshold.powerUsers) {
+      const res = getCC(u.login)
+      if (res) byId.set(res.cc.id, { id: res.cc.id, name: res.cc.name })
+    }
+    return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [threshold.powerUsers, loginToCostCenter])
+
+  const hasAnyOutlierUnassigned = useMemo(
+    () => threshold.powerUsers.some(u => !getCC(u.login)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [threshold.powerUsers, loginToCostCenter],
+  )
+
+  // Rows actually shown after applying the cost-center filter.
+  const filteredPowerUsers = useMemo(() => {
+    if (costCenterFilter === null) return threshold.powerUsers
+    return threshold.powerUsers.filter(u => {
+      const res = getCC(u.login)
+      if (costCenterFilter === '') return !res
+      return res?.cc.id === costCenterFilter
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [threshold.powerUsers, costCenterFilter, loginToCostCenter])
+
   // Edited rows are treated as already configured — they're not toggled by
-  // "select all" and don't affect the all/none counter.
+  // "select all" and don't affect the all/none counter. Select-all also
+  // respects the current cost-center filter (only toggles visible rows).
   const unmodifiedPowerUsers = useMemo(
-    () => threshold.powerUsers.filter(u => !editedOutlierLogins.has(u.login)),
-    [threshold.powerUsers, editedOutlierLogins],
+    () => filteredPowerUsers.filter(u => !editedOutlierLogins.has(u.login)),
+    [filteredPowerUsers, editedOutlierLogins],
   )
   const allSelected =
     unmodifiedPowerUsers.length > 0 &&
@@ -531,12 +568,56 @@ export function UniversalUlbPage() {
             </div>
           ) : (
             (() => {
-              const totalPages = Math.max(1, Math.ceil(threshold.powerUsers.length / OUTLIERS_PER_PAGE))
+              const totalPages = Math.max(1, Math.ceil(filteredPowerUsers.length / OUTLIERS_PER_PAGE))
               const safePage = Math.min(outlierPage, totalPages - 1)
               const pageStart = safePage * OUTLIERS_PER_PAGE
-              const pageRows = threshold.powerUsers.slice(pageStart, pageStart + OUTLIERS_PER_PAGE)
+              const pageRows = filteredPowerUsers.slice(pageStart, pageStart + OUTLIERS_PER_PAGE)
               return (
                 <>
+                  {(outlierCostCenters.length > 0 || hasAnyOutlierUnassigned) && (
+                    <div className="flex items-center gap-2 text-xs">
+                      <label className="text-neutral-600 dark:text-neutral-400" htmlFor="cc-filter">
+                        Cost center:
+                      </label>
+                      <select
+                        id="cc-filter"
+                        value={costCenterFilter === null ? '__all__' : costCenterFilter === '' ? '__unassigned__' : costCenterFilter}
+                        onChange={e => {
+                          const v = e.target.value
+                          setCostCenterFilter(v === '__all__' ? null : v === '__unassigned__' ? '' : v)
+                          setOutlierPage(0)
+                        }}
+                        className="h-7 rounded border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2"
+                      >
+                        <option value="__all__">All ({threshold.powerUsers.length.toLocaleString()})</option>
+                        {hasAnyOutlierUnassigned && (
+                          <option value="__unassigned__">
+                            Unassigned ({threshold.powerUsers.filter(u => !getCC(u.login)).length.toLocaleString()})
+                          </option>
+                        )}
+                        {outlierCostCenters.map(cc => {
+                          const count = threshold.powerUsers.filter(u => getCC(u.login)?.cc.id === cc.id).length
+                          return (
+                            <option key={cc.id} value={cc.id}>
+                              {cc.name} ({count.toLocaleString()})
+                            </option>
+                          )
+                        })}
+                      </select>
+                      {costCenterFilter !== null && (
+                        <button
+                          type="button"
+                          onClick={() => { setCostCenterFilter(null); setOutlierPage(0) }}
+                          className="text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200 underline"
+                        >
+                          clear
+                        </button>
+                      )}
+                      <div className="ml-auto text-neutral-500">
+                        Showing {filteredPowerUsers.length.toLocaleString()} of {threshold.powerUsers.length.toLocaleString()}
+                      </div>
+                    </div>
+                  )}
                   <div className="flex items-center justify-between gap-2 text-xs">
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input
@@ -568,6 +649,7 @@ export function UniversalUlbPage() {
                         <tr>
                           <th className="px-3 py-2 w-8" aria-label="Select" />
                           <th className="px-3 py-2 font-medium">User</th>
+                          <th className="px-3 py-2 font-medium">Cost center</th>
                           <th className="px-3 py-2 text-right font-medium">Max-month AICs</th>
                           <th className="px-3 py-2 text-right font-medium">Gross $</th>
                           <th className="px-3 py-2 text-right font-medium">Suggested ULB</th>
@@ -595,6 +677,20 @@ export function UniversalUlbPage() {
                                 />
                               </td>
                               <td className="px-3 py-2 font-medium">{u.login}</td>
+                              <td className="px-3 py-2 text-xs">
+                                {(() => {
+                                  const res = getCC(u.login)
+                                  if (!res) return <span className="text-neutral-400">—</span>
+                                  return (
+                                    <span title={`via ${res.via}`}>
+                                      {res.cc.name}
+                                      {res.via === 'org' && (
+                                        <span className="ml-1 text-neutral-400">(org)</span>
+                                      )}
+                                    </span>
+                                  )
+                                })()}
+                              </td>
                               <td className="px-3 py-2 text-right tabular-nums">
                                 {Math.round(u.totalAICs).toLocaleString()}
                               </td>
