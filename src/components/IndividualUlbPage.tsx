@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Plus } from '@phosphor-icons/react'
 import { toast } from 'sonner'
 import { useCredentials } from '@/hooks/use-credentials'
-import { SummaryCards } from '@/components/SummaryCards'
+import { FilterChips } from '@/components/FilterChips'
 import { ForecastHero } from '@/components/ForecastHero'
 import { UtilizationHistogram } from '@/components/UtilizationHistogram'
 import { BudgetsTable, EMPTY_FILTERS, type TableFilters } from '@/components/BudgetsTable'
@@ -349,11 +349,22 @@ export function IndividualUlbPage({
           setFiltersAndScroll({ ...EMPTY_FILTERS, atRiskByEom: true })
         }
       />
-      <SummaryCards
+      <FilterChips
         summary={summary}
-        onReset={() => setFiltersAndScroll(EMPTY_FILTERS)}
+        forecast={forecast}
+        active={
+          filters.atRiskByEom
+            ? 'atRisk'
+            : filters.status === 'over'
+              ? 'over'
+              : filters.status === 'near'
+                ? 'near'
+                : 'all'
+        }
+        onSelectAll={() => setFiltersAndScroll(EMPTY_FILTERS)}
         onSelectOver={() => setFiltersAndScroll({ ...EMPTY_FILTERS, status: 'over' })}
         onSelectNear={() => setFiltersAndScroll({ ...EMPTY_FILTERS, status: 'near' })}
+        onSelectAtRisk={() => setFiltersAndScroll({ ...EMPTY_FILTERS, atRiskByEom: true })}
       />
       {budgets.length > 0 ? (
         <>
@@ -364,29 +375,6 @@ export function IndividualUlbPage({
               setFiltersAndScroll({ ...filters, bucketId: id, status: 'all' })
             }
           />
-          <div className="rounded-md border border-neutral-200 dark:border-neutral-800 p-3 text-xs grid gap-1.5 sm:grid-cols-3">
-            <div>
-              <div className="text-neutral-500 dark:text-neutral-400">Already over today</div>
-              <div className="font-semibold text-sm">
-                {forecast.alreadyOver.toLocaleString()}
-                <span className="text-neutral-500 font-normal"> · of {forecast.total.toLocaleString()} users</span>
-              </div>
-            </div>
-            <div>
-              <div className="text-neutral-500 dark:text-neutral-400">Projected to slip over by EoM</div>
-              <div className="font-semibold text-sm">
-                {forecast.projectedOver.toLocaleString()}
-                <span className="text-neutral-500 font-normal"> · at current burn{forecast.lowConfidence ? ', low confidence' : ''}</span>
-              </div>
-            </div>
-            <div>
-              <div className="text-neutral-500 dark:text-neutral-400">Days remaining in cycle</div>
-              <div className="font-semibold text-sm">
-                {(forecast.daysInMonth - forecast.daysElapsed).toLocaleString()}
-                <span className="text-neutral-500 font-normal"> · Day {forecast.daysElapsed} of {forecast.daysInMonth}</span>
-              </div>
-            </div>
-          </div>
           <div ref={tableRef} className="space-y-3">
             <div className="flex items-center justify-between gap-3">
               <h2 className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
