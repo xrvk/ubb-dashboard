@@ -453,7 +453,6 @@ export function UniversalUlbTable({
                     </td>
                     <td className="px-3 py-2.5 text-right">
                       <Button size="sm" variant="ghost" onClick={() => onCreateOne(r.login)} title="Set individual ULB">
-                        <Plus size={14} weight="duotone" />
                         Set ind ULB
                       </Button>
                     </td>
