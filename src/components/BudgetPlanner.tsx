@@ -537,7 +537,11 @@ export function BudgetPlanner() {
                 No enterprise ai_credits budget configured — nothing to plan against yet.
               </div>
             ) : (
-              <div className="rounded-md border border-neutral-200 dark:border-neutral-800 p-3 grid gap-2">
+              <div
+                id="bp-ent"
+                data-bp-target="ent"
+                className="rounded-md border border-neutral-200 dark:border-neutral-800 p-3 grid gap-2 scroll-mt-24"
+              >
                 <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-center">
                   <div>
                     <div className="text-xs text-neutral-500 dark:text-neutral-400">
@@ -656,8 +660,10 @@ export function BudgetPlanner() {
                         return (
                           <tr
                             key={row.key}
+                            id={`bp-cc-${row.ccId}`}
+                            data-bp-target={`cc-${row.ccId}`}
                             className={cn(
-                              'border-t border-neutral-200 dark:border-neutral-800',
+                              'border-t border-neutral-200 dark:border-neutral-800 scroll-mt-24',
                               !row.affectsCopilot && 'opacity-60',
                               isCreating && 'bg-amber-500/5',
                             )}

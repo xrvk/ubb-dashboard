@@ -1,9 +1,37 @@
 import { useMemo, useState } from 'react'
-import { CheckCircle, Warning, XCircle, CaretDown, CaretUp } from '@phosphor-icons/react'
+import { CheckCircle, Warning, XCircle, CaretDown, CaretUp, ArrowDown, ArrowSquareOut } from '@phosphor-icons/react'
 import { useCredentials } from '@/hooks/use-credentials'
-import { buildCostCenterIndex } from '@/lib/api'
+import { buildCostCenterIndex, budgetEditUrl } from '@/lib/api'
 import { computeBudgetConstraints } from '@/lib/budgetConstraints'
-import { formatCurrency, cn } from '@/lib/utils'
+import { computeRequiredMinimums } from '@/lib/budgetAutoFix'
+import { formatCurrency, cn, openExternal } from '@/lib/utils'
+
+/**
+ * Scroll to a BudgetPlanner row (ent card or a specific CC row) and flash a
+ * highlight ring so the user can see where to type the fix. The id is set on
+ * the row container by BudgetPlanner.
+ */
+function scrollToPlanner(targetId: string) {
+  const el = document.getElementById(targetId)
+  if (!el) return
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  el.classList.add('ring-2', 'ring-amber-400', 'ring-offset-2', 'dark:ring-offset-neutral-950')
+  window.setTimeout(() => {
+    el.classList.remove('ring-2', 'ring-amber-400', 'ring-offset-2', 'dark:ring-offset-neutral-950')
+  }, 2000)
+}
+
+interface FailingCheck {
+  kind: 'cc-over' | 'cc-vs-ent' | 'leftover'
+  message: string
+  actions: Array<{
+    label: string
+    onClick?: () => void
+    href?: string
+    icon?: 'scroll' | 'external'
+    primary?: boolean
+  }>
+}
 
 /**
  * Banner that surfaces the budget-constraint health for the current enterprise.
@@ -26,8 +54,8 @@ export function ConstraintsBanner() {
     universalUlb,
     enterpriseBudget,
     costCenterBudgetsByName,
+    credentials,
   } = useCredentials()
-  const [expanded, setExpanded] = useState(false)
 
   const result = useMemo(() => {
     // Rebuild the index with budget awareness so we get org-collision detection.
@@ -43,29 +71,95 @@ export function ConstraintsBanner() {
     })
   }, [enterpriseBudget, universalUlb, costCenters, costCenterBudgetsByName, seats, budgets])
 
+  const requiredMins = useMemo(() => computeRequiredMinimums(result), [result])
+
+  const hasFailingCheck = result.checks.perCc.some(c => !c.check.ok)
+    || (result.checks.ccVsEnterprise ? !result.checks.ccVsEnterprise.ok : false)
+    || (result.checks.unassignedLeftover ? !result.checks.unassignedLeftover.ok : false)
+
+  // Auto-expand when something needs attention so the actionable fix list is
+  // visible without an extra click; collapsed by default when all-clear.
+  const [expanded, setExpanded] = useState(hasFailingCheck)
+
   // Don't render anything if we have nothing to constrain against.
   // (e.g. demo mode, or a freshly connected enterprise before data loads)
   const hasAnyEnvelope =
     enterpriseBudget !== null || costCenterBudgetsByName.size > 0 || universalUlb !== null
   if (!hasAnyEnvelope) return null
 
-  const failingChecks: string[] = []
+  const failingChecks: FailingCheck[] = []
   for (const c of result.checks.perCc) {
     if (!c.check.ok) {
-      failingChecks.push(
-        `Cost center "${c.costCenterName}" is over by ${formatCurrency(c.check.overBy)} — ${c.memberCount} member${c.memberCount === 1 ? '' : 's'} have effective ULBs totaling ${formatCurrency(c.check.actual)} against a ${formatCurrency(c.check.allowed)} budget.`,
-      )
+      const required = requiredMins.perCc.get(c.costCenterId)
+      const ccBudget = costCenterBudgetsByName.get(c.costCenterName)
+      const actions: FailingCheck['actions'] = []
+      if (required !== undefined) {
+        actions.push({
+          label: `Raise CC budget to ${formatCurrency(required)}`,
+          onClick: () => scrollToPlanner(`bp-cc-${c.costCenterId}`),
+          icon: 'scroll',
+          primary: true,
+        })
+      }
+      if (ccBudget && credentials) {
+        actions.push({
+          label: 'Edit on github.com',
+          href: budgetEditUrl(credentials.base, credentials.ent, ccBudget.id),
+          icon: 'external',
+        })
+      }
+      failingChecks.push({
+        kind: 'cc-over',
+        message: `Cost center "${c.costCenterName}" is over by ${formatCurrency(c.check.overBy)} — ${c.memberCount} member${c.memberCount === 1 ? '' : 's'} have effective ULBs totaling ${formatCurrency(c.check.actual)} against a ${formatCurrency(c.check.allowed)} budget.`,
+        actions,
+      })
     }
   }
   if (result.checks.ccVsEnterprise && !result.checks.ccVsEnterprise.ok) {
-    failingChecks.push(
-      `Cost-center budgets total ${formatCurrency(result.checks.ccVsEnterprise.actual)}, which exceeds the enterprise budget of ${formatCurrency(result.checks.ccVsEnterprise.allowed)} by ${formatCurrency(result.checks.ccVsEnterprise.overBy)}.`,
-    )
+    const actions: FailingCheck['actions'] = []
+    if (requiredMins.enterprise !== null) {
+      actions.push({
+        label: `Raise enterprise budget to ${formatCurrency(requiredMins.enterprise)}`,
+        onClick: () => scrollToPlanner('bp-ent'),
+        icon: 'scroll',
+        primary: true,
+      })
+    }
+    if (enterpriseBudget && credentials) {
+      actions.push({
+        label: 'Edit on github.com',
+        href: budgetEditUrl(credentials.base, credentials.ent, enterpriseBudget.id),
+        icon: 'external',
+      })
+    }
+    failingChecks.push({
+      kind: 'cc-vs-ent',
+      message: `Cost-center budgets total ${formatCurrency(result.checks.ccVsEnterprise.actual)}, which exceeds the enterprise budget of ${formatCurrency(result.checks.ccVsEnterprise.allowed)} by ${formatCurrency(result.checks.ccVsEnterprise.overBy)}.`,
+      actions,
+    })
   }
   if (result.checks.unassignedLeftover && !result.checks.unassignedLeftover.ok) {
-    failingChecks.push(
-      `Users outside a budgeted cost center have effective ULBs totaling ${formatCurrency(result.checks.unassignedLeftover.actual)}, exceeding the ${result.mode === 'umbrella' ? 'leftover enterprise allowance' : 'enterprise budget'} of ${formatCurrency(result.checks.unassignedLeftover.allowed)} by ${formatCurrency(result.checks.unassignedLeftover.overBy)}.`,
-    )
+    const actions: FailingCheck['actions'] = []
+    if (requiredMins.enterprise !== null) {
+      actions.push({
+        label: `Raise enterprise budget to ${formatCurrency(requiredMins.enterprise)}`,
+        onClick: () => scrollToPlanner('bp-ent'),
+        icon: 'scroll',
+        primary: true,
+      })
+    }
+    if (enterpriseBudget && credentials) {
+      actions.push({
+        label: 'Edit on github.com',
+        href: budgetEditUrl(credentials.base, credentials.ent, enterpriseBudget.id),
+        icon: 'external',
+      })
+    }
+    failingChecks.push({
+      kind: 'leftover',
+      message: `Users outside a budgeted cost center have effective ULBs totaling ${formatCurrency(result.checks.unassignedLeftover.actual)}, exceeding the ${result.mode === 'umbrella' ? 'leftover enterprise allowance' : 'enterprise budget'} of ${formatCurrency(result.checks.unassignedLeftover.allowed)} by ${formatCurrency(result.checks.unassignedLeftover.overBy)}.`,
+      actions,
+    })
   }
 
   const hasFailure = failingChecks.length > 0
@@ -122,9 +216,55 @@ export function ConstraintsBanner() {
               {hasFailure ? (
                 <div>
                   <div className="text-xs font-semibold uppercase tracking-wide opacity-70">Failing checks</div>
-                  <ul className="mt-1 list-disc pl-5 space-y-1 text-xs">
-                    {failingChecks.map((msg, i) => (
-                      <li key={i}>{msg}</li>
+                  <ul className="mt-1 space-y-2">
+                    {failingChecks.map((fc, i) => (
+                      <li key={i} className="rounded border border-current/20 bg-white/40 dark:bg-black/20 px-2.5 py-2 text-xs">
+                        <div>{fc.message}</div>
+                        {fc.actions.length > 0 ? (
+                          <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
+                            {fc.actions.map((a, j) => {
+                              const baseClass = cn(
+                                'inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-medium transition-colors',
+                                a.primary
+                                  ? 'bg-current/15 hover:bg-current/25'
+                                  : 'opacity-80 hover:opacity-100 hover:bg-current/10',
+                              )
+                              const iconEl =
+                                a.icon === 'scroll' ? (
+                                  <ArrowDown size={10} weight="bold" />
+                                ) : a.icon === 'external' ? (
+                                  <ArrowSquareOut size={10} />
+                                ) : null
+                              if (a.href) {
+                                return (
+                                  <a
+                                    key={j}
+                                    href={a.href}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    onClick={openExternal(a.href)}
+                                    className={baseClass}
+                                  >
+                                    {a.label}
+                                    {iconEl}
+                                  </a>
+                                )
+                              }
+                              return (
+                                <button
+                                  key={j}
+                                  type="button"
+                                  onClick={a.onClick}
+                                  className={baseClass}
+                                >
+                                  {iconEl}
+                                  {a.label}
+                                </button>
+                              )
+                            })}
+                          </div>
+                        ) : null}
+                      </li>
                     ))}
                   </ul>
                 </div>
