@@ -50,9 +50,14 @@ export function ConsumptionCurve({
 }: ConsumptionCurveProps) {
   const [hoverIndex, setHoverIndex] = useState<number | null>(null)
   const [dragging, setDragging] = useState<'ulb' | 'power' | 'threshold' | null>(null)
+  const [hideIdle, setHideIdle] = useState(true)
   const svgRef = useRef<SVGSVGElement>(null)
 
-  const n = sortedUsers.length
+  const totalN = sortedUsers.length
+  const idleCount = useMemo(
+    () => sortedUsers.filter(u => u.totalAICs <= 0).length,
+    [sortedUsers],
+  )
   const VB_W = 1000
   const VB_H = 220
   const PAD_L = 8
@@ -62,8 +67,14 @@ export function ConsumptionCurve({
   const plotW = VB_W - PAD_L - PAD_R
   const plotH = VB_H - PAD_T - PAD_B
 
-  // Lowest consumer on the left, heaviest on the right.
-  const displayUsers = useMemo(() => [...sortedUsers].reverse(), [sortedUsers])
+  // Lowest consumer on the left, heaviest on the right. Default-hide idle
+  // (zero-AIC) users so the long flat tail doesn't squash the interesting
+  // curvature on the right. Toggle below the chart restores the full view.
+  const displayUsers = useMemo(() => {
+    const base = hideIdle ? sortedUsers.filter(u => u.totalAICs > 0) : sortedUsers
+    return [...base].reverse()
+  }, [sortedUsers, hideIdle])
+  const n = displayUsers.length
 
   // Power users occupy the RIGHT end: indices [powerStartIdx .. n-1].
   const powerStartIdx = Math.max(0, n - powerUserCount)
@@ -414,7 +425,7 @@ export function ConsumptionCurve({
 
           {/* Axis labels */}
           <text x={PAD_L} y={VB_H - 8} className="fill-neutral-500 dark:fill-neutral-400 text-[10px]">
-            #{n} (lowest)
+            #{n} {hideIdle && idleCount > 0 ? '(lowest active)' : '(lowest)'}
           </text>
           <text
             x={VB_W - PAD_R}
@@ -427,6 +438,23 @@ export function ConsumptionCurve({
         </svg>
       </div>
 
+      {/* Idle-user truncation toggle */}
+      {idleCount > 0 && (
+        <div className="flex items-center justify-end gap-2 text-[11px] text-neutral-500 dark:text-neutral-400 px-1">
+          <span>
+            {idleCount.toLocaleString()} idle {idleCount === 1 ? 'user' : 'users'} (0 AICs){' '}
+            {hideIdle ? 'hidden' : 'shown'}
+          </span>
+          <button
+            type="button"
+            onClick={() => setHideIdle(v => !v)}
+            className="underline underline-offset-2 hover:text-neutral-700 dark:hover:text-neutral-200"
+          >
+            {hideIdle ? 'show all' : 'hide idle'}
+          </button>
+        </div>
+      )}
+
       {/* Legend / split summary */}
       <div className="grid grid-cols-2 gap-3 text-xs">
         <div className="rounded-md bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800 px-3 py-2">
@@ -435,7 +463,7 @@ export function ConsumptionCurve({
             Regular users · ULB {formatAICs(ulbAICs)} AICs{ulbIsOverridden ? ' (custom)' : ''}
           </div>
           <p className="text-neutral-600 dark:text-neutral-400 mt-0.5">
-            {n - powerUserCount} {n - powerUserCount === 1 ? 'user' : 'users'} below threshold
+            {totalN - powerUserCount} {totalN - powerUserCount === 1 ? 'user' : 'users'} below threshold
             {onUlbChange && (
               <span className="block text-[10px] italic mt-0.5">Drag the amber line to adjust.</span>
             )}
