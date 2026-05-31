@@ -469,8 +469,8 @@ export function UniversalUlbPage() {
             <div>
               <h2 className="text-sm font-semibold">Step 2 · Choose your universal ULB</h2>
               <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
-                Drag the threshold line to split regular users from outliers, then drag the dashed
-                ULB line to set the cap. Outliers get individual ULBs in step 3.
+                Click the chart to mark where regular users end and outliers begin, then drag the
+                dashed ULB line to set the cap.
               </p>
             </div>
             {hasData ? (
