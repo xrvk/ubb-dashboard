@@ -267,7 +267,7 @@ export function BudgetPlanner() {
               <div className="text-xs text-neutral-500 dark:text-neutral-400">Enterprise budget</div>
               <div className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">
                 Currently {formatCurrency(enterpriseBudget.budgetAmount)} ·{' '}
-                {enterpriseBudget.excludeCostCenterUsage ? 'Additive (CC budgets separate)' : 'Shared (CC budgets nested)'} ·{' '}
+                {enterpriseBudget.excludeCostCenterUsage ? 'Cost center exclusion on · ' : ''}
                 {enterpriseBudget.preventFurtherUsage ? 'Hard cap' : 'Soft cap'}
               </div>
             </div>

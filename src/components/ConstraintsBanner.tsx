@@ -82,11 +82,11 @@ export function ConstraintsBanner() {
   const Icon = state === 'red' ? XCircle : state === 'amber' ? Warning : CheckCircle
 
   const modeLabel =
-    result.mode === 'umbrella'
-      ? 'Umbrella mode (CC budgets count against enterprise pool)'
-      : result.mode === 'independent'
-        ? 'Independent mode (exclude_cost_center_usage=true)'
-        : 'No enterprise budget configured'
+    result.mode === 'independent'
+      ? 'Cost center exclusion is on'
+      : result.mode === 'no-enterprise-budget'
+        ? 'No enterprise budget configured'
+        : null
 
   const headline = hasFailure
     ? `Budget overcommitted — ${failingChecks.length} constraint${failingChecks.length === 1 ? '' : 's'} failing`
@@ -115,7 +115,7 @@ export function ConstraintsBanner() {
               </button>
             ) : null}
           </div>
-          <div className="mt-0.5 text-xs opacity-80">{modeLabel}</div>
+          {modeLabel ? <div className="mt-0.5 text-xs opacity-80">{modeLabel}</div> : null}
 
           {expanded ? (
             <div className="mt-2 space-y-2">

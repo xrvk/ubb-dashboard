@@ -140,7 +140,7 @@ export function BudgetStructureDiagram() {
           Budget Structure
         </div>
         <div className="text-xs text-neutral-500">
-          {excludeCcUsage ? 'Independent mode (exclude_cost_center_usage=true)' : 'Umbrella mode'}
+          {excludeCcUsage ? 'Cost center exclusion is on' : null}
         </div>
       </div>
 
