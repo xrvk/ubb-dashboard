@@ -825,7 +825,6 @@ function CostCenterStatusCard({
                 <th className="text-right font-medium px-3 py-2">ULB ceiling</th>
                 <th className="text-right font-medium px-3 py-2">MTD (ULB users)</th>
                 <th className="text-right font-medium px-3 py-2">Projected (ULB users)</th>
-                <th className="text-left font-medium px-3 py-2 pl-4">Status</th>
               </tr>
             </thead>
             <tbody>
@@ -837,20 +836,6 @@ function CostCenterStatusCard({
                 const seatsTotal = data?.seatsTotal ?? cc.seatCount
                 const measured = seatsWithUlb > 0
                 const partial = measured && seatsWithUlb < seatsTotal
-                const budgetExceeded =
-                  cc.budgetAmount !== null && proj > cc.budgetAmount
-                const ceilingBinds =
-                  cc.budgetAmount !== null && cc.ulbCeiling < cc.budgetAmount
-                let status: { label: string; tone: 'ok' | 'warn' | 'info' }
-                if (cc.budgetAmount === null) {
-                  status = { label: 'Uncapped · bounded by ULB ceiling', tone: 'info' }
-                } else if (budgetExceeded) {
-                  status = { label: 'Projected to exceed budget', tone: 'warn' }
-                } else if (ceilingBinds) {
-                  status = { label: 'ULB ceiling < budget', tone: 'info' }
-                } else {
-                  status = { label: 'On track', tone: 'ok' }
-                }
                 return (
                   <tr key={cc.costCenterId} className="border-t border-neutral-200 dark:border-neutral-800">
                     <td className="px-3 py-2 font-medium text-neutral-700 dark:text-neutral-300">
@@ -879,18 +864,6 @@ function CostCenterStatusCard({
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums">
                       {measured ? formatCurrency(proj) : <span className="text-neutral-400">—</span>}
-                    </td>
-                    <td className="px-3 py-2 pl-4">
-                      <span
-                        className={cn(
-                          'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium',
-                          status.tone === 'warn' && 'bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-200',
-                          status.tone === 'info' && 'bg-neutral-100 text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300',
-                          status.tone === 'ok' && 'bg-emerald-100 text-emerald-900 dark:bg-emerald-900/40 dark:text-emerald-200',
-                        )}
-                      >
-                        {status.label}
-                      </span>
                     </td>
                   </tr>
                 )
