@@ -294,22 +294,12 @@ function ForecastBreakdownCard({
 }) {
   const pct = (v: number, total: number) =>
     total > 0 ? `${Math.round((v / total) * 100)}%` : '—'
-  // The denominator for the bar is the actual enterprise total when present
-  // (so the bar can show what the budgets API can't see); otherwise it's the
-  // tracked-only sum.
-  const denom = Math.max(1, tracked.totalProjected)
-  const univPctW = (tracked.universal.projected / denom) * 100
-  const indPctW = (tracked.individual.projected / denom) * 100
-  // CC-routed = whatever the billing API reports beyond what we can attribute
-  // to universal + individual scopes. Clamp to zero so demo/edge cases where
-  // tracked > actual don't render a negative slice.
   const ccRoutedProjected = tracked.hasActual
     ? Math.max(0, tracked.totalProjected - tracked.universal.projected - tracked.individual.projected)
     : 0
   const ccRoutedMtd = tracked.hasActual
     ? Math.max(0, tracked.totalMtd - tracked.universal.mtd - tracked.individual.mtd)
     : 0
-  const ccPctW = (ccRoutedProjected / denom) * 100
 
   return (
     <Card>
@@ -366,40 +356,6 @@ function ForecastBreakdownCard({
                 ? ` · ${pct(tracked.totalProjected, entBudget)} of ent budget`
                 : ''}
             </div>
-          </div>
-        </div>
-
-        {/* Stacked progress bar */}
-        <div>
-          <div className="flex w-full h-3 rounded-full overflow-hidden bg-neutral-100 dark:bg-neutral-800">
-            {tracked.universal.projected > 0 ? (
-              <div
-                className="h-full"
-                style={{ width: `${univPctW}%`, backgroundColor: COLOR_UNIVERSAL }}
-                title={`Universal ULB · ${formatCurrency(tracked.universal.projected)}`}
-              />
-            ) : null}
-            {tracked.individual.projected > 0 ? (
-              <div
-                className="h-full"
-                style={{ width: `${indPctW}%`, backgroundColor: COLOR_INDIVIDUAL }}
-                title={`Individual ULBs · ${formatCurrency(tracked.individual.projected)}`}
-              />
-            ) : null}
-            {ccRoutedProjected > 0 ? (
-              <div
-                className="h-full"
-                style={{ width: `${ccPctW}%`, backgroundColor: COLOR_CC_ROUTED }}
-                title={`CC-routed (other) · ${formatCurrency(ccRoutedProjected)}`}
-              />
-            ) : null}
-          </div>
-          <div className="flex items-center gap-4 mt-2 text-xs text-neutral-600 dark:text-neutral-400">
-            <LegendDot color={COLOR_UNIVERSAL} label="Universal ULB" />
-            <LegendDot color={COLOR_INDIVIDUAL} label="Individual ULBs" />
-            {tracked.hasActual ? (
-              <LegendDot color={COLOR_CC_ROUTED} label="CC-routed (other)" />
-            ) : null}
           </div>
         </div>
 
