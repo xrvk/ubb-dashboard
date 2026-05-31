@@ -3,6 +3,7 @@ import { Plus } from '@phosphor-icons/react'
 import { toast } from 'sonner'
 import { useCredentials } from '@/hooks/use-credentials'
 import { SummaryCards } from '@/components/SummaryCards'
+import { ForecastHero } from '@/components/ForecastHero'
 import { UtilizationHistogram } from '@/components/UtilizationHistogram'
 import { BudgetsTable, EMPTY_FILTERS, type TableFilters } from '@/components/BudgetsTable'
 import { EditBudgetDialog } from '@/components/EditBudgetDialog'
@@ -11,7 +12,7 @@ import { DeleteConfirmDialog } from '@/components/DeleteConfirmDialog'
 import { BulkUnblockDialog } from '@/components/BulkUnblockDialog'
 import { RevertBulkDialog } from '@/components/RevertBulkDialog'
 import { Button } from '@/components/ui/button'
-import { summarize } from '@/lib/status'
+import { summarize, forecastSummary } from '@/lib/status'
 import { openExternal } from '@/lib/utils'
 import type { NavToIndividualTask } from '@/lib/navEvents'
 import {
@@ -82,6 +83,7 @@ export function IndividualUlbPage({
   const tableRef = useRef<HTMLDivElement | null>(null)
 
   const summary = useMemo(() => summarize(budgets), [budgets])
+  const forecast = useMemo(() => forecastSummary(budgets), [budgets])
   const existingUsernames = useMemo(() => new Set(budgets.map(b => b.user)), [budgets])
 
   // Load the most recent snapshot for the connected enterprise.
@@ -336,6 +338,7 @@ export function IndividualUlbPage({
           </a>
         </div>
       ) : null}
+      <ForecastHero forecast={forecast} />
       <SummaryCards
         summary={summary}
         onReset={() => setFiltersAndScroll(EMPTY_FILTERS)}
