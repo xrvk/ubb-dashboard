@@ -935,7 +935,7 @@ export function BudgetPlanner() {
                                   {row.affectsCopilot && row.floor > 0 ? (
                                     <Tooltip>
                                       <TooltipTrigger asChild>
-                                        <span className="mr-auto inline-flex items-center gap-1 rounded border border-neutral-300 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900/40 px-1.5 py-0.5 text-[11px] font-mono text-neutral-600 dark:text-neutral-400 cursor-help">
+                                        <span className="inline-flex items-center gap-1 rounded border border-neutral-300 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900/40 px-1.5 py-0.5 text-[11px] font-mono text-neutral-600 dark:text-neutral-400 cursor-help">
                                           up to {formatCurrency(row.floor)}
                                         </span>
                                       </TooltipTrigger>
