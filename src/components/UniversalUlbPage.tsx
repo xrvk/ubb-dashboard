@@ -90,6 +90,10 @@ export function UniversalUlbPage() {
   /** Cost-center filter for the outliers table.
    *  null = all, '' = unassigned (no CC), otherwise CC id. */
   const [costCenterFilter, setCostCenterFilter] = useState<string | null>(null)
+  /** Anchor for shift-click range selection in the outliers table. */
+  const [lastClickedOutlierLogin, setLastClickedOutlierLogin] = useState<string | null>(null)
+  /** Bulk-edit ULB input (applies to currently selected outliers). */
+  const [bulkUlbInput, setBulkUlbInput] = useState('')
   const OUTLIERS_PER_PAGE = 25
 
   // Reload cached months whenever import changes them.
@@ -279,6 +283,55 @@ export function UniversalUlbPage() {
     })
   }
 
+  // Shift-click range selection. The anchor (`lastClickedOutlierLogin`) is the
+  // previous click. On shift-click, every row between the anchor and the
+  // current row in `filteredPowerUsers` is set to match the new state of the
+  // clicked row (i.e., the opposite of its current selected state).
+  const handleOutlierCheckboxClick = (login: string, shiftKey: boolean) => {
+    const anchor = lastClickedOutlierLogin
+    if (shiftKey && anchor && anchor !== login) {
+      const idxA = filteredPowerUsers.findIndex(u => u.login === anchor)
+      const idxB = filteredPowerUsers.findIndex(u => u.login === login)
+      if (idxA >= 0 && idxB >= 0) {
+        const [lo, hi] = idxA < idxB ? [idxA, idxB] : [idxB, idxA]
+        const targetSelected = !selectedOutliers.has(login)
+        setDeselectedOutliers(prev => {
+          const next = new Set(prev)
+          for (let i = lo; i <= hi; i++) {
+            const u = filteredPowerUsers[i]
+            if (targetSelected) next.delete(u.login)
+            else next.add(u.login)
+          }
+          return next
+        })
+        setLastClickedOutlierLogin(login)
+        return
+      }
+    }
+    toggleOutlier(login)
+    setLastClickedOutlierLogin(login)
+  }
+
+  // Bulk-apply a ULB amount to every currently selected outlier.
+  const applyBulkUlb = (amount: number) => {
+    if (!Number.isFinite(amount) || amount < 1) return
+    const n = Math.max(1, Math.round(amount))
+    setEditedOutlierUlbsEntry(prev => {
+      const base = prev?.sig === datasetSig ? { ...prev.map } : {}
+      for (const login of selectedOutliers) base[login] = n
+      return Object.keys(base).length > 0 ? { sig: datasetSig, map: base } : null
+    })
+  }
+
+  const resetBulkUlb = () => {
+    setEditedOutlierUlbsEntry(prev => {
+      if (!prev || prev.sig !== datasetSig) return prev
+      const base = { ...prev.map }
+      for (const login of selectedOutliers) delete base[login]
+      return Object.keys(base).length > 0 ? { sig: datasetSig, map: base } : null
+    })
+  }
+
   // CC resolution helpers. `loginToCostCenter` is keyed by lowercased login.
   const getCC = (login: string) => loginToCostCenter.get(login.toLowerCase()) ?? null
 
@@ -314,9 +367,8 @@ export function UniversalUlbPage() {
   // Edited rows are treated as already configured — they're not toggled by
   // "select all" and don't affect the all/none counter. Select-all also
   // respects the current cost-center filter (only toggles visible rows).
-  const unmodifiedPowerUsers = useMemo(
-    () => filteredPowerUsers.filter(u => !editedOutlierLogins.has(u.login)),
-    [filteredPowerUsers, editedOutlierLogins],
+  const unmodifiedPowerUsers = filteredPowerUsers.filter(
+    u => !editedOutlierLogins.has(u.login),
   )
   const allSelected =
     unmodifiedPowerUsers.length > 0 &&
@@ -634,6 +686,9 @@ export function UniversalUlbPage() {
                           · {editedOutlierLogins.size.toLocaleString()} edited (skipped)
                         </span>
                       )}
+                      <span className="text-neutral-400 dark:text-neutral-500">
+                        · tip: shift-click to select a range
+                      </span>
                     </label>
                     <div className="text-neutral-500">
                       {selectedOutliers.size.toLocaleString()} selected
@@ -642,6 +697,48 @@ export function UniversalUlbPage() {
                         : ''}
                     </div>
                   </div>
+
+                  {selectedOutliers.size >= 2 && (
+                    <div className="flex flex-wrap items-center gap-2 text-xs rounded-md border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900/50 px-3 py-2">
+                      <span className="text-neutral-700 dark:text-neutral-300">
+                        Bulk edit {selectedOutliers.size.toLocaleString()} selected:
+                      </span>
+                      <span className="text-neutral-400">$</span>
+                      <input
+                        type="number"
+                        min={1}
+                        value={bulkUlbInput}
+                        onChange={e => setBulkUlbInput(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter' && bulkUlbInput) {
+                            applyBulkUlb(Number(bulkUlbInput))
+                            setBulkUlbInput('')
+                          }
+                        }}
+                        placeholder="amount"
+                        aria-label="Bulk ULB amount"
+                        className="w-24 h-7 rounded border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-1.5 text-right tabular-nums"
+                      />
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        disabled={!bulkUlbInput || Number(bulkUlbInput) < 1}
+                        onClick={() => {
+                          applyBulkUlb(Number(bulkUlbInput))
+                          setBulkUlbInput('')
+                        }}
+                      >
+                        Apply to {selectedOutliers.size.toLocaleString()}
+                      </Button>
+                      <button
+                        type="button"
+                        onClick={resetBulkUlb}
+                        className="text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200 underline"
+                      >
+                        Reset to suggested
+                      </button>
+                    </div>
+                  )}
 
                   <div className="rounded-md border border-neutral-200 dark:border-neutral-800 overflow-x-auto">
                     <table className="w-full text-sm">
@@ -672,7 +769,8 @@ export function UniversalUlbPage() {
                                 <input
                                   type="checkbox"
                                   checked={selectedOutliers.has(u.login)}
-                                  onChange={() => toggleOutlier(u.login)}
+                                  onChange={() => {}}
+                                  onClick={e => handleOutlierCheckboxClick(u.login, e.shiftKey)}
                                   aria-label={`Select ${u.login}`}
                                 />
                               </td>
