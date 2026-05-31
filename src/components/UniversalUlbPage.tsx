@@ -71,6 +71,8 @@ export function UniversalUlbPage() {
   const [deselectedOutliers, setDeselectedOutliers] = useState<Set<string>>(new Set())
   const [applying, setApplying] = useState(false)
   const [batchProgress, setBatchProgress] = useState<{ done: number; total: number } | null>(null)
+  const [outlierPage, setOutlierPage] = useState(0)
+  const OUTLIERS_PER_PAGE = 25
 
   // Reload cached months whenever import changes them.
   const cachedMonths = useMemo<CachedReport[]>(
@@ -422,7 +424,7 @@ export function UniversalUlbPage() {
       {/* Step 3: outliers */}
       <Card>
         <CardContent className="grid gap-3">
-          <div className="flex items-center justify-between gap-2">
+          <div className="flex items-start justify-between gap-3">
             <div>
               <h2 className="text-sm font-semibold">
                 Step 3 · Outliers ({threshold.powerUsers.length.toLocaleString()})
@@ -431,6 +433,14 @@ export function UniversalUlbPage() {
                 Suggested individual ULB = max-month AICs ÷ 100 × 1.10 (10% buffer).
               </p>
             </div>
+            {threshold.powerUsers.length > 0 && (
+              <Button
+                onClick={handleCreateOutlierUlbs}
+                disabled={selectedOutliers.size === 0 || batchProgress !== null}
+              >
+                {batchProgress ? 'Creating…' : `Create individual ULBs (${selectedOutliers.size.toLocaleString()})`}
+              </Button>
+            )}
           </div>
 
           {threshold.powerUsers.length === 0 ? (
@@ -438,74 +448,111 @@ export function UniversalUlbPage() {
               {hasData ? 'No outliers at the current threshold.' : 'Upload a CSV to identify outliers.'}
             </div>
           ) : (
-            <>
-              <div className="rounded-md border border-neutral-200 dark:border-neutral-800 overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-neutral-50 dark:bg-neutral-900/50 text-left">
-                    <tr>
-                      <th className="px-3 py-2 w-8">
-                        <input
-                          type="checkbox"
-                          checked={allSelected}
-                          onChange={toggleAll}
-                          aria-label="Select all outliers"
-                        />
-                      </th>
-                      <th className="px-3 py-2 font-medium">User</th>
-                      <th className="px-3 py-2 text-right font-medium">Max-month AICs</th>
-                      <th className="px-3 py-2 text-right font-medium">Gross $</th>
-                      <th className="px-3 py-2 text-right font-medium">Suggested ULB</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {threshold.powerUsers.map(u => {
-                      const suggested = Math.max(
-                        1,
-                        Math.ceil((u.totalAICs / AICS_PER_USD) * (1 + OUTLIER_BUFFER_PCT)),
-                      )
-                      return (
-                        <tr
-                          key={u.login}
-                          className="border-t border-neutral-100 dark:border-neutral-800/50"
-                        >
-                          <td className="px-3 py-2">
-                            <input
-                              type="checkbox"
-                              checked={selectedOutliers.has(u.login)}
-                              onChange={() => toggleOutlier(u.login)}
-                              aria-label={`Select ${u.login}`}
-                            />
-                          </td>
-                          <td className="px-3 py-2 font-medium">{u.login}</td>
-                          <td className="px-3 py-2 text-right tabular-nums">
-                            {Math.round(u.totalAICs).toLocaleString()}
-                          </td>
-                          <td className="px-3 py-2 text-right tabular-nums">
-                            {formatCurrency(u.grossAmount)}
-                          </td>
-                          <td className="px-3 py-2 text-right tabular-nums">${suggested}</td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
+            (() => {
+              const totalPages = Math.max(1, Math.ceil(threshold.powerUsers.length / OUTLIERS_PER_PAGE))
+              const safePage = Math.min(outlierPage, totalPages - 1)
+              const pageStart = safePage * OUTLIERS_PER_PAGE
+              const pageRows = threshold.powerUsers.slice(pageStart, pageStart + OUTLIERS_PER_PAGE)
+              return (
+                <>
+                  <div className="flex items-center justify-between gap-2 text-xs">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={allSelected}
+                        onChange={toggleAll}
+                        aria-label="Select all outliers"
+                      />
+                      <span className="text-neutral-700 dark:text-neutral-300">
+                        Select all ({threshold.powerUsers.length.toLocaleString()})
+                      </span>
+                    </label>
+                    <div className="text-neutral-500">
+                      {selectedOutliers.size.toLocaleString()} selected
+                      {batchProgress
+                        ? ` · ${batchProgress.done.toLocaleString()} / ${batchProgress.total.toLocaleString()} done…`
+                        : ''}
+                    </div>
+                  </div>
 
-              <div className="flex items-center justify-between gap-2 text-xs">
-                <div className="text-neutral-500">
-                  {selectedOutliers.size.toLocaleString()} of {threshold.powerUsers.length.toLocaleString()} selected
-                  {batchProgress
-                    ? ` · ${batchProgress.done.toLocaleString()} / ${batchProgress.total.toLocaleString()} done…`
-                    : ''}
-                </div>
-                <Button
-                  onClick={handleCreateOutlierUlbs}
-                  disabled={selectedOutliers.size === 0 || batchProgress !== null}
-                >
-                  {batchProgress ? 'Creating…' : 'Create individual ULBs for selected'}
-                </Button>
-              </div>
-            </>
+                  <div className="rounded-md border border-neutral-200 dark:border-neutral-800 overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-neutral-50 dark:bg-neutral-900/50 text-left">
+                        <tr>
+                          <th className="px-3 py-2 w-8" aria-label="Select" />
+                          <th className="px-3 py-2 font-medium">User</th>
+                          <th className="px-3 py-2 text-right font-medium">Max-month AICs</th>
+                          <th className="px-3 py-2 text-right font-medium">Gross $</th>
+                          <th className="px-3 py-2 text-right font-medium">Suggested ULB</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pageRows.map(u => {
+                          const suggested = Math.max(
+                            1,
+                            Math.ceil((u.totalAICs / AICS_PER_USD) * (1 + OUTLIER_BUFFER_PCT)),
+                          )
+                          return (
+                            <tr
+                              key={u.login}
+                              className="border-t border-neutral-100 dark:border-neutral-800/50"
+                            >
+                              <td className="px-3 py-2">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedOutliers.has(u.login)}
+                                  onChange={() => toggleOutlier(u.login)}
+                                  aria-label={`Select ${u.login}`}
+                                />
+                              </td>
+                              <td className="px-3 py-2 font-medium">{u.login}</td>
+                              <td className="px-3 py-2 text-right tabular-nums">
+                                {Math.round(u.totalAICs).toLocaleString()}
+                              </td>
+                              <td className="px-3 py-2 text-right tabular-nums">
+                                {formatCurrency(u.grossAmount)}
+                              </td>
+                              <td className="px-3 py-2 text-right tabular-nums">${suggested}</td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {totalPages > 1 && (
+                    <div className="flex items-center justify-between gap-2 text-xs">
+                      <div className="text-neutral-500">
+                        Showing {(pageStart + 1).toLocaleString()}–
+                        {Math.min(pageStart + OUTLIERS_PER_PAGE, threshold.powerUsers.length).toLocaleString()}
+                        {' '}of {threshold.powerUsers.length.toLocaleString()}
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setOutlierPage(p => Math.max(0, p - 1))}
+                          disabled={safePage === 0}
+                          className="px-2 py-1 rounded border border-neutral-300 dark:border-neutral-700 disabled:opacity-40 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                        >
+                          ‹ Prev
+                        </button>
+                        <span className="px-2 text-neutral-600 dark:text-neutral-400 tabular-nums">
+                          Page {safePage + 1} / {totalPages}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setOutlierPage(p => Math.min(totalPages - 1, p + 1))}
+                          disabled={safePage >= totalPages - 1}
+                          className="px-2 py-1 rounded border border-neutral-300 dark:border-neutral-700 disabled:opacity-40 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                        >
+                          Next ›
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )
+            })()
           )}
         </CardContent>
       </Card>
