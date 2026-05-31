@@ -50,14 +50,10 @@ export function ConsumptionCurve({
 }: ConsumptionCurveProps) {
   const [hoverIndex, setHoverIndex] = useState<number | null>(null)
   const [dragging, setDragging] = useState<'ulb' | 'power' | 'threshold' | null>(null)
-  const [hideIdle, setHideIdle] = useState(true)
+  const [zoomTop80, setZoomTop80] = useState(true)
   const svgRef = useRef<SVGSVGElement>(null)
 
   const totalN = sortedUsers.length
-  const idleCount = useMemo(
-    () => sortedUsers.filter(u => u.totalAICs <= 0).length,
-    [sortedUsers],
-  )
   const VB_W = 1000
   const VB_H = 220
   const PAD_L = 8
@@ -67,13 +63,18 @@ export function ConsumptionCurve({
   const plotW = VB_W - PAD_L - PAD_R
   const plotH = VB_H - PAD_T - PAD_B
 
-  // Lowest consumer on the left, heaviest on the right. Default-hide idle
-  // (zero-AIC) users so the long flat tail doesn't squash the interesting
-  // curvature on the right. Toggle below the chart restores the full view.
-  const displayUsers = useMemo(() => {
-    const base = hideIdle ? sortedUsers.filter(u => u.totalAICs > 0) : sortedUsers
-    return [...base].reverse()
-  }, [sortedUsers, hideIdle])
+  // Lowest consumer on the left, heaviest on the right. Default zoom to the
+  // top 80% of consumers so the flat low-consumption tail doesn't squash the
+  // interesting curvature on the right. Toggle below the chart restores the
+  // full view. sortedUsers is desc, so the top 80% is the first 80% of the
+  // array; we then reverse for left-to-right rendering.
+  const trimmedSorted = useMemo(() => {
+    if (!zoomTop80 || totalN === 0) return sortedUsers
+    const keep = Math.max(powerUserCount + 1, Math.ceil(totalN * 0.8))
+    return sortedUsers.slice(0, Math.min(totalN, keep))
+  }, [sortedUsers, zoomTop80, totalN, powerUserCount])
+  const hiddenTailCount = totalN - trimmedSorted.length
+  const displayUsers = useMemo(() => [...trimmedSorted].reverse(), [trimmedSorted])
   const n = displayUsers.length
 
   // Power users occupy the RIGHT end: indices [powerStartIdx .. n-1].
@@ -425,7 +426,7 @@ export function ConsumptionCurve({
 
           {/* Axis labels */}
           <text x={PAD_L} y={VB_H - 8} className="fill-neutral-500 dark:fill-neutral-400 text-[10px]">
-            #{n} {hideIdle && idleCount > 0 ? '(lowest active)' : '(lowest)'}
+            #{n} {hiddenTailCount > 0 ? '(lowest shown)' : '(lowest)'}
           </text>
           <text
             x={VB_W - PAD_R}
@@ -438,19 +439,24 @@ export function ConsumptionCurve({
         </svg>
       </div>
 
-      {/* Idle-user truncation toggle */}
-      {idleCount > 0 && (
+      {/* Zoom toggle: trim the low-consumption tail by default so the curve
+          shape stays readable on long-tailed datasets. */}
+      {totalN > 5 && (
         <div className="flex items-center justify-end gap-2 text-[11px] text-neutral-500 dark:text-neutral-400 px-1">
-          <span>
-            {idleCount.toLocaleString()} idle {idleCount === 1 ? 'user' : 'users'} (0 AICs){' '}
-            {hideIdle ? 'hidden' : 'shown'}
-          </span>
+          {zoomTop80 ? (
+            <span>
+              Zoomed to top 80% · {hiddenTailCount.toLocaleString()} low-consumption{' '}
+              {hiddenTailCount === 1 ? 'user' : 'users'} hidden
+            </span>
+          ) : (
+            <span>Showing all {totalN.toLocaleString()} users</span>
+          )}
           <button
             type="button"
-            onClick={() => setHideIdle(v => !v)}
+            onClick={() => setZoomTop80(v => !v)}
             className="underline underline-offset-2 hover:text-neutral-700 dark:hover:text-neutral-200"
           >
-            {hideIdle ? 'show all' : 'hide idle'}
+            {zoomTop80 ? 'show all' : 'zoom to top 80%'}
           </button>
         </div>
       )}
