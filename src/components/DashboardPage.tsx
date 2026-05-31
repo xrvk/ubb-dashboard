@@ -20,8 +20,6 @@ import {
   UsersThree,
 } from '@phosphor-icons/react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { ConstraintsBanner } from '@/components/ConstraintsBanner'
 import { useCredentials } from '@/hooks/use-credentials'
 import { computePoolSplit } from '@/lib/poolSplit'
 import {
@@ -162,8 +160,6 @@ export function DashboardPage() {
 
   return (
     <div className="grid gap-6">
-      <ConstraintsBanner />
-
       {/* Hero KPIs */}
       <div className="grid gap-3 grid-cols-1 md:grid-cols-4">
         <KpiTile
@@ -218,7 +214,7 @@ export function DashboardPage() {
         <BudgetVsCapCard pool={pool} />
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <UlbStateCard
           title="Universal ULB"
           value={
@@ -226,12 +222,12 @@ export function DashboardPage() {
           }
           subtitle={
             universalUlb
-              ? `${universalCoverage.toLocaleString()} of ${seats.length.toLocaleString()} seats fall back to this cap`
-              : `${seats.length.toLocaleString()} seats have no universal fallback`
+              ? `${universalCoverage.toLocaleString()} of ${seats.length.toLocaleString()} seats fall back`
+              : `${seats.length.toLocaleString()} seats have no fallback`
           }
-          ctaLabel="Manage universal ULB"
+          ctaLabel="Manage"
           onCta={() => window.dispatchEvent(new CustomEvent(NAV_TO_UNIVERSAL_EVENT))}
-          icon={<UsersThree size={20} weight="duotone" className="text-neutral-400" />}
+          icon={<UsersThree size={16} weight="duotone" className="text-neutral-400" />}
           tone={universalUlb ? 'neutral' : 'warn'}
         />
         <UlbStateCard
@@ -239,24 +235,24 @@ export function DashboardPage() {
           value={`${indCoverage.withInd.toLocaleString()} / ${indCoverage.total.toLocaleString()}`}
           subtitle={
             forecast.totalBudgeted > 0
-              ? `${formatCurrency(forecast.totalBudgeted)} allocated · ${forecast.alreadyOver + forecast.projectedOver} at risk by EoM`
+              ? `${formatCurrency(forecast.totalBudgeted)} allocated · ${forecast.alreadyOver + forecast.projectedOver} at risk`
               : 'No individual overrides set'
           }
-          ctaLabel="Manage individual ULBs"
+          ctaLabel="Manage"
           onCta={() =>
             window.dispatchEvent(
               new CustomEvent(NAV_TO_INDIVIDUAL_EVENT, { detail: {} }),
             )
           }
-          icon={<UsersThree size={20} weight="duotone" className="text-neutral-400" />}
+          icon={<UsersThree size={16} weight="duotone" className="text-neutral-400" />}
         />
         <UlbStateCard
-          title="Cost centers routing Copilot"
+          title="Cost centers w/ Copilot"
           value={ccCount.toLocaleString()}
-          subtitle={`${pool.costCenters.filter(s => s.budgetAmount !== null).length} capped · ${pool.costCenters.filter(s => s.budgetAmount === null).length} uncapped (ULB-bounded)`}
-          ctaLabel="Edit enterprise budgets"
+          subtitle={`${pool.costCenters.filter(s => s.budgetAmount !== null).length} capped · ${pool.costCenters.filter(s => s.budgetAmount === null).length} uncapped`}
+          ctaLabel="Edit"
           onCta={() => window.dispatchEvent(new CustomEvent(NAV_TO_BUDGET_MODEL_EVENT))}
-          icon={<Buildings size={20} weight="duotone" className="text-neutral-400" />}
+          icon={<Buildings size={16} weight="duotone" className="text-neutral-400" />}
         />
       </div>
 
@@ -818,25 +814,29 @@ function UlbStateCard({
 }) {
   return (
     <Card>
-      <CardContent className="space-y-3">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="text-xs text-neutral-500 dark:text-neutral-400">{title}</div>
-            <div
-              className={cn(
-                'text-xl font-semibold mt-1',
-                tone === 'warn' && 'text-amber-600 dark:text-amber-400',
-              )}
-            >
-              {value}
-            </div>
-            <div className="text-xs text-neutral-500 mt-1">{subtitle}</div>
+      <CardContent className="p-3 space-y-1.5">
+        <div className="flex items-center justify-between gap-2">
+          <div className="text-[11px] uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+            {title}
           </div>
           {icon}
         </div>
-        <Button variant="outline" size="sm" onClick={onCta} className="w-full">
-          {ctaLabel}
-        </Button>
+        <div
+          className={cn(
+            'text-lg font-semibold tabular-nums',
+            tone === 'warn' && 'text-amber-600 dark:text-amber-400',
+          )}
+        >
+          {value}
+        </div>
+        <div className="text-[11px] text-neutral-500 leading-snug">{subtitle}</div>
+        <button
+          type="button"
+          onClick={onCta}
+          className="text-[11px] text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 hover:underline underline-offset-2 cursor-pointer"
+        >
+          {ctaLabel} →
+        </button>
       </CardContent>
     </Card>
   )
