@@ -872,7 +872,7 @@ export function BudgetPlanner() {
                                   />
                                 ) : null}
                                 {!editable && !row.budgetId ? (
-                                  <span className="text-[11px] text-neutral-500">No budget set</span>
+                                  <span className="inline-flex items-center rounded border border-neutral-300 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900/40 px-1.5 py-0.5 text-[11px] text-neutral-600 dark:text-neutral-400">No budget set</span>
                                 ) : null}
                               </div>
                             </td>
