@@ -192,13 +192,21 @@ export function startOfMonthISO(d: Date): string {
   return `${y}-${m}-01`
 }
 
-/** Returns YYYY-MM-DD for the last day of the given Date's month (UTC). */
+/**
+ * Returns YYYY-MM-DD for the last day of the given Date's month (UTC),
+ * capped at today so the API doesn't reject "end_date cannot be in the future".
+ */
 export function endOfMonthISO(d: Date): string {
   const y = d.getUTCFullYear()
   const m = d.getUTCMonth()
   const last = new Date(Date.UTC(y, m + 1, 0))
-  const day = String(last.getUTCDate()).padStart(2, '0')
-  return `${last.getUTCFullYear()}-${String(last.getUTCMonth() + 1).padStart(2, '0')}-${day}`
+  const today = new Date()
+  const todayUtc = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()))
+  const capped = last.getTime() > todayUtc.getTime() ? todayUtc : last
+  const yy = capped.getUTCFullYear()
+  const mm = String(capped.getUTCMonth() + 1).padStart(2, '0')
+  const dd = String(capped.getUTCDate()).padStart(2, '0')
+  return `${yy}-${mm}-${dd}`
 }
 
 /** YYYY-MM key for a Date in UTC, used as the report cache key suffix. */
