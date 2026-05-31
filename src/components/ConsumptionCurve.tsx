@@ -176,7 +176,7 @@ export function ConsumptionCurve({
       e.stopPropagation()
       if (line === 'threshold' && onSetCutoff) {
         const idx = indexFromClientX(e.clientX)
-        if (idx !== null) onSetCutoff(displayUsers[idx].totalAICs)
+        if (idx !== null) onSetCutoff(Math.round(displayUsers[idx].totalAICs))
         return
       }
       if (line === 'ulb' && onUlbChange) onUlbChange(aicsFromClientY(e.clientY))
@@ -207,7 +207,7 @@ export function ConsumptionCurve({
       if (!onSetCutoff || dragging !== null) return
       const idx = indexFromClientX(e.clientX)
       if (idx === null) return
-      onSetCutoff(displayUsers[idx].totalAICs)
+      onSetCutoff(Math.round(displayUsers[idx].totalAICs))
     },
     [onSetCutoff, dragging, indexFromClientX, displayUsers],
   )

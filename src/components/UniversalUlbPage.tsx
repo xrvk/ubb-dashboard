@@ -399,7 +399,7 @@ export function UniversalUlbPage() {
                 onChange={e => {
                   const n = Number(e.target.value)
                   setCustomThresholdEntry(
-                    Number.isFinite(n) ? { sig: datasetSig, value: n } : null,
+                    Number.isFinite(n) ? { sig: datasetSig, value: Math.round(n) } : null,
                   )
                 }}
                 className="h-7 w-32"
