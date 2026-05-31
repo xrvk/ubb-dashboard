@@ -50,7 +50,7 @@ export function ConsumptionCurve({
 }: ConsumptionCurveProps) {
   const [hoverIndex, setHoverIndex] = useState<number | null>(null)
   const [dragging, setDragging] = useState<'ulb' | 'power' | 'threshold' | null>(null)
-  const [autoZoom, setAutoZoom] = useState(true)
+  const [autoZoom, setAutoZoom] = useState(false)
   const svgRef = useRef<SVGSVGElement>(null)
 
   const totalN = sortedUsers.length
