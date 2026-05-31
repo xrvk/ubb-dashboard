@@ -202,9 +202,7 @@ export function DashboardPage() {
       </div>
       <ForecastBreakdownCard tracked={trackedForecast} entBudget={entAmount} />
 
-      {/* § 3 — Cost centers today: per-CC budget, ULB ceiling, derivable
-          spend so far + forecast. Allocation chart kept as supporting
-          visual. */}
+      {/* § 3 — Cost centers today: per-CC budget, MTD, projected. */}
       <SectionHeader number={3} title="Cost centers" />
       <CostCenterStatusCard
         pool={pool}
@@ -788,7 +786,6 @@ function CostCenterStatusCard({
                 <th className="text-left font-medium px-3 py-2">Cost center</th>
                 <th className="text-right font-medium px-3 py-2">Seats</th>
                 <th className="text-right font-medium px-3 py-2">Budget</th>
-                <th className="text-right font-medium px-3 py-2">ULB ceiling</th>
                 <th className="text-right font-medium px-3 py-2">MTD</th>
                 <th className="text-right font-medium px-3 py-2">Projected</th>
               </tr>
@@ -811,9 +808,6 @@ function CostCenterStatusCard({
                       ) : (
                         formatCurrency(cc.budgetAmount)
                       )}
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums text-neutral-600 dark:text-neutral-400">
-                      {formatCurrency(cc.ulbCeiling)}
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums">
                       {measured ? formatCurrency(data!.mtd) : <span className="text-neutral-400">—</span>}
