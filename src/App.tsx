@@ -5,6 +5,7 @@ import { useTheme } from 'next-themes'
 import { useCredentials } from '@/hooks/use-credentials'
 import { ImportPanel } from '@/components/ImportPanel'
 import { IndividualUlbPage } from '@/components/IndividualUlbPage'
+import { IndividualUlbTaskBanner } from '@/components/IndividualUlbTaskBanner'
 import { OverviewPage } from '@/components/OverviewPage'
 import { UniversalUlbPage } from '@/components/UniversalUlbPage'
 import { BudgetConstraintsHelpPage } from '@/components/BudgetConstraintsHelpPage'
@@ -140,6 +141,14 @@ export function App() {
                 </Button>
               ) : null}
             </div>
+          </div>
+        </div>
+      ) : null}
+
+      {credentials && tab === 'individual' && activeTask ? (
+        <div className="sticky top-[49px] z-10 border-b border-neutral-200 dark:border-neutral-800 bg-white/95 dark:bg-neutral-950/95 backdrop-blur supports-[backdrop-filter]:bg-white/80 dark:supports-[backdrop-filter]:bg-neutral-950/80">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 py-2">
+            <IndividualUlbTaskBanner task={activeTask} onDismiss={() => setActiveTask(null)} />
           </div>
         </div>
       ) : null}

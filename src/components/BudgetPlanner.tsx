@@ -321,6 +321,10 @@ export function BudgetPlanner() {
 
   const affectingCount = rows.filter(r => r.affectsCopilot).length
   const notAffectingCount = rows.length - affectingCount
+  const uncappedAffecting = useMemo(
+    () => rows.filter(r => r.affectsCopilot && r.budgetId === null),
+    [rows],
+  )
   const visibleRows = showAll ? rows : rows.filter(r => r.affectsCopilot)
 
   // --- Diff calculation ---
@@ -655,6 +659,41 @@ export function BudgetPlanner() {
                 Group-level budgets for subsets of users. Each must cover its members' ULBs.
               </p>
             </div>
+
+            {uncappedAffecting.length > 0 && (
+              <div className="rounded-md border border-amber-200 bg-amber-50/60 dark:border-amber-900/60 dark:bg-amber-950/30 px-3 py-2 text-xs text-amber-900 dark:text-amber-100">
+                <div className="font-medium">
+                  {uncappedAffecting.length} cost center{uncappedAffecting.length === 1 ? '' : 's'} affecting Copilot
+                  {uncappedAffecting.length === 1 ? ' has' : ' have'} no per-CC budget
+                </div>
+                <div className="mt-0.5 opacity-90">
+                  Usage is only bounded by the enterprise pool. Use{' '}
+                  <span className="font-medium">Set budget</span> on{' '}
+                  {uncappedAffecting.slice(0, 3).map((r, i) => (
+                    <span key={r.ccId}>
+                      {i > 0 ? ', ' : ''}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const el = document.getElementById(`bp-cc-${r.ccId}`)
+                          if (!el) return
+                          el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                          el.classList.add('ring-2', 'ring-amber-400', 'ring-offset-2', 'dark:ring-offset-neutral-950')
+                          window.setTimeout(() => {
+                            el.classList.remove('ring-2', 'ring-amber-400', 'ring-offset-2', 'dark:ring-offset-neutral-950')
+                          }, 2000)
+                        }}
+                        className="underline-offset-2 hover:underline font-medium"
+                      >
+                        {r.name}
+                      </button>
+                    </span>
+                  ))}
+                  {uncappedAffecting.length > 3 ? ` + ${uncappedAffecting.length - 3} more` : ''}{' '}
+                  below to set one.
+                </div>
+              </div>
+            )}
 
             {rows.length > 0 && (
               <div className="grid gap-2">

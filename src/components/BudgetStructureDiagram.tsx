@@ -334,13 +334,10 @@ export function BudgetStructureDiagram() {
             }
           }
 
-          const uncappedAffecting = data.segments.filter(s => s.affectsCopilot && s.uncapped)
-          if (uncappedAffecting.length > 0) {
-            items.push({
-              severity: 'amber',
-              text: `${uncappedAffecting.length} cost center${uncappedAffecting.length === 1 ? '' : 's'} routing Copilot seats ${uncappedAffecting.length === 1 ? 'has' : 'have'} no per-CC budget — usage is only bounded by the enterprise pool.`,
-            })
-          }
+          // Note: "cost center has no per-CC budget" is intentionally NOT
+          // surfaced here. Each uncapped row already shows a "Set budget"
+          // CTA in the Cost centers card directly below, so duplicating it
+          // here as a bullet would just be noise.
 
           const softCapped = data.capped.filter(s => s.affectsCopilot && !s.preventFurtherUsage)
           if (softCapped.length > 0) {
