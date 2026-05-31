@@ -490,6 +490,28 @@ export function UniversalUlbPage() {
                     {MODE_LABELS[mode]}
                   </Button>
                 ))}
+                {thresholdMode === 'custom' ? (
+                  <div className="flex items-center gap-1.5 text-xs ml-1">
+                    <Input
+                      type="number"
+                      min={1}
+                      max={100}
+                      step="1"
+                      value={customPct ?? ''}
+                      onChange={e => {
+                        const n = Number(e.target.value)
+                        setCustomThresholdEntry(
+                          Number.isFinite(n)
+                            ? { sig: datasetSig, value: Math.max(1, Math.min(100, Math.round(n))) }
+                            : null,
+                        )
+                      }}
+                      className="h-8 w-16"
+                      aria-label="Custom outlier percentage"
+                    />
+                    <span className="text-neutral-600 dark:text-neutral-400">% outliers</span>
+                  </div>
+                ) : null}
               </div>
             ) : null}
           </div>
@@ -554,29 +576,6 @@ export function UniversalUlbPage() {
                   <span className="text-neutral-500 font-normal"> · {Math.round(coverage.pct * 100)}%</span>
                 </div>
               </div>
-            </div>
-          ) : null}
-
-          {thresholdMode === 'custom' && hasData ? (
-            <div className="flex items-center gap-2 text-xs">
-              <label className="text-neutral-600 dark:text-neutral-400">Top</label>
-              <Input
-                type="number"
-                min={1}
-                max={100}
-                step="1"
-                value={customPct ?? ''}
-                onChange={e => {
-                  const n = Number(e.target.value)
-                  setCustomThresholdEntry(
-                    Number.isFinite(n)
-                      ? { sig: datasetSig, value: Math.max(1, Math.min(100, Math.round(n))) }
-                      : null,
-                  )
-                }}
-                className="h-7 w-20"
-              />
-              <span className="text-neutral-600 dark:text-neutral-400">% are outliers</span>
             </div>
           ) : null}
 
