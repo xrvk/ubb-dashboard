@@ -36,7 +36,8 @@ import { ConsumptionCurve } from '@/components/ConsumptionCurve'
 
 // 100 AICs = $1.00 in GitHub billing (1 AIC = $0.01).
 const AICS_PER_USD = 100
-const OUTLIER_BUFFER_PCT = 0.1
+const DEFAULT_OUTLIER_BUFFER_PCT = 10
+const MAX_OUTLIER_BUFFER_PCT = 200
 
 const MODE_LABELS: Record<ThresholdMode, string> = {
   'top-5': 'Top 5%',
@@ -87,6 +88,9 @@ export function UniversalUlbPage() {
   const [batchProgress, setBatchProgress] = useState<{ done: number; total: number } | null>(null)
   const [outlierPage, setOutlierPage] = useState(0)
   const [confirmCreateOpen, setConfirmCreateOpen] = useState(false)
+  /** Growth buffer (%) applied on top of each outlier's max-month spend
+   *  when computing their suggested individual ULB. */
+  const [outlierBufferPct, setOutlierBufferPct] = useState<number>(DEFAULT_OUTLIER_BUFFER_PCT)
   /** Cost-center filter for the outliers table.
    *  null = all, '' = unassigned (no CC), otherwise CC id. */
   const [costCenterFilter, setCostCenterFilter] = useState<string | null>(null)
@@ -258,7 +262,7 @@ export function UniversalUlbPage() {
     .map(u => {
       const suggested = Math.max(
         1,
-        Math.ceil((u.totalAICs / AICS_PER_USD) * (1 + OUTLIER_BUFFER_PCT)),
+        Math.ceil((u.totalAICs / AICS_PER_USD) * (1 + outlierBufferPct / 100)),
       )
       const edited = editedOutlierUlbs[u.login]
       return {
@@ -599,17 +603,39 @@ export function UniversalUlbPage() {
                 Step 3 · Outliers ({threshold.powerUsers.length.toLocaleString()})
               </h2>
               <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
-                Suggested individual ULB = max-month AICs ÷ 100 × 1.10 (10% buffer).
+                Suggested individual ULB = max-month $ × (1 + growth buffer). Tweak buffer or edit individual rows below.
               </p>
             </div>
-            {threshold.powerUsers.length > 0 && (
-              <Button
-                onClick={() => setConfirmCreateOpen(true)}
-                disabled={selectedOutliers.size === 0 || batchProgress !== null}
-              >
-                {batchProgress ? 'Creating…' : `Apply ind ULB (${selectedOutliers.size.toLocaleString()})`}
-              </Button>
-            )}
+            <div className="flex items-center gap-2 shrink-0">
+              {threshold.powerUsers.length > 0 && (
+                <label className="flex items-center gap-1.5 text-xs text-neutral-600 dark:text-neutral-400">
+                  <span>Growth buffer</span>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={MAX_OUTLIER_BUFFER_PCT}
+                    step={1}
+                    value={outlierBufferPct}
+                    onChange={e => {
+                      const n = Number(e.target.value)
+                      if (Number.isNaN(n)) return
+                      setOutlierBufferPct(Math.max(0, Math.min(MAX_OUTLIER_BUFFER_PCT, Math.round(n))))
+                    }}
+                    className="h-8 w-16"
+                    aria-label="Growth buffer percent"
+                  />
+                  <span>%</span>
+                </label>
+              )}
+              {threshold.powerUsers.length > 0 && (
+                <Button
+                  onClick={() => setConfirmCreateOpen(true)}
+                  disabled={selectedOutliers.size === 0 || batchProgress !== null}
+                >
+                  {batchProgress ? 'Creating…' : `Apply ind ULB (${selectedOutliers.size.toLocaleString()})`}
+                </Button>
+              )}
+            </div>
           </div>
 
           {threshold.powerUsers.length === 0 ? (
@@ -712,7 +738,7 @@ export function UniversalUlbPage() {
                         {pageRows.map(u => {
                           const suggested = Math.max(
                             1,
-                            Math.ceil((u.totalAICs / AICS_PER_USD) * (1 + OUTLIER_BUFFER_PCT)),
+                            Math.ceil((u.totalAICs / AICS_PER_USD) * (1 + outlierBufferPct / 100)),
                           )
                           const isEdited = editedOutlierLogins.has(u.login)
                           const value = isEdited ? editedOutlierUlbs[u.login] : suggested
