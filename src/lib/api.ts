@@ -451,28 +451,106 @@ export async function fetchAllAiCreditsBudgets(
   }
 }
 
-/** Update an existing enterprise-scope ai_credits budget's amount. */
+/**
+ * Patch fields for an enterprise- or cost-center-scope `ai_credits` budget.
+ *
+ * Each field is independently optional; the API accepts partial updates. We
+ * send one PATCH per defined field rather than batching, mirroring the
+ * upstream `copilot-budget-command-calculator` pattern — this means a failure
+ * on one flag doesn't leave the others uncommitted in a single round-trip,
+ * and the server returns the actual updated subset for free.
+ */
+export interface BudgetPatch {
+  budgetAmount?: number
+  /** Hard cap (`true`) blocks usage past budget; soft cap (`false`) only alerts. */
+  preventFurtherUsage?: boolean
+}
+
+async function patchBudgetFields(
+  apiFetch: ApiFetch,
+  budgetId: string,
+  patch: BudgetPatch,
+): Promise<void> {
+  if (patch.budgetAmount !== undefined) {
+    await apiFetch(`/budgets/${budgetId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ budget_amount: patch.budgetAmount }),
+    })
+  }
+  if (patch.preventFurtherUsage !== undefined) {
+    await apiFetch(`/budgets/${budgetId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ prevent_further_usage: patch.preventFurtherUsage }),
+    })
+  }
+}
+
+/** Update an existing enterprise-scope ai_credits budget. */
 export async function patchEnterpriseBudget(
   apiFetch: ApiFetch,
   budgetId: string,
-  budgetAmount: number,
+  patch: BudgetPatch | number,
 ): Promise<void> {
-  await apiFetch(`/budgets/${budgetId}`, {
-    method: 'PATCH',
-    body: JSON.stringify({ budget_amount: budgetAmount }),
-  })
+  const normalized: BudgetPatch = typeof patch === 'number' ? { budgetAmount: patch } : patch
+  await patchBudgetFields(apiFetch, budgetId, normalized)
 }
 
-/** Update an existing cost-center-scope ai_credits budget's amount. */
+/** Update an existing cost-center-scope ai_credits budget. */
 export async function patchCostCenterBudget(
   apiFetch: ApiFetch,
   budgetId: string,
-  budgetAmount: number,
+  patch: BudgetPatch | number,
 ): Promise<void> {
-  await apiFetch(`/budgets/${budgetId}`, {
-    method: 'PATCH',
-    body: JSON.stringify({ budget_amount: budgetAmount }),
+  const normalized: BudgetPatch = typeof patch === 'number' ? { budgetAmount: patch } : patch
+  await patchBudgetFields(apiFetch, budgetId, normalized)
+}
+
+/**
+ * Create a new ai_credits budget for an existing cost center.
+ *
+ * `costCenterEntityName` is what gets sent as `budget_entity_name`. Our read
+ * path (see `buildCostCenterBudgetMap`) treats `budget_entity_name` as the CC
+ * NAME — verified empirically against the live API — so we send the name
+ * here too. Alerts are off by default; admins configure them via the GHEC
+ * budget edit page (see `budgetEditUrl`).
+ */
+export async function createCostCenterBudget(
+  apiFetch: ApiFetch,
+  args: {
+    costCenterEntityName: string
+    budgetAmount: number
+    preventFurtherUsage: boolean
+  },
+): Promise<void> {
+  await apiFetch(`/budgets`, {
+    method: 'POST',
+    body: JSON.stringify({
+      budget_type: 'BundlePricing',
+      budget_product_sku: 'ai_credits',
+      budget_scope: 'cost_center',
+      budget_entity_name: args.costCenterEntityName,
+      budget_amount: args.budgetAmount,
+      prevent_further_usage: args.preventFurtherUsage,
+      budget_alerting: { will_alert: false, alert_recipients: [] },
+    }),
   })
+}
+
+// --- GHEC web UI deep-links (alerts are managed in the GHEC UI, not the API) ---
+
+/** Convert the API base host (e.g. `https://api.github.com`) to the web UI base (e.g. `https://github.com`). */
+export function apiBaseToWebBase(apiBase: string): string {
+  return apiBase.replace('https://api.', 'https://')
+}
+
+/** GHEC edit page for a specific budget — admins configure alert thresholds + recipients here. */
+export function budgetEditUrl(apiBase: string, ent: string, budgetId: string): string {
+  return `${apiBaseToWebBase(apiBase)}/enterprises/${ent}/billing/budgets/${budgetId}/edit`
+}
+
+/** GHEC cost-centers list — useful when a CC has no budget yet (no ID to deep-link to). */
+export function costCentersUrl(apiBase: string, ent: string): string {
+  return `${apiBaseToWebBase(apiBase)}/enterprises/${ent}/billing/cost_centers`
 }
 
 // --- Copilot seats (used as the source of truth for "add ULB" autocomplete) ---
