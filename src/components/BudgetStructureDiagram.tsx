@@ -111,17 +111,6 @@ export function BudgetStructureDiagram() {
   // No envelope at all → nothing meaningful to draw.
   if (!enterpriseBudget && data.capped.length === 0) return null
 
-  const tier: 'hard' | 'soft' | 'blind' =
-    entHardCap
-      ? 'hard'
-      : entWillAlert
-        ? 'soft'
-        : entAmount > 0
-          ? 'blind'
-          : 'blind'
-
-  const showUncappedGapNote = excludeCcUsage && data.uncappedCount > 0
-
   // Shared utility classes — sepia palette
   const cardCls =
     'rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900'
@@ -296,40 +285,93 @@ export function BudgetStructureDiagram() {
         {/* Cost-center list is rendered (editable) by BudgetPlanner immediately
             below this diagram — kept consolidated to avoid duplication. */}
 
-        {/* Enforcement annotation */}
-        {tier === 'blind' ? (
-          <div className="rounded-md px-3 py-2.5 text-xs bg-red-50 text-red-900 border border-red-200 dark:bg-red-950/40 dark:text-red-200 dark:border-red-900/60 space-y-1">
-            <div className="flex items-center gap-2 font-medium">
-              <Warning size={14} weight="fill" className="shrink-0" />
-              No spending controls active at the enterprise level
+        {/* Actionable items — info-style alert listing things the user can fix */}
+        {(() => {
+          interface Item {
+            severity: 'red' | 'amber' | 'info'
+            text: string
+          }
+          const items: Item[] = []
+
+          if (!enterpriseBudget) {
+            items.push({
+              severity: 'amber',
+              text: 'No enterprise budget set — add one to constrain unassigned users.',
+            })
+          } else {
+            if (!entHardCap && !entWillAlert) {
+              items.push({
+                severity: 'red',
+                text: 'Enterprise budget has neither a hard cap nor alerts — enable at least one in GitHub admin.',
+              })
+            } else if (!entHardCap) {
+              items.push({
+                severity: 'amber',
+                text: 'Enterprise budget is soft cap only — enable hard cap to enforce the limit.',
+              })
+            }
+          }
+
+          const uncappedAffecting = data.segments.filter(s => s.affectsCopilot && s.uncapped)
+          if (uncappedAffecting.length > 0) {
+            items.push({
+              severity: 'amber',
+              text: `${uncappedAffecting.length} cost center${uncappedAffecting.length === 1 ? '' : 's'} routing Copilot seats ${uncappedAffecting.length === 1 ? 'has' : 'have'} no per-CC budget — usage is only bounded by the enterprise pool.`,
+            })
+          }
+
+          const softCapped = data.capped.filter(s => s.affectsCopilot && !s.preventFurtherUsage)
+          if (softCapped.length > 0) {
+            items.push({
+              severity: 'amber',
+              text: `${softCapped.length} cost-center budget${softCapped.length === 1 ? '' : 's'} ${softCapped.length === 1 ? 'is' : 'are'} on soft cap — flip to hard cap to actually stop overage.`,
+            })
+          }
+
+          if (items.length === 0) {
+            return (
+              <div className="rounded-md px-3 py-2 flex items-center gap-2 text-xs font-medium bg-emerald-50 text-emerald-900 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-200 dark:border-emerald-900/60">
+                <ShieldCheck size={14} weight="fill" />
+                No outstanding actionable items — budget enforcement looks solid.
+              </div>
+            )
+          }
+
+          return (
+            <div className="rounded-md border border-amber-200 bg-amber-50/60 dark:border-amber-900/60 dark:bg-amber-950/30 px-3 py-2.5 space-y-1.5">
+              <div className="flex items-center gap-2 text-xs font-semibold text-amber-900 dark:text-amber-200">
+                <Warning size={14} weight="fill" />
+                {items.length} actionable item{items.length === 1 ? '' : 's'}
+              </div>
+              <ul className="space-y-1 pl-[22px] text-xs">
+                {items.map((it, i) => (
+                  <li key={i} className="flex items-start gap-1.5">
+                    <span
+                      className={cn(
+                        'mt-1.5 h-1.5 w-1.5 rounded-full shrink-0',
+                        it.severity === 'red'
+                          ? 'bg-red-500'
+                          : it.severity === 'amber'
+                            ? 'bg-amber-500'
+                            : 'bg-sky-500',
+                      )}
+                      aria-hidden
+                    />
+                    <span
+                      className={cn(
+                        it.severity === 'red'
+                          ? 'text-red-900 dark:text-red-200'
+                          : 'text-amber-900 dark:text-amber-100',
+                      )}
+                    >
+                      {it.text}
+                    </span>
+                  </li>
+                ))}
+              </ul>
             </div>
-            <p className="opacity-80 pl-[22px]">
-              {entAmount > 0
-                ? 'No alerts, no hard cap. Universal ULB (if set) is the only backstop.'
-                : 'No enterprise budget set. Cost-center budgets (if any) are the only enforcement, and unassigned users are unrestricted.'}
-            </p>
-          </div>
-        ) : (
-          <div
-            className={cn(
-              'rounded-md px-3 py-2 flex items-center gap-2 text-xs font-medium',
-              tier === 'hard'
-                ? 'bg-emerald-50 text-emerald-900 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-200 dark:border-emerald-900/60'
-                : 'bg-amber-50 text-amber-900 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-900/60',
-            )}
-          >
-            {tier === 'hard' ? (
-              <ShieldCheck size={14} weight="fill" />
-            ) : (
-              <Warning size={14} weight="fill" />
-            )}
-            {tier === 'hard'
-              ? 'Hard cap · enterprise usage stops at limit'
-              : showUncappedGapNote
-                ? `Partial cap · ${data.uncappedCount} cost center${data.uncappedCount !== 1 ? 's' : ''} have no per-CC budget`
-                : 'Soft cap · alerts on, no hard limit at the enterprise level'}
-          </div>
-        )}
+          )
+        })()}
       </div>
     </div>
   )
