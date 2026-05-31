@@ -195,7 +195,6 @@ export function ConstraintsBanner() {
         actions.push({
           label: `Lower cost-center budgets by ${formatCurrency(ccLowerProposal.overBy)}`,
           onClick: () => {
-            scrollToPlanner('bp-cc-card')
             const detail: PlannerHighlightDetail = {
               target: 'cc-card',
               message: `Adjust cost-center budgets so they total ${formatCurrency(ccLowerProposal.target)} or less (currently ${formatCurrency(ccLowerProposal.actual)}, over by ${formatCurrency(ccLowerProposal.overBy)}).`,

@@ -7,6 +7,7 @@ import { ConnectionMenu } from '@/components/ConnectionMenu'
 import { ImportPanel } from '@/components/ImportPanel'
 import { IndividualUlbPage } from '@/components/IndividualUlbPage'
 import { IndividualUlbTaskBanner } from '@/components/IndividualUlbTaskBanner'
+import { BudgetPlannerHintBanner } from '@/components/BudgetPlannerHintBanner'
 import { OverviewPage } from '@/components/OverviewPage'
 import { UniversalUlbPage } from '@/components/UniversalUlbPage'
 import { BudgetConstraintsHelpPage } from '@/components/BudgetConstraintsHelpPage'
@@ -17,8 +18,10 @@ import {
   NAV_TO_BUDGET_MODEL_EVENT,
   NAV_TO_INDIVIDUAL_EVENT,
   NAV_TO_UNIVERSAL_EVENT,
+  PLANNER_HIGHLIGHT_EVENT,
   type NavToIndividualDetail,
   type NavToIndividualTask,
+  type PlannerHighlightDetail,
 } from '@/lib/navEvents'
 import type { BulkApplySnapshot } from '@/lib/snapshot'
 
@@ -63,6 +66,9 @@ export function App() {
   // Active task context shown as a contextual banner on the Individual ULBs
   // page so the user remembers what they came to fix.
   const [activeTask, setActiveTask] = useState<NavToIndividualTask | null>(null)
+  // Active hint surfaced under the tab bar on the Budget model page after
+  // the user deep-links from an abstract constraint action.
+  const [plannerHint, setPlannerHint] = useState<PlannerHighlightDetail | null>(null)
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -80,6 +86,35 @@ export function App() {
     const handler = () => setTab('budget-model')
     window.addEventListener(NAV_TO_BUDGET_MODEL_EVENT, handler)
     return () => window.removeEventListener(NAV_TO_BUDGET_MODEL_EVENT, handler)
+  }, [])
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<PlannerHighlightDetail>).detail
+      if (!detail) return
+      setPlannerHint(detail)
+      setTab('budget-model')
+      // Defer two frames so the planner tab has mounted before scrolling /
+      // flashing the target card.
+      const flashTarget = detail.target === 'cc-card' ? 'bp-cc-card' : 'bp-ent-card'
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
+          const el = document.getElementById(flashTarget)
+          if (!el) return
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          const cls = [
+            'ring-2',
+            'ring-amber-400',
+            'ring-offset-2',
+            'dark:ring-offset-neutral-950',
+          ]
+          el.classList.add(...cls)
+          window.setTimeout(() => el.classList.remove(...cls), 2000)
+        })
+      })
+    }
+    window.addEventListener(PLANNER_HIGHLIGHT_EVENT, handler)
+    return () => window.removeEventListener(PLANNER_HIGHLIGHT_EVENT, handler)
   }, [])
 
   useEffect(() => {
@@ -206,6 +241,14 @@ export function App() {
         <div className="sticky top-[49px] z-10 border-b border-neutral-200 dark:border-neutral-800 bg-white/95 dark:bg-neutral-950/95 backdrop-blur supports-[backdrop-filter]:bg-white/80 dark:supports-[backdrop-filter]:bg-neutral-950/80">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 py-2">
             <IndividualUlbTaskBanner task={activeTask} onDismiss={() => setActiveTask(null)} />
+          </div>
+        </div>
+      ) : null}
+
+      {credentials && tab === 'budget-model' && plannerHint ? (
+        <div className="sticky top-[49px] z-10 border-b border-neutral-200 dark:border-neutral-800 bg-white/95 dark:bg-neutral-950/95 backdrop-blur supports-[backdrop-filter]:bg-white/80 dark:supports-[backdrop-filter]:bg-neutral-950/80">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 py-2">
+            <BudgetPlannerHintBanner hint={plannerHint} onDismiss={() => setPlannerHint(null)} />
           </div>
         </div>
       ) : null}

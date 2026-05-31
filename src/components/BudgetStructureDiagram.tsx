@@ -304,7 +304,7 @@ export function BudgetStructureDiagram() {
                         <div className="font-medium">{seg.name}</div>
                         <div className="opacity-80">
                           {seg.uncapped
-                            ? 'No per-CC cap (universal ULB is the backstop)'
+                            ? 'No stop budget on Cost Center'
                             : `${formatCurrency(seg.budget)} independent cap · ${seg.preventFurtherUsage ? 'Hard cap' : 'Soft cap'}`}
                         </div>
                         {seg.uncapped && uncappedBackstopLine(seg.seatCount) ? (

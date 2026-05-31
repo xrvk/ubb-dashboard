@@ -39,7 +39,6 @@ import {
   enterpriseSeatsUrl,
 } from '@/lib/api'
 import { runBatch } from '@/lib/batch'
-import { PLANNER_HIGHLIGHT_EVENT, type PlannerHighlightDetail } from '@/lib/navEvents'
 
 type Draft = Map<string, string> // key: 'ent' or `cc:<budgetId>` or `cc-nobudget:<ccId>`. Value: raw amount string.
 
@@ -303,25 +302,6 @@ export function BudgetPlanner() {
   const [applying, setApplying] = useState(false)
   const [applyError, setApplyError] = useState<string | null>(null)
   const [lastAppliedAt, setLastAppliedAt] = useState<number | null>(null)
-
-  // Transient banner shown when ConstraintsBanner sends the user here with an
-  // abstract action (e.g. "Lower cost-center budgets by $X"). Auto-dismisses
-  // after 10s and can be closed manually.
-  const [highlightHint, setHighlightHint] = useState<PlannerHighlightDetail | null>(null)
-  useEffect(() => {
-    function handler(ev: Event) {
-      const detail = (ev as CustomEvent<PlannerHighlightDetail>).detail
-      if (!detail) return
-      setHighlightHint(detail)
-    }
-    window.addEventListener(PLANNER_HIGHLIGHT_EVENT, handler)
-    return () => window.removeEventListener(PLANNER_HIGHLIGHT_EVENT, handler)
-  }, [])
-  useEffect(() => {
-    if (!highlightHint) return
-    const t = window.setTimeout(() => setHighlightHint(null), 10_000)
-    return () => window.clearTimeout(t)
-  }, [highlightHint])
 
   // Required minimums — what each envelope would need to be to cover current ULBs.
   const constraintResult = useBudgetConstraints()
@@ -750,23 +730,6 @@ export function BudgetPlanner() {
                 Group-level budgets for subsets of users. Each must cover its members' ULBs.
               </p>
             </div>
-
-            {highlightHint?.target === 'cc-card' && (
-              <div className="rounded-md border border-red-300 bg-red-50 dark:border-red-800/60 dark:bg-red-950/40 px-3 py-2 text-xs text-red-900 dark:text-red-200 flex items-start justify-between gap-2">
-                <div>
-                  <div className="font-medium">Adjustments needed here</div>
-                  <div className="mt-0.5 opacity-90">{highlightHint.message}</div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setHighlightHint(null)}
-                  className="shrink-0 opacity-70 hover:opacity-100 text-xs"
-                  aria-label="Dismiss hint"
-                >
-                  ✕
-                </button>
-              </div>
-            )}
 
             {uncappedAffecting.length > 0 && (
               <div className="rounded-md border border-amber-200 bg-amber-50/60 dark:border-amber-900/60 dark:bg-amber-950/30 px-3 py-2 text-xs text-amber-900 dark:text-amber-100">
