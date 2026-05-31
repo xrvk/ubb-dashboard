@@ -503,32 +503,14 @@ function PoolAndLicensesCard({
 
   return (
     <Card>
-      <CardHeader>
-        <div className="flex items-start justify-between gap-3 flex-wrap">
-          <div>
-            <CardTitle>Pool and licenses</CardTitle>
-            <p className="text-xs text-neutral-500 mt-1 max-w-2xl">
-              CB and CE seats fund one <strong>shared AI credit pool</strong>{' '}
-              used before metered charges. Universal and individual ULBs limit
-              drawdown.{' '}
-              <a
-                href="https://docs.github.com/en/copilot/concepts/billing/usage-based-billing-for-organizations-and-enterprises#how-do-ai-credits-work"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline-offset-2 hover:underline text-neutral-500"
-              >
-                Docs ↗
-              </a>
-            </p>
-          </div>
-          {credits.promoActive ? (
+      <CardContent className="space-y-4 pt-6">
+        {credits.promoActive ? (
+          <div className="flex justify-end">
             <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 dark:bg-violet-900/40 text-violet-900 dark:text-violet-200 px-2 py-0.5 text-[10px] font-medium whitespace-nowrap">
               Promotional credits · Jun 1 – Sep 1 2026
             </span>
-          ) : null}
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-4">
+          </div>
+        ) : null}
         {/* Pool headline tiles */}
         <div className="grid gap-3 grid-cols-1 sm:grid-cols-2">
           <div className="rounded-md border border-indigo-200 dark:border-indigo-900/60 bg-indigo-50/60 dark:bg-indigo-950/30 p-3">
@@ -664,6 +646,17 @@ function PoolAndLicensesCard({
             ) : null}
           </div>
         )}
+        <div className="text-[11px] text-neutral-500 dark:text-neutral-400 pt-1 border-t border-neutral-200 dark:border-neutral-800">
+          Pool and ULBs work together to cap AI credit drawdown.{' '}
+          <a
+            href="https://docs.github.com/en/copilot/concepts/billing/budgets-for-usage-based-billing"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline-offset-2 hover:underline"
+          >
+            How budgets work ↗
+          </a>
+        </div>
       </CardContent>
     </Card>
   )
