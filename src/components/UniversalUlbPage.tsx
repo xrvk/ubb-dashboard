@@ -109,17 +109,11 @@ export function UniversalUlbPage() {
   )
 
   // ULB to display on the chart, in AICs.
-  // Priority: explicit drag override → existing universal ULB (USD→AICs) → suggested from threshold.
-  const existingUlbAICs =
-    universalUlb && universalUlb.budgetAmount > 0
-      ? universalUlb.budgetAmount * AICS_PER_USD
-      : null
-  const ulbAICs =
-    ulbOverrideAICs !== null
-      ? ulbOverrideAICs
-      : existingUlbAICs !== null
-        ? existingUlbAICs
-        : threshold.suggestedULB
+  // Priority: explicit drag override → suggested P95 from the current threshold.
+  // The currently saved universal ULB is shown separately in the header tile;
+  // we deliberately don't anchor the chart line to it so clicking to move the
+  // threshold always re-snaps the line to the fresh P95.
+  const ulbAICs = ulbOverrideAICs !== null ? ulbOverrideAICs : threshold.suggestedULB
   const ulbIsOverridden = ulbOverrideAICs !== null
 
   // Coverage: how many regular users fit under the chosen ULB?
