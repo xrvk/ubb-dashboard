@@ -517,13 +517,13 @@ function PoolAndLicensesCard({
         <div className="grid gap-3 grid-cols-1 sm:grid-cols-2">
           <div className="rounded-md border border-indigo-200 dark:border-indigo-900/60 bg-indigo-50/60 dark:bg-indigo-950/30 p-3">
             <div className="text-[11px] uppercase tracking-wide text-indigo-700 dark:text-indigo-300">
-              AI credits / month
+              Total AI credits / month
             </div>
             <div className="text-2xl font-semibold mt-1 tabular-nums text-indigo-950 dark:text-indigo-100">
               {credits.totalCredits.toLocaleString()}
             </div>
             <div className="text-[11px] text-indigo-700 dark:text-indigo-300 mt-0.5">
-              across all seats
+              from all seats
             </div>
           </div>
           <div className="rounded-md border border-emerald-200 dark:border-emerald-900/60 bg-emerald-50/60 dark:bg-emerald-950/30 p-3">
