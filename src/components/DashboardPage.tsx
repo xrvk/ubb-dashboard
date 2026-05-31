@@ -142,7 +142,7 @@ export function DashboardPage() {
   return (
     <div className="grid gap-6">
       {/* § 1 — Current state: pool, licenses, used so far. */}
-      <SectionHeader number={1} title="Pool and licenses" />
+      <SectionHeader title="Pool and licenses" />
       <PoolAndLicensesCard
         seatCost={seatCost}
         usage={usageSummary}
@@ -154,7 +154,7 @@ export function DashboardPage() {
           charges (which is what the enterprise budget governs); the
           forecast card breaks them down across the budget scopes the API
           does and doesn't report. */}
-      <SectionHeader number={2} title="Metered charges" />
+      <SectionHeader title="Metered charges" />
       <div className="grid gap-3 grid-cols-1 md:grid-cols-4">
         <KpiTile
           label="Enterprise budget"
@@ -203,7 +203,7 @@ export function DashboardPage() {
       <ForecastBreakdownCard tracked={trackedForecast} entBudget={entAmount} />
 
       {/* § 3 — Cost centers today: per-CC budget, MTD, projected. */}
-      <SectionHeader number={3} title="Cost centers" />
+      <SectionHeader title="Cost centers" />
       <CostCenterStatusCard
         pool={pool}
         usageByCostCenterId={usageByCostCenterId}
@@ -211,7 +211,7 @@ export function DashboardPage() {
 
       {/* § 4 — Action items: blocked users, missing budgets, allocation
           risk. */}
-      <SectionHeader number={4} title="Action items" />
+      <SectionHeader title="Action items" />
       <ActionItemsCard
         forecast={forecast}
         universalUlb={universalUlb}
@@ -439,19 +439,14 @@ function EmptyChart({ message }: { message: string }) {
 // ============================================================================
 
 function SectionHeader({
-  number,
   title,
   subtitle,
 }: {
-  number: number
   title: string
   subtitle?: string
 }) {
   return (
     <div className="flex items-baseline gap-2 mt-2">
-      <div className="text-[11px] font-medium text-neutral-400 dark:text-neutral-500 tabular-nums">
-        {String(number).padStart(2, '0')}
-      </div>
       <h2 className="text-base font-semibold text-neutral-900 dark:text-neutral-100">
         {title}
       </h2>
