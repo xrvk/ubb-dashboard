@@ -956,8 +956,10 @@ function RolledUpAllocationView({
       </div>
 
       {/* Two-bar layout: enterprise cap on top, CC allocations below,
-          both on the same scale. Over-allocation = CC bar wider than
-          ent bar. */}
+          both on the same scale (= max of the two). The shorter bar
+          gets a faint hatched ghost trail so the shared scale is
+          visible and a 45%-filled bar reads as "45% of the larger
+          commitment" rather than "half empty". */}
       <div className="space-y-2">
         <AllocBarRow
           label="Enterprise cap"
@@ -966,9 +968,15 @@ function RolledUpAllocationView({
         >
           <AllocSegment
             widthPct={entWidthPct}
-            className={cn('bg-indigo-500', overAlloc && 'opacity-80')}
+            className="bg-indigo-500"
             title={`Enterprise cap · ${formatCurrency(entBudget)}`}
           />
+          {entWidthPct < 100 ? (
+            <GhostTail
+              widthPct={100 - entWidthPct}
+              title={`Beyond enterprise cap · CC allocations extend ${formatCurrency(ccBudgetTotal - entBudget)} past this point`}
+            />
+          ) : null}
         </AllocBarRow>
 
         <AllocBarRow
@@ -991,13 +999,25 @@ function RolledUpAllocationView({
               title={`Unallocated · ${formatCurrency(unallocated)}`}
             />
           ) : null}
-          {/* Trailing space when CC bar is shorter than the scale */}
-          {!overAlloc && unallocated === 0 && ccWidthPct < 100 ? (
-            <div style={{ width: `${100 - ccWidthPct}%` }} />
-          ) : null}
         </AllocBarRow>
       </div>
+
+      <div className="text-[11px] text-neutral-500">
+        Bars share a 0 to {formatCurrency(denom)} scale (
+        {overAlloc ? 'CC allocations' : 'enterprise cap'} = full width).
+      </div>
     </div>
+  )
+}
+
+function GhostTail({ widthPct, title }: { widthPct: number; title: string }) {
+  if (widthPct <= 0) return null
+  return (
+    <div
+      className="h-full bg-[repeating-linear-gradient(45deg,_#e5e7eb_0_4px,_transparent_4px_8px)] dark:bg-[repeating-linear-gradient(45deg,_#262626_0_4px,_transparent_4px_8px)]"
+      style={{ width: `${widthPct}%` }}
+      title={title}
+    />
   )
 }
 
