@@ -27,7 +27,7 @@ export function App() {
     <div className="min-h-screen">
       <Toaster richColors position="bottom-right" />
       <header className="border-b border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-3">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center gap-3">
           <div className="flex items-center gap-2.5">
             <Gauge size={26} weight="duotone" className="text-emerald-600" />
             <div>
@@ -39,7 +39,7 @@ export function App() {
           </div>
 
           {credentials ? (
-            <div className="hidden sm:flex gap-1 p-1 rounded-md bg-neutral-100 dark:bg-neutral-800">
+            <div className="hidden sm:flex gap-1 p-1 rounded-md bg-neutral-100 dark:bg-neutral-800 ml-2">
               {(['individual', 'universal'] as const).map(t => (
                 <button
                   key={t}
@@ -57,7 +57,7 @@ export function App() {
             </div>
           ) : null}
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 ml-auto">
             {credentials ? (
               <>
                 {snapshot ? (
