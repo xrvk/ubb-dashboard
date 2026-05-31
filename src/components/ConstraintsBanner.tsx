@@ -312,9 +312,7 @@ export function ConstraintsBanner() {
                             {fc.actions.map((a, j) => {
                               const baseClass = cn(
                                 'inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-medium transition-colors',
-                                a.primary
-                                  ? 'bg-current/15 hover:bg-current/25'
-                                  : 'bg-current/5 hover:bg-current/15',
+                                'bg-current/10 hover:bg-current/20',
                               )
                               const iconEl =
                                 a.icon === 'scroll' ? (
