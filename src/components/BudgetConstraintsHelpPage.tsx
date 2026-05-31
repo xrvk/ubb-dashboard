@@ -42,8 +42,9 @@ export function BudgetConstraintsHelpPage({ onBack }: Props) {
                 cap applied to every regular user.
               </li>
               <li>
-                <Term>Individual user-level budget overrides</Term>. Per-user
-                caps for exceptions who need higher limits.
+                <Term>Individual user-level budget</Term>. A per-user cap for
+                exceptions who need higher (or lower) limits than the universal
+                ULB.
               </li>
               <li>
                 <Term>Cost center budget</Term>. A metered-spend cap for users
@@ -65,11 +66,11 @@ export function BudgetConstraintsHelpPage({ onBack }: Props) {
           <Section title="Effective ULB">
             <p>GitHub evaluates an effective ULB for each user:</p>
             <Formula>
-              effective ULB = max(individual ULB override, universal ULB)
+              effective ULB = max(individual ULB, universal ULB)
             </Formula>
             <p>
-              <Term>Regular users</Term> are users without an individual
-              override. Their effective ULB is the universal ULB.
+              <Term>Regular users</Term> are users without an individual ULB.
+              Their effective ULB is the universal ULB.
             </p>
           </Section>
 
@@ -92,16 +93,16 @@ export function BudgetConstraintsHelpPage({ onBack }: Props) {
             <p>Here&apos;s how to estimate:</p>
             <Formula>
               max user consumption = (regular users × universal ULB) + Σ
-              individual ULB overrides{'\n'}
+              individual ULBs{'\n'}
               gap = max user consumption − pool value{'\n'}
               required spend coverage = Σ cost center budgets + enterprise
               budget ≥ gap
             </Formula>
             <p className="text-xs opacity-75">
-              <strong>Tip:</strong> Whenever you raise universal ULB or
-              individual user-level budget overrides, re-check this calculation.
-              Raising ULBs without raising shared budgets can block users before
-              they reach their individual limits.
+              <strong>Tip:</strong> Whenever you raise the universal ULB or any
+              individual user-level budget, re-check this calculation. Raising
+              ULBs without raising shared budgets can block users before they
+              reach their individual limits.
             </p>
           </Section>
 
@@ -165,7 +166,7 @@ export function BudgetConstraintsHelpPage({ onBack }: Props) {
             <p>
               The dashboard computes the highest universal ULB that keeps all
               three checks passing, with budgets and individual user-level
-              budget overrides held fixed.
+              budgets held fixed.
             </p>
             <p>
               Situation: You want to raise universal ULB but keep the current
@@ -174,8 +175,8 @@ export function BudgetConstraintsHelpPage({ onBack }: Props) {
             <p>
               Configuration: Raise universal ULB only up to the max safe
               universal ULB value. If even universal ULB = $0 fails, individual
-              user-level budget overrides already exceed your current envelopes.
-              Raise budgets, lower specific overrides, or reroute users between
+              user-level budgets already exceed your current envelopes. Raise
+              budgets, lower specific individual ULBs, or reroute users between
               cost centers.
             </p>
           </Section>
@@ -183,8 +184,8 @@ export function BudgetConstraintsHelpPage({ onBack }: Props) {
           <Section title="Worked example">
             <p>
               Cost center <Term>&quot;eng&quot;</Term> has a $500 budget and 3
-              members. Two have individual overrides of $100. The third has
-              none. With universal ULB = $50:
+              members. Two have individual ULBs of $100. The third has none.
+              With universal ULB = $50:
             </p>
             <Formula>
               effective ULBs = max(100, 50) + max(100, 50) + max(0, 50) = 100 +
