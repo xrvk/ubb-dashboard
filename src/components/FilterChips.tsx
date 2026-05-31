@@ -1,18 +1,16 @@
 import { cn } from '@/lib/utils'
-import type { Summary, Forecast } from '@/lib/status'
+import type { Summary } from '@/lib/status'
 
 interface Props {
   summary: Summary
-  forecast: Forecast
-  active: 'all' | 'over' | 'near' | 'atRisk'
+  active: 'all' | 'over' | 'near'
   onSelectAll: () => void
   onSelectOver: () => void
   onSelectNear: () => void
-  onSelectAtRisk: () => void
 }
 
 interface Chip {
-  key: 'all' | 'over' | 'near' | 'atRisk'
+  key: 'all' | 'over' | 'near'
   label: string
   count: number
   onClick: () => void
@@ -21,20 +19,17 @@ interface Chip {
 
 /**
  * Compact chip row replacing the legacy SummaryCards block. Each chip
- * applies one of the table's primary filters; counts are sourced from
- * the same summary/forecast that drives the hero so the numbers never
- * disagree.
+ * applies one of the table's status filters; counts are sourced from
+ * the same summary that drives the hero so the numbers never disagree.
+ * "At risk by EoM" lives on the ForecastHero tile — not duplicated here.
  */
 export function FilterChips({
   summary,
-  forecast,
   active,
   onSelectAll,
   onSelectOver,
   onSelectNear,
-  onSelectAtRisk,
 }: Props) {
-  const atRiskCount = forecast.alreadyOver + forecast.projectedOver
   const chips: Chip[] = [
     {
       key: 'all',
@@ -56,13 +51,6 @@ export function FilterChips({
       count: summary.near,
       onClick: onSelectNear,
       activeClass: 'border-amber-500 bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-200',
-    },
-    {
-      key: 'atRisk',
-      label: 'At risk by EoM',
-      count: atRiskCount,
-      onClick: onSelectAtRisk,
-      activeClass: 'border-red-500 bg-red-50 dark:bg-red-950/40 text-red-800 dark:text-red-200',
     },
   ]
   return (

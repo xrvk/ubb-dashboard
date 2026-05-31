@@ -351,10 +351,9 @@ export function IndividualUlbPage({
       />
       <FilterChips
         summary={summary}
-        forecast={forecast}
         active={
           filters.atRiskByEom
-            ? 'atRisk'
+            ? 'all'
             : filters.status === 'over'
               ? 'over'
               : filters.status === 'near'
@@ -364,7 +363,6 @@ export function IndividualUlbPage({
         onSelectAll={() => setFiltersAndScroll(EMPTY_FILTERS)}
         onSelectOver={() => setFiltersAndScroll({ ...EMPTY_FILTERS, status: 'over' })}
         onSelectNear={() => setFiltersAndScroll({ ...EMPTY_FILTERS, status: 'near' })}
-        onSelectAtRisk={() => setFiltersAndScroll({ ...EMPTY_FILTERS, atRiskByEom: true })}
       />
       {budgets.length > 0 ? (
         <>
