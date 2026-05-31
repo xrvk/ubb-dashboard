@@ -280,6 +280,39 @@ export function generateDemoCostCenterBudgets(): Map<string, CostCenterBudget> {
  * we report `aiCreditsNet = 0` because metering only kicks in after the
  * pool is empty.
  */
+/**
+ * Distribute a top-line `aiCreditsNet` across the demo cost centers
+ * proportional to seat share, returning a per-CC usage map. Mirrors
+ * what `fetchCopilotUsageSummary({ costCenterId })` would return in real
+ * mode: each entry is a `CopilotUsageSummary` filtered to that CC. CCs
+ * with zero seats get a zeroed entry rather than being omitted so the
+ * dashboard renders them as "$0" instead of "—".
+ */
+export function generateDemoUsageByCostCenter(
+  costCenters: CostCenter[],
+  ccSeatCounts: ReadonlyMap<string, number>,
+  totalUsage: CopilotUsageSummary,
+): Map<string, CopilotUsageSummary> {
+  const out = new Map<string, CopilotUsageSummary>()
+  const totalSeats = Array.from(ccSeatCounts.values()).reduce((s, n) => s + n, 0)
+  for (const cc of costCenters) {
+    const seats = ccSeatCounts.get(cc.id) ?? 0
+    const share = totalSeats > 0 ? seats / totalSeats : 0
+    out.set(cc.id, {
+      year: totalUsage.year,
+      month: totalUsage.month,
+      costCenterId: cc.id,
+      aiCreditsNet: Math.round(totalUsage.aiCreditsNet * share * 100) / 100,
+      aiCreditsGross: Math.round(totalUsage.aiCreditsGross * share * 100) / 100,
+      codingAgentNet: Math.round(totalUsage.codingAgentNet * share * 100) / 100,
+      cbLicenseNet: Math.round(totalUsage.cbLicenseNet * share * 100) / 100,
+      ceLicenseNet: Math.round(totalUsage.ceLicenseNet * share * 100) / 100,
+      raw: [],
+    })
+  }
+  return out
+}
+
 export function generateDemoUsageSummary(
   budgets: UserBudget[],
   opts?: { poolExhausted?: boolean },

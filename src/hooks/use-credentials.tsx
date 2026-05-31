@@ -27,6 +27,7 @@ import {
   generateDemoEnterpriseBudget,
   generateDemoSeats,
   generateDemoUniversalUlb,
+  generateDemoUsageByCostCenter,
   generateDemoUsageSummary,
   readDemoCountFromUrl,
   readDemoExcludeCcFromUrl,
@@ -54,6 +55,16 @@ interface CredentialsContextValue {
    * billing access) leaves it null.
    */
   usageSummary: CopilotUsageSummary | null
+  /**
+   * Per-cost-center billing usage for the current month, keyed by cost
+   * center id. Populated after the initial load by issuing one
+   * `fetchCopilotUsageSummary({ costCenterId })` per CC in parallel. CCs
+   * whose fetch failed are absent from the map (caller should treat as
+   * unknown / show "—"). This is the authoritative per-CC MTD source —
+   * it covers individual ULB, universal ULB, and org-routed seats alike,
+   * unlike the user-budgets API which only reports individual-ULB users.
+   */
+  usageByCostCenterId: ReadonlyMap<string, CopilotUsageSummary>
   /**
    * Lowercased-login → resolved CC (or null if unassigned).
    * Built from seats × cost-center index per the cost-center allocation docs:
@@ -84,6 +95,9 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
     new Map(),
   )
   const [usageSummary, setUsageSummary] = useState<CopilotUsageSummary | null>(null)
+  const [usageByCostCenterId, setUsageByCostCenterId] = useState<ReadonlyMap<string, CopilotUsageSummary>>(
+    new Map(),
+  )
   const [loading, setLoading] = useState(false)
   const [loadProgress, setLoadProgress] = useState<{ loaded: number; total: number | undefined } | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -195,6 +209,7 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
     setEnterpriseBudget(null)
     setCostCenterBudgetsByName(new Map())
     setUsageSummary(null)
+    setUsageByCostCenterId(new Map())
     setError(null)
   }, [])
 
@@ -253,6 +268,58 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
     return map
   }, [seats, costCenters, costCenterBudgetsByName])
 
+  // Per-CC seat counts, used both by the dashboard and to proportion demo
+  // usage across CCs. Built from the same login→CC resolution.
+  const ccSeatCounts = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const res of loginToCostCenter.values()) {
+      if (!res?.cc) continue
+      counts.set(res.cc.id, (counts.get(res.cc.id) ?? 0) + 1)
+    }
+    return counts
+  }, [loginToCostCenter])
+
+  // Fetch (or synthesize) per-CC billing usage whenever the CC list changes.
+  // Real mode: one `fetchCopilotUsageSummary({ costCenterId })` per CC in
+  // parallel; failures degrade per-CC to a missing map entry. Demo mode:
+  // distribute the top-line aiCreditsNet proportional to seat share.
+  useEffect(() => {
+    if (costCenters.length === 0) {
+      setUsageByCostCenterId(new Map())
+      return
+    }
+    if (credentials?.base === 'demo://') {
+      if (!usageSummary) {
+        setUsageByCostCenterId(new Map())
+        return
+      }
+      setUsageByCostCenterId(
+        generateDemoUsageByCostCenter(costCenters, ccSeatCounts, usageSummary),
+      )
+      return
+    }
+    if (!apiFetch) {
+      setUsageByCostCenterId(new Map())
+      return
+    }
+    let cancelled = false
+    void Promise.all(
+      costCenters.map(cc =>
+        fetchCopilotUsageSummary(apiFetch, { costCenterId: cc.id })
+          .then(s => [cc.id, s] as const)
+          .catch(() => null),
+      ),
+    ).then(results => {
+      if (cancelled) return
+      const map = new Map<string, CopilotUsageSummary>()
+      for (const entry of results) if (entry) map.set(entry[0], entry[1])
+      setUsageByCostCenterId(map)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [credentials, apiFetch, costCenters, ccSeatCounts, usageSummary])
+
   const value: CredentialsContextValue = {
     credentials,
     budgets,
@@ -265,6 +332,7 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
     enterpriseBudget,
     costCenterBudgetsByName,
     usageSummary,
+    usageByCostCenterId,
     loading,
     loadProgress,
     error,

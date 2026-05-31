@@ -25,7 +25,7 @@ import {
 import { forecastSummary } from '@/lib/status'
 import { projectMonthlyBudget } from '@/lib/projection'
 import { readDemoAsofFromUrl } from '@/lib/demo'
-import { formatCurrency, formatPercent, cn } from '@/lib/utils'
+import { formatCurrency, formatCurrencyWhole, formatPercent, cn } from '@/lib/utils'
 import {
   NAV_TO_BUDGET_MODEL_EVENT,
   NAV_TO_INDIVIDUAL_EVENT,
@@ -51,6 +51,7 @@ export function DashboardPage() {
     budgets,
     loginToCostCenter,
     usageSummary,
+    usageByCostCenterId,
   } = useCredentials()
 
   const pool = useMemo(
@@ -207,9 +208,7 @@ export function DashboardPage() {
       <SectionHeader number={3} title="Cost centers" />
       <CostCenterStatusCard
         pool={pool}
-        seats={seats}
-        budgets={budgets}
-        loginToCostCenter={loginToCostCenter}
+        usageByCostCenterId={usageByCostCenterId}
       />
 
       {/* § 4 — Action items: blocked users, missing budgets, allocation
@@ -723,57 +722,32 @@ function LicenseContribRow({
 
 /**
  * § 3 — Cost centers status. Per-CC rollup answering "how are my cost
- * centers doing today". MTD per CC is derived from sum of user-budget
- * consumed_amount for users routed to the CC (the only thing the budgets
- * API can give us — cost_center-scope budgets don't report consumed). For
- * CCs whose seats rely on the universal ULB, MTD shows as "—" with a
- * footnote caveat.
+ * centers doing today". MTD/Projected come from the billing usage
+ * summary API filtered per cost center — the authoritative source that
+ * covers every routing path (individual ULB, universal ULB, org-routed
+ * seats). CCs whose per-CC fetch hasn't resolved yet (or failed) render
+ * as "—".
  */
 function CostCenterStatusCard({
   pool,
-  seats,
-  budgets,
-  loginToCostCenter,
+  usageByCostCenterId,
 }: {
   pool: ReturnType<typeof computePoolSplit>
-  seats: import('@/lib/api').CopilotSeat[]
-  budgets: import('@/lib/api').UserBudget[]
-  loginToCostCenter: ReturnType<typeof useCredentials>['loginToCostCenter']
+  usageByCostCenterId: ReturnType<typeof useCredentials>['usageByCostCenterId']
 }) {
-  // Per-CC derived MTD: sum of user-budget consumed_amount for users routed
-  // to each CC, plus count of seats with vs. without individual ULB so we
-  // can warn when our MTD only represents a fraction of the CC's seats.
   const perCc = useMemo(() => {
     const asof = readDemoAsofFromUrl() ?? undefined
-    type CcRow = {
-      ccId: string
-      ulbMtd: number
-      ulbProjected: number
-      seatsWithUlb: number
-      seatsTotal: number
-    }
+    type CcRow = { mtd: number; projected: number; measured: boolean }
     const rows = new Map<string, CcRow>()
-    const budgetByLogin = new Map<string, import('@/lib/api').UserBudget>()
-    for (const b of budgets) if (b.user) budgetByLogin.set(b.user.toLowerCase(), b)
-    for (const seat of seats) {
-      const login = seat.login.toLowerCase()
-      const cc = loginToCostCenter.get(login)?.cc
-      if (!cc) continue
-      let row = rows.get(cc.id)
-      if (!row) {
-        row = { ccId: cc.id, ulbMtd: 0, ulbProjected: 0, seatsWithUlb: 0, seatsTotal: 0 }
-        rows.set(cc.id, row)
-      }
-      row.seatsTotal += 1
-      const b = budgetByLogin.get(login)
-      if (b) {
-        row.seatsWithUlb += 1
-        row.ulbMtd += b.consumedAmount
-        row.ulbProjected += projectMonthlyBudget(b.consumedAmount, 0, asof).projectedMonthTotal
-      }
+    for (const cc of pool.costCenters) {
+      const usage = usageByCostCenterId.get(cc.costCenterId)
+      if (!usage) continue
+      const mtd = usage.aiCreditsNet
+      const projected = projectMonthlyBudget(mtd, 0, asof).projectedMonthTotal
+      rows.set(cc.costCenterId, { mtd, projected, measured: true })
     }
     return rows
-  }, [seats, budgets, loginToCostCenter])
+  }, [pool.costCenters, usageByCostCenterId])
 
   if (pool.costCenters.length === 0) {
     return (
@@ -797,6 +771,21 @@ function CostCenterStatusCard({
         </p>
       </CardHeader>
       <CardContent className="space-y-4">
+        <CostCenterBulletList
+          rows={pool.costCenters.map(cc => {
+            const data = perCc.get(cc.costCenterId)
+            return {
+              key: cc.costCenterId,
+              name: cc.name,
+              budget: cc.budgetAmount,
+              ceiling: cc.ulbCeiling,
+              mtd: data?.mtd ?? 0,
+              projected: data?.projected ?? 0,
+              measured: data?.measured ?? false,
+            }
+          })}
+        />
+
         <div className="rounded-md border border-neutral-200 dark:border-neutral-800 overflow-x-auto">
           <table className="w-full text-xs">
             <thead className="bg-neutral-50 dark:bg-neutral-900/40 text-neutral-500">
@@ -805,31 +794,21 @@ function CostCenterStatusCard({
                 <th className="text-right font-medium px-3 py-2">Seats</th>
                 <th className="text-right font-medium px-3 py-2">Budget</th>
                 <th className="text-right font-medium px-3 py-2">ULB ceiling</th>
-                <th className="text-right font-medium px-3 py-2">MTD (ULB users)</th>
-                <th className="text-right font-medium px-3 py-2">Projected (ULB users)</th>
+                <th className="text-right font-medium px-3 py-2">MTD</th>
+                <th className="text-right font-medium px-3 py-2">Projected</th>
               </tr>
             </thead>
             <tbody>
               {pool.costCenters.map(cc => {
                 const data = perCc.get(cc.costCenterId)
-                const mtd = data?.ulbMtd ?? 0
-                const proj = data?.ulbProjected ?? 0
-                const seatsWithUlb = data?.seatsWithUlb ?? 0
-                const seatsTotal = data?.seatsTotal ?? cc.seatCount
-                const measured = seatsWithUlb > 0
-                const partial = measured && seatsWithUlb < seatsTotal
+                const measured = data?.measured ?? false
                 return (
                   <tr key={cc.costCenterId} className="border-t border-neutral-200 dark:border-neutral-800">
                     <td className="px-3 py-2 font-medium text-neutral-700 dark:text-neutral-300">
                       {cc.name}
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums">
-                      {seatsTotal.toLocaleString()}
-                      {partial ? (
-                        <span className="text-neutral-400 ml-1" title={`${seatsWithUlb} have individual ULB`}>
-                          ({seatsWithUlb}/{seatsTotal})
-                        </span>
-                      ) : null}
+                      {cc.seatCount.toLocaleString()}
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums">
                       {cc.budgetAmount === null ? (
@@ -842,10 +821,10 @@ function CostCenterStatusCard({
                       {formatCurrency(cc.ulbCeiling)}
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums">
-                      {measured ? formatCurrency(mtd) : <span className="text-neutral-400">—</span>}
+                      {measured ? formatCurrency(data!.mtd) : <span className="text-neutral-400">—</span>}
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums">
-                      {measured ? formatCurrency(proj) : <span className="text-neutral-400">—</span>}
+                      {measured ? formatCurrency(data!.projected) : <span className="text-neutral-400">—</span>}
                     </td>
                   </tr>
                 )
@@ -853,13 +832,136 @@ function CostCenterStatusCard({
             </tbody>
           </table>
         </div>
-        {pool.unassignedTotal > 0 ? (
-          <div className="text-[11px] text-neutral-500">
-            Plus {formatCurrency(pool.unassignedTotal)} of effective draw from seats not routed to any cost center.
-          </div>
-        ) : null}
       </CardContent>
     </Card>
+  )
+}
+
+type CcBulletRow = {
+  key: string
+  name: string
+  budget: number | null
+  ceiling: number
+  mtd: number
+  projected: number
+  measured: boolean
+}
+
+/**
+ * Bullet chart for cost centers. One row per CC: MTD as a solid bar,
+ * projected as a lighter trailing segment. Each row is normalized to its
+ * own scale (the CC budget = full bar width); overflow clamps at 100%
+ * and shows a "proj 112%" badge on the right. Uncapped CCs render as a
+ * faint dashed bar with the raw MTD/projected text on the right.
+ */
+function CostCenterBulletList({ rows }: { rows: CcBulletRow[] }) {
+  // Sort: budgeted CCs first (by budget desc), uncapped last.
+  const sorted = [...rows].sort((a, b) => {
+    if (a.budget === null && b.budget !== null) return 1
+    if (b.budget === null && a.budget !== null) return -1
+    return (b.budget ?? b.mtd) - (a.budget ?? a.mtd)
+  })
+  return (
+    <div className="rounded-md border border-neutral-200 dark:border-neutral-800 p-3 space-y-3">
+      <div className="flex items-center gap-4 text-[10px] text-neutral-500">
+        <span className="inline-flex items-center gap-1.5">
+          <span className="inline-block w-3 h-2 rounded-sm bg-emerald-500" />MTD
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="inline-block w-3 h-2 rounded-sm bg-emerald-300 dark:bg-emerald-500/40" />Projected
+        </span>
+        <span className="ml-auto">Each bar = 0 → CC budget</span>
+      </div>
+      {sorted.map(row => (
+        <CcBulletRowView key={row.key} row={row} />
+      ))}
+    </div>
+  )
+}
+
+function CcBulletRowView({ row }: { row: CcBulletRow }) {
+  const { name, budget, mtd, projected, measured } = row
+
+  // Per-row scale: budget = 100% of the bar. Overflow is clamped at 100%
+  // and surfaced via the right-side "proj 112%" badge. Uncapped CCs get
+  // a faint dashed bar instead since there's no cap to scale against.
+  const hasBudget = budget !== null && budget > 0
+  const mtdPct = hasBudget ? Math.min(100, (mtd / budget!) * 100) : 100
+  const projPct = hasBudget ? Math.min(100, (projected / budget!) * 100) : 100
+  const projOverPct = hasBudget && projected > budget!
+    ? Math.round((projected / budget!) * 100)
+    : null
+
+  const overBudget = hasBudget && projected > budget!
+  const nearBudget = hasBudget && projected > budget! * 0.8 && !overBudget
+  const fillColor = overBudget
+    ? 'bg-red-500'
+    : nearBudget
+      ? 'bg-amber-500'
+      : 'bg-emerald-500'
+  const trailColor = overBudget
+    ? 'bg-red-300 dark:bg-red-500/40'
+    : nearBudget
+      ? 'bg-amber-300 dark:bg-amber-500/40'
+      : 'bg-emerald-300 dark:bg-emerald-500/40'
+  const uncappedBar = !hasBudget
+
+  const numericLabel = (() => {
+    if (!measured) {
+      return <span className="text-neutral-400">—</span>
+    }
+    if (!hasBudget) {
+      return (
+        <span className="text-neutral-500">
+          {formatCurrencyWhole(mtd)} · uncapped
+        </span>
+      )
+    }
+    return (
+      <>
+        <span className="text-neutral-700 dark:text-neutral-200">
+          {formatCurrencyWhole(mtd)} / {formatCurrencyWhole(budget!)}
+        </span>
+        {projOverPct !== null ? (
+          <span className="ml-1.5 rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-medium text-red-700 dark:bg-red-900/40 dark:text-red-200">
+            proj {projOverPct}%
+          </span>
+        ) : null}
+      </>
+    )
+  })()
+
+  return (
+    <div className="grid grid-cols-[7rem_minmax(0,1fr)_10rem] items-center gap-3">
+      <div
+        className="text-xs font-medium truncate text-neutral-700 dark:text-neutral-300"
+        title={name}
+      >
+        {name}
+      </div>
+      <div
+        className={cn(
+          'relative h-3 rounded-sm overflow-hidden',
+          uncappedBar
+            ? 'bg-neutral-50 dark:bg-neutral-800/30 border border-dashed border-neutral-200 dark:border-neutral-700'
+            : 'bg-neutral-100 dark:bg-neutral-800/70',
+        )}
+      >
+        <div
+          className={cn('absolute inset-y-0 left-0', trailColor)}
+          style={{ width: `${projPct}%` }}
+          title={`Projected ${formatCurrency(projected)}`}
+        />
+        <div
+          className={cn('absolute inset-y-0 left-0', fillColor)}
+          style={{ width: `${mtdPct}%` }}
+          title={`MTD ${formatCurrency(mtd)}`}
+        />
+      </div>
+      <div className="text-[11px] tabular-nums text-right whitespace-nowrap flex items-center justify-end gap-0 overflow-hidden">
+        {numericLabel}
+      </div>
+    </div>
   )
 }
 
