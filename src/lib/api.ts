@@ -543,6 +543,99 @@ export function apiBaseToWebBase(apiBase: string): string {
   return apiBase.replace('https://api.', 'https://')
 }
 
+// ============================================================================
+// Billing Usage Summary
+// ============================================================================
+//
+// `GET /settings/billing/usage/summary` (preview, X-GitHub-Api-Version
+// 2026-03-10) — the only public surface that reports actual consumed dollars
+// for enterprise- and cost-center-scope spend. The budgets API only exposes
+// `consumed_amount` on `user` and `multi_user_customer` scopes, so this is
+// where total AIC burn + per-CC roll-ups come from.
+//
+// See: docs.github.com/en/enterprise-cloud@latest/rest/billing/usage
+//
+// SKUs we care about (Copilot product):
+//   - copilot_ai_unit         → metered AIC spend (this is what AIC budgets cap)
+//   - coding_agent_ai_unit    → coding-agent AIC spend (separate meter)
+//   - copilot_for_business    → CB license prorated cost ($19/user-month list)
+//   - copilot_enterprise      → CE license prorated cost ($39/user-month list)
+
+export interface RawUsageItem {
+  product: string
+  sku: string
+  unitType: string
+  pricePerUnit: number
+  grossQuantity: number
+  grossAmount: number
+  discountQuantity?: number
+  discountAmount?: number
+  netQuantity: number
+  netAmount: number
+}
+
+interface RawUsageSummary {
+  timePeriod?: { year?: number; month?: number; day?: number }
+  enterprise?: string
+  costCenter?: { id: string; name: string }
+  product?: string
+  usageItems?: RawUsageItem[]
+}
+
+export interface CopilotUsageSummary {
+  year: number
+  month: number
+  /** `null` when this summary is enterprise-wide (no cost_center_id filter). */
+  costCenterId: string | null
+  /** Net (post-discount) MTD spend, $. */
+  aiCreditsNet: number
+  /** Gross (pre-discount) MTD spend, $. Useful for "before discounts" framing. */
+  aiCreditsGross: number
+  /** Net MTD coding-agent AIC spend, $. Reported separately from copilot_ai_unit. */
+  codingAgentNet: number
+  /** Prorated net CB license cost MTD, $. */
+  cbLicenseNet: number
+  /** Prorated net CE license cost MTD, $. */
+  ceLicenseNet: number
+  /** Original items, in case a caller needs full fidelity. */
+  raw: RawUsageItem[]
+}
+
+/**
+ * Fetch the Copilot billing usage summary for the current (or specified)
+ * billing month. Optionally filter by `costCenterId` — pass the literal
+ * string `'none'` to get usage NOT attributed to any cost center
+ * (a.k.a. the universal/default pool from a billing perspective).
+ */
+export async function fetchCopilotUsageSummary(
+  apiFetch: ApiFetch,
+  opts: { costCenterId?: string | 'none'; year?: number; month?: number } = {},
+): Promise<CopilotUsageSummary> {
+  const params = new URLSearchParams()
+  params.set('product', 'Copilot')
+  if (opts.year) params.set('year', String(opts.year))
+  if (opts.month) params.set('month', String(opts.month))
+  if (opts.costCenterId) params.set('cost_center_id', opts.costCenterId)
+  const data = (await apiFetch(`/usage/summary?${params.toString()}`)) as RawUsageSummary
+  const items = data.usageItems ?? []
+  const sumNet = (sku: string) =>
+    items.filter(i => i.sku === sku).reduce((s, i) => s + (i.netAmount ?? 0), 0)
+  const sumGross = (sku: string) =>
+    items.filter(i => i.sku === sku).reduce((s, i) => s + (i.grossAmount ?? 0), 0)
+  const now = new Date()
+  return {
+    year: data.timePeriod?.year ?? now.getFullYear(),
+    month: data.timePeriod?.month ?? now.getMonth() + 1,
+    costCenterId: opts.costCenterId ?? null,
+    aiCreditsNet: sumNet('copilot_ai_unit'),
+    aiCreditsGross: sumGross('copilot_ai_unit'),
+    codingAgentNet: sumNet('coding_agent_ai_unit'),
+    cbLicenseNet: sumNet('copilot_for_business'),
+    ceLicenseNet: sumNet('copilot_enterprise'),
+    raw: items,
+  }
+}
+
 /** GHEC edit page for a specific budget — admins configure alert thresholds + recipients here. */
 export function budgetEditUrl(apiBase: string, ent: string, budgetId: string): string {
   return `${apiBaseToWebBase(apiBase)}/enterprises/${ent}/billing/budgets/${budgetId}/edit`

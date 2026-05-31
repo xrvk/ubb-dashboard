@@ -56,6 +56,7 @@ export function DashboardPage() {
     seats,
     budgets,
     loginToCostCenter,
+    usageSummary,
   } = useCredentials()
 
   const pool = useMemo(
@@ -118,7 +119,7 @@ export function DashboardPage() {
     const indMtd = forecast.spendMtd
     const indProj = forecast.projectedEom
     // Seats whose consumption flows through a CC budget rather than universal
-    // or an individual ULB — these are the "untrackable" ones.
+    // or an individual ULB — these are the "untrackable-by-budgets-API" ones.
     const indLogins = new Set(budgets.filter(b => b.user).map(b => b.user.toLowerCase()))
     let untrackedSeats = 0
     for (const s of seats) {
@@ -126,11 +127,20 @@ export function DashboardPage() {
       const cc = loginToCostCenter.get(s.login.toLowerCase())?.cc
       if (cc && costCenterBudgetsByName.has(cc.name.toLowerCase())) untrackedSeats += 1
     }
+    // When the billing usage summary is available it's the truth-of-record
+    // for total MTD AIC spend — including the CC-routed slice the budgets API
+    // can't report. We project it forward with the same straight-line model.
+    const actualMtd = usageSummary?.aiCreditsNet ?? null
+    const actualProjected =
+      actualMtd !== null ? projectMonthlyBudget(actualMtd, 0).projectedMonthTotal : null
     return {
       universal: { mtd: univMtd, projected: univProj, hasBudget: !!universalUlb },
       individual: { mtd: indMtd, projected: indProj, count: indCoverage.withInd },
-      totalMtd: univMtd + indMtd,
-      totalProjected: univProj + indProj,
+      trackedMtd: univMtd + indMtd,
+      trackedProjected: univProj + indProj,
+      totalMtd: actualMtd ?? univMtd + indMtd,
+      totalProjected: actualProjected ?? univProj + indProj,
+      hasActual: actualMtd !== null,
       untrackedSeats,
     }
   }, [
@@ -142,6 +152,7 @@ export function DashboardPage() {
     seats,
     loginToCostCenter,
     costCenterBudgetsByName,
+    usageSummary,
   ])
 
   const entAmount = pool.enterpriseBudget
@@ -168,7 +179,11 @@ export function DashboardPage() {
         <KpiTile
           label="Spend to date"
           value={formatCurrency(trackedForecast.totalMtd)}
-          hint={`Day ${forecast.daysElapsed} of ${forecast.daysInMonth} · tracked scopes only`}
+          hint={
+            trackedForecast.hasActual
+              ? `Day ${forecast.daysElapsed} of ${forecast.daysInMonth} · billing usage API`
+              : `Day ${forecast.daysElapsed} of ${forecast.daysInMonth} · tracked scopes only`
+          }
           icon={<CurrencyDollar size={22} weight="duotone" className="text-neutral-400" />}
         />
         <KpiTile
@@ -245,7 +260,7 @@ export function DashboardPage() {
         />
       </div>
 
-      <LicenseCostCard seatCost={seatCost} entBudget={entAmount} />
+      <LicenseCostCard seatCost={seatCost} entBudget={entAmount} usage={usageSummary} />
     </div>
   )
 }
@@ -292,12 +307,19 @@ function KpiTile({
 // pool donut palette so the two charts read as different metrics.
 const COLOR_UNIVERSAL = '#6366f1' // indigo-500
 const COLOR_INDIVIDUAL = '#10b981' // emerald-500
+const COLOR_CC_ROUTED = '#f59e0b' // amber-500
 
 interface TrackedForecast {
   universal: { mtd: number; projected: number; hasBudget: boolean }
   individual: { mtd: number; projected: number; count: number }
+  /** Sum of tracked scopes only (universal + individual). */
+  trackedMtd: number
+  trackedProjected: number
+  /** Real enterprise total when usage API is available, else trackedMtd. */
   totalMtd: number
   totalProjected: number
+  /** True when the totals above come from the billing usage summary API. */
+  hasActual: boolean
   untrackedSeats: number
 }
 
@@ -310,9 +332,22 @@ function ForecastBreakdownCard({
 }) {
   const pct = (v: number, total: number) =>
     total > 0 ? `${Math.round((v / total) * 100)}%` : '—'
-  const totalProj = Math.max(1, tracked.totalProjected)
-  const univPctW = (tracked.universal.projected / totalProj) * 100
-  const indPctW = (tracked.individual.projected / totalProj) * 100
+  // The denominator for the bar is the actual enterprise total when present
+  // (so the bar can show what the budgets API can't see); otherwise it's the
+  // tracked-only sum.
+  const denom = Math.max(1, tracked.totalProjected)
+  const univPctW = (tracked.universal.projected / denom) * 100
+  const indPctW = (tracked.individual.projected / denom) * 100
+  // CC-routed = whatever the billing API reports beyond what we can attribute
+  // to universal + individual scopes. Clamp to zero so demo/edge cases where
+  // tracked > actual don't render a negative slice.
+  const ccRoutedProjected = tracked.hasActual
+    ? Math.max(0, tracked.totalProjected - tracked.universal.projected - tracked.individual.projected)
+    : 0
+  const ccRoutedMtd = tracked.hasActual
+    ? Math.max(0, tracked.totalMtd - tracked.universal.mtd - tracked.individual.mtd)
+    : 0
+  const ccPctW = (ccRoutedProjected / denom) * 100
 
   return (
     <Card>
@@ -320,7 +355,7 @@ function ForecastBreakdownCard({
         <CardTitle>Forecasted end-of-month spend</CardTitle>
       </CardHeader>
       <CardContent className="grid gap-4">
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className={cn('grid gap-4', tracked.hasActual ? 'md:grid-cols-4' : 'md:grid-cols-3')}>
           <BreakdownStat
             color={COLOR_UNIVERSAL}
             label="Universal ULB"
@@ -328,8 +363,8 @@ function ForecastBreakdownCard({
             projected={tracked.universal.projected}
             sub={
               tracked.universal.hasBudget
-                ? `${pct(tracked.universal.projected, tracked.totalProjected)} of tracked spend`
-                : 'No universal ULB set — fallback users untracked'
+                ? `${pct(tracked.universal.projected, tracked.totalProjected)} of total`
+                : 'No universal ULB set'
             }
           />
           <BreakdownStat
@@ -339,13 +374,26 @@ function ForecastBreakdownCard({
             projected={tracked.individual.projected}
             sub={
               tracked.individual.count > 0
-                ? `${tracked.individual.count.toLocaleString()} users · ${pct(tracked.individual.projected, tracked.totalProjected)} of tracked spend`
+                ? `${tracked.individual.count.toLocaleString()} users · ${pct(tracked.individual.projected, tracked.totalProjected)} of total`
                 : 'No individual overrides set'
             }
           />
+          {tracked.hasActual ? (
+            <BreakdownStat
+              color={COLOR_CC_ROUTED}
+              label="CC-routed (other)"
+              mtd={ccRoutedMtd}
+              projected={ccRoutedProjected}
+              sub={
+                ccRoutedProjected > 0
+                  ? `${pct(ccRoutedProjected, tracked.totalProjected)} of total · not in budgets API`
+                  : 'All spend attributed to a tracked scope'
+              }
+            />
+          ) : null}
           <div className="grid gap-1">
             <div className="text-xs text-neutral-500 dark:text-neutral-400">
-              Tracked total
+              {tracked.hasActual ? 'Enterprise total' : 'Tracked total'}
             </div>
             <div className="text-2xl font-semibold">
               {formatCurrency(tracked.totalProjected)}
@@ -376,22 +424,42 @@ function ForecastBreakdownCard({
                 title={`Individual ULBs · ${formatCurrency(tracked.individual.projected)}`}
               />
             ) : null}
+            {ccRoutedProjected > 0 ? (
+              <div
+                className="h-full"
+                style={{ width: `${ccPctW}%`, backgroundColor: COLOR_CC_ROUTED }}
+                title={`CC-routed (other) · ${formatCurrency(ccRoutedProjected)}`}
+              />
+            ) : null}
           </div>
           <div className="flex items-center gap-4 mt-2 text-xs text-neutral-600 dark:text-neutral-400">
             <LegendDot color={COLOR_UNIVERSAL} label="Universal ULB" />
             <LegendDot color={COLOR_INDIVIDUAL} label="Individual ULBs" />
+            {tracked.hasActual ? (
+              <LegendDot color={COLOR_CC_ROUTED} label="CC-routed (other)" />
+            ) : null}
           </div>
         </div>
 
-        {tracked.untrackedSeats > 0 ? (
+        {tracked.hasActual ? (
+          <div className="text-[11px] text-neutral-500">
+            Totals from the billing usage summary API (
+            <code className="font-mono">copilot_ai_unit</code> SKU). Universal +
+            Individual rows come from the budgets API; the &ldquo;CC-routed&rdquo;
+            slice is the residual that flows through cost-center budgets — those
+            scopes don&rsquo;t report <code className="font-mono">consumed_amount</code>.
+          </div>
+        ) : tracked.untrackedSeats > 0 ? (
           <div className="rounded-md border border-amber-200 dark:border-amber-900/60 bg-amber-50 dark:bg-amber-950/30 text-amber-900 dark:text-amber-200 px-3 py-2 text-xs">
             {tracked.untrackedSeats.toLocaleString()} seat
             {tracked.untrackedSeats === 1 ? ' is' : 's are'} covered by a cost-center
-            budget with no individual ULB — their spend isn't included above. The
-            budgets API doesn't report <code className="font-mono">consumed_amount</code>{' '}
-            for <code className="font-mono">enterprise</code>- or{' '}
-            <code className="font-mono">cost_center</code>-scope budgets, so per-CC
-            burn isn't queryable today.
+            budget with no individual ULB — their spend isn&rsquo;t included above.
+            The budgets API doesn&rsquo;t report{' '}
+            <code className="font-mono">consumed_amount</code> for{' '}
+            <code className="font-mono">enterprise</code>- or{' '}
+            <code className="font-mono">cost_center</code>-scope budgets. Grant
+            this PAT enhanced-billing access to pull the real totals from the
+            usage summary API.
           </div>
         ) : (
           <div className="text-[11px] text-neutral-500">
@@ -777,14 +845,21 @@ function UlbStateCard({
 function LicenseCostCard({
   seatCost,
   entBudget,
+  usage,
 }: {
   seatCost: ReturnType<typeof seatCostBreakdown>
   entBudget: number | null
+  usage: import('@/lib/api').CopilotUsageSummary | null
 }) {
+  // When the billing usage summary is available, the prorated month-to-date
+  // license cost reported by GitHub is more accurate than our list-price
+  // estimate (it accounts for negotiated discounts, mid-month seat moves,
+  // and the actual day-count). Surface that as the headline.
+  const billedMtd =
+    usage !== null ? usage.cbLicenseNet + usage.ceLicenseNet : null
+  const headlineCost = billedMtd ?? seatCost.monthlyCost
   const ratio =
-    entBudget !== null && seatCost.monthlyCost > 0
-      ? entBudget / seatCost.monthlyCost
-      : null
+    entBudget !== null && headlineCost > 0 ? entBudget / headlineCost : null
   return (
     <Card>
       <CardHeader>
@@ -796,11 +871,13 @@ function LicenseCostCard({
             label="Copilot Business"
             count={seatCost.business}
             unitPrice={COPILOT_BUSINESS_LIST_PRICE}
+            billed={usage?.cbLicenseNet ?? null}
           />
           <LicenseRow
             label="Copilot Enterprise"
             count={seatCost.enterprise}
             unitPrice={COPILOT_ENTERPRISE_LIST_PRICE}
+            billed={usage?.ceLicenseNet ?? null}
           />
           {seatCost.other > 0 ? (
             <LicenseRow
@@ -808,19 +885,22 @@ function LicenseCostCard({
               count={seatCost.other}
               unitPrice={0}
               unitLabel="—"
+              billed={null}
             />
           ) : (
             <div />
           )}
           <div className="rounded-md border border-neutral-200 dark:border-neutral-800 p-3">
             <div className="text-[11px] uppercase tracking-wide text-neutral-500">
-              Monthly license cost
+              {billedMtd !== null ? 'Billed month-to-date' : 'Monthly license cost'}
             </div>
             <div className="text-xl font-semibold mt-1 tabular-nums">
-              {formatCurrency(seatCost.monthlyCost)}
+              {formatCurrency(headlineCost)}
             </div>
             <div className="text-xs text-neutral-500 mt-0.5">
-              {seatCost.total.toLocaleString()} total seats
+              {billedMtd !== null
+                ? `${seatCost.total.toLocaleString()} seats · est. ${formatCurrency(seatCost.monthlyCost)} full month`
+                : `${seatCost.total.toLocaleString()} total seats`}
             </div>
           </div>
         </div>
@@ -832,17 +912,37 @@ function LicenseCostCard({
           </div>
         ) : null}
         <p className="text-[11px] text-neutral-500 dark:text-neutral-500 leading-snug">
-          Uses GitHub Copilot{' '}
-          <a
-            href="https://github.com/features/copilot/plans"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="underline hover:text-neutral-800 dark:hover:text-neutral-300"
-          >
-            list pricing
-          </a>{' '}
-          (${COPILOT_BUSINESS_LIST_PRICE}/seat/mo Business, ${COPILOT_ENTERPRISE_LIST_PRICE}/seat/mo
-          Enterprise) — your negotiated rate may differ.
+          {billedMtd !== null ? (
+            <>
+              &ldquo;Billed&rdquo; values come from the billing usage summary API
+              (prorated, post-discount). Full-month estimate uses GitHub Copilot{' '}
+              <a
+                href="https://github.com/features/copilot/plans"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline hover:text-neutral-800 dark:hover:text-neutral-300"
+              >
+                list pricing
+              </a>
+              {' '}(${COPILOT_BUSINESS_LIST_PRICE}/seat/mo Business, $
+              {COPILOT_ENTERPRISE_LIST_PRICE}/seat/mo Enterprise).
+            </>
+          ) : (
+            <>
+              Uses GitHub Copilot{' '}
+              <a
+                href="https://github.com/features/copilot/plans"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline hover:text-neutral-800 dark:hover:text-neutral-300"
+              >
+                list pricing
+              </a>{' '}
+              (${COPILOT_BUSINESS_LIST_PRICE}/seat/mo Business, $
+              {COPILOT_ENTERPRISE_LIST_PRICE}/seat/mo Enterprise) — your negotiated
+              rate may differ.
+            </>
+          )}
         </p>
       </CardContent>
     </Card>
@@ -854,11 +954,14 @@ function LicenseRow({
   count,
   unitPrice,
   unitLabel,
+  billed,
 }: {
   label: string
   count: number
   unitPrice: number
   unitLabel?: string
+  /** Actual MTD billed amount from the usage summary API, when available. */
+  billed: number | null
 }) {
   return (
     <div className="rounded-md border border-neutral-200 dark:border-neutral-800 p-3">
@@ -866,10 +969,19 @@ function LicenseRow({
       <div className="text-xl font-semibold mt-1 tabular-nums">
         {count.toLocaleString()}
       </div>
-      <div className="text-xs text-neutral-500 mt-0.5">
-        seats × {unitLabel ?? `$${unitPrice}/mo`} ={' '}
-        <span className="tabular-nums">{formatCurrency(count * unitPrice)}</span>
-      </div>
+      {billed !== null ? (
+        <div className="text-xs text-neutral-500 mt-0.5">
+          <span className="tabular-nums">{formatCurrency(billed)}</span> billed MTD
+          <span className="text-neutral-400">
+            {' · '}~{unitLabel ?? `$${unitPrice}/mo`}
+          </span>
+        </div>
+      ) : (
+        <div className="text-xs text-neutral-500 mt-0.5">
+          seats × {unitLabel ?? `$${unitPrice}/mo`} ={' '}
+          <span className="tabular-nums">{formatCurrency(count * unitPrice)}</span>
+        </div>
+      )}
     </div>
   )
 }

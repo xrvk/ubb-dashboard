@@ -1,4 +1,5 @@
 import type {
+  CopilotUsageSummary,
   CostCenter,
   CostCenterBudget,
   EnterpriseBudget,
@@ -208,4 +209,32 @@ export function generateDemoCostCenterBudgets(): Map<string, CostCenterBudget> {
   add('devx', 5000, true, false)
   add('security', 3000, true, false)
   return out
+}
+
+/**
+ * Synthesize a plausible billing-usage summary for demo mode. AIC spend is
+ * derived from the demo individual budgets plus a small "untracked CC-direct"
+ * bucket so the dashboard's 3-way breakdown has data in every slice.
+ */
+export function generateDemoUsageSummary(budgets: UserBudget[]): CopilotUsageSummary {
+  const indivConsumed = budgets.reduce((s, b) => s + b.consumedAmount, 0)
+  const universalConsumed = Math.round(indivConsumed * 0.18 * 100) / 100
+  const ccRouted = Math.round(indivConsumed * 0.12 * 100) / 100
+  const aiCreditsNet = Math.round((indivConsumed + universalConsumed + ccRouted) * 100) / 100
+  const aiCreditsGross = Math.round(aiCreditsNet * 1.05 * 100) / 100
+  const now = new Date()
+  const seatCount = Math.max(budgets.length, 1)
+  const cbSeats = Math.round(seatCount * 0.7)
+  const ceSeats = seatCount - cbSeats
+  return {
+    year: now.getFullYear(),
+    month: now.getMonth() + 1,
+    costCenterId: null,
+    aiCreditsNet,
+    aiCreditsGross,
+    codingAgentNet: Math.round(aiCreditsNet * 0.08 * 100) / 100,
+    cbLicenseNet: Math.round(cbSeats * 19 * 100) / 100,
+    ceLicenseNet: Math.round(ceSeats * 39 * 100) / 100,
+    raw: [],
+  }
 }
