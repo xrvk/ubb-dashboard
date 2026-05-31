@@ -292,7 +292,24 @@ export function IndividualUlbPage({
               setFiltersAndScroll({ ...filters, bucketId: id, status: 'all' })
             }
           />
-          <div ref={tableRef}>
+          <div ref={tableRef} className="space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                Individual ULBs
+                <span className="ml-2 text-xs font-normal text-neutral-500">
+                  {totalBudgetCount.toLocaleString()} total
+                </span>
+              </h2>
+              <Button
+                onClick={() => onCreatingChange(true)}
+                size="sm"
+                disabled={totalBudgetCount >= 10000}
+                title={totalBudgetCount >= 10000 ? 'Budget limit of 10,000 reached for this enterprise' : undefined}
+              >
+                <Plus size={16} weight="bold" />
+                Add ULB
+              </Button>
+            </div>
             <BudgetsTable
               budgets={budgets}
               filters={filters}

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Plus, Gauge, Moon, Sun, ArrowCounterClockwise } from '@phosphor-icons/react'
+import { Gauge, Moon, Sun, ArrowCounterClockwise } from '@phosphor-icons/react'
 import { Toaster } from 'sonner'
 import { useTheme } from 'next-themes'
 import { useCredentials } from '@/hooks/use-credentials'
@@ -13,7 +13,7 @@ import type { BulkApplySnapshot } from '@/lib/snapshot'
 type Tab = 'individual' | 'universal'
 
 export function App() {
-  const { credentials, totalBudgetCount } = useCredentials()
+  const { credentials } = useCredentials()
   const { resolvedTheme, setTheme } = useTheme()
 
   const [tab, setTab] = useState<Tab>('individual')
@@ -78,17 +78,6 @@ export function App() {
                 >
                   <ArrowCounterClockwise size={14} weight="duotone" />
                   <span className="hidden sm:inline">Revert ({snapshot.entries.length.toLocaleString()})</span>
-                </Button>
-              ) : null}
-              {tab === 'individual' ? (
-                <Button
-                  onClick={() => setCreating(true)}
-                  size="sm"
-                  disabled={totalBudgetCount >= 10000}
-                  title={totalBudgetCount >= 10000 ? 'Budget limit of 10,000 reached for this enterprise' : undefined}
-                >
-                  <Plus size={16} weight="bold" />
-                  <span className="hidden sm:inline">Add ULB</span>
                 </Button>
               ) : null}
             </div>
