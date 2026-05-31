@@ -55,7 +55,7 @@ export function ImportPanel() {
         </form>
         {error ? <p className="mt-3 text-sm text-red-600 dark:text-red-400">{error}</p> : null}
         <p className="mt-3 text-xs text-neutral-500">
-          Credentials are kept in memory only. They are never sent anywhere except api.&lt;your-host&gt;.
+          Credentials are kept in memory only. They are never sent anywhere except your enterprise's GitHub API host.
         </p>
         <div className="mt-4 pt-4 border-t border-neutral-200 dark:border-neutral-800 flex items-center justify-between gap-3 flex-wrap">
           <div className="text-xs text-neutral-500">
@@ -70,7 +70,7 @@ export function ImportPanel() {
               window.location.assign(url.toString())
             }}
           >
-            Try demo mode (150 users)
+            Try demo mode
           </Button>
         </div>
       </CardContent>
