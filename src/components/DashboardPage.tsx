@@ -16,10 +16,7 @@ import {
   Buildings,
   CurrencyDollar,
   Receipt,
-  Stack,
   TrendUp,
-  UsersThree,
-  WarningCircle,
 } from '@phosphor-icons/react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useCredentials } from '@/hooks/use-credentials'
@@ -86,22 +83,6 @@ export function DashboardPage() {
     return { withInd, total: seats.length }
   }, [seats, budgets])
 
-  /** Seats that fall back to the universal ULB (no individual override). */
-  const universalCoverage = useMemo(() => {
-    const indLogins = new Set(budgets.filter(b => b.user).map(b => b.user.toLowerCase()))
-    let covered = 0
-    for (const s of seats) {
-      if (!indLogins.has(s.login.toLowerCase())) covered += 1
-    }
-    return covered
-  }, [seats, budgets])
-
-  const ccCount = useMemo(() => {
-    const set = new Set<string>()
-    for (const r of loginToCostCenter.values()) if (r) set.add(r.cc.id)
-    return set.size
-  }, [loginToCostCenter])
-
   /**
    * Forecast breakdown across the two budget scopes that report
    * `consumed_amount` via the budgets API:
@@ -163,42 +144,46 @@ export function DashboardPage() {
 
   return (
     <div className="grid gap-6">
-      {/* Primer banner — surface the pool-vs-metered distinction so the
-          hero KPIs (all metered-charge metrics) read correctly. */}
-      <BudgetModelBanner
-        hasUsage={trackedForecast.hasActual}
-        meteredMtd={usageSummary?.aiCreditsNet ?? 0}
+      {/* § 1 — Current state: pool, licenses, used so far. */}
+      <SectionHeader number={1} title="AI credit pool & licenses" />
+      <PoolAndLicensesCard
+        seatCost={seatCost}
+        usage={usageSummary}
+        meteredMtd={usageSummary?.aiCreditsNet ?? null}
       />
 
-      {/* Hero KPIs — all describe metered charges, which is what the
-          enterprise budget governs. */}
+      {/* § 2 — Metered spend so far + forecast. KPIs scope to metered
+          charges (which is what the enterprise budget governs); the
+          forecast card breaks them down across the budget scopes the API
+          does and doesn't report. */}
+      <SectionHeader number={2} title="Metered charges" />
       <div className="grid gap-3 grid-cols-1 md:grid-cols-4">
         <KpiTile
           label="Enterprise budget"
           value={entAmount === null ? 'Not set' : formatCurrency(entAmount)}
           hint={
             entAmount === null
-              ? 'No enterprise-scope ai_credits budget'
-              : `Caps metered charges · ${costCenters.length.toLocaleString()} CCs · ${seats.length.toLocaleString()} seats`
+              ? 'No enterprise-scope budget'
+              : `Caps metered charges · ${seats.length.toLocaleString()} seats`
           }
           icon={<Buildings size={22} weight="duotone" className="text-neutral-400" />}
         />
         <KpiTile
-          label="Metered charges MTD"
+          label="Metered MTD"
           value={formatCurrency(trackedForecast.totalMtd)}
           hint={
             trackedForecast.hasActual
-              ? `Day ${forecast.daysElapsed} of ${forecast.daysInMonth} · billing usage API`
-              : `Day ${forecast.daysElapsed} of ${forecast.daysInMonth} · tracked ULB scopes (proxy)`
+              ? `Day ${forecast.daysElapsed} of ${forecast.daysInMonth}`
+              : `Day ${forecast.daysElapsed} of ${forecast.daysInMonth} · ULB-scope proxy`
           }
           icon={<CurrencyDollar size={22} weight="duotone" className="text-neutral-400" />}
         />
         <KpiTile
-          label="Projected metered charges"
+          label="Forecast"
           value={formatCurrency(trackedForecast.totalProjected)}
           hint={
             entAmount === null
-              ? 'No enterprise budget to compare against'
+              ? 'No budget to compare against'
               : overDelta > 0
                 ? `${formatCurrency(overDelta)} over budget`
                 : `${formatCurrency(-overDelta)} under budget`
@@ -212,67 +197,37 @@ export function DashboardPage() {
           hint={
             entAmount === null
               ? 'Requires enterprise budget'
-              : `${formatPercent(trackedForecast.totalMtd / Math.max(1, entAmount))} of enterprise budget spent`
+              : `${formatPercent(trackedForecast.totalMtd / Math.max(1, entAmount))} of budget spent`
           }
           icon={<Receipt size={22} weight="duotone" className="text-neutral-400" />}
         />
       </div>
-
-      {/* Shared AI credit pool — drawn first, governed by ULBs only. Sits
-          above the metered-charge forecast so readers see the upstream
-          funding tier first. */}
-      <SharedPoolCard seatCost={seatCost} meteredMtd={usageSummary?.aiCreditsNet ?? null} />
-
       <ForecastBreakdownCard tracked={trackedForecast} entBudget={entAmount} />
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <PoolSplitCard pool={pool} />
-        <BudgetVsCapCard pool={pool} />
-      </div>
+      {/* § 3 — Cost centers today: per-CC budget, ULB ceiling, derivable
+          spend so far + forecast. Allocation chart kept as supporting
+          visual. */}
+      <SectionHeader number={3} title="Cost centers" />
+      <CostCenterStatusCard
+        pool={pool}
+        seats={seats}
+        budgets={budgets}
+        loginToCostCenter={loginToCostCenter}
+      />
+      <BudgetVsCapCard pool={pool} />
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <UlbStateCard
-          title="Universal ULB"
-          value={
-            universalUlb ? formatCurrency(universalUlb.budgetAmount) : 'Not set'
-          }
-          subtitle={
-            universalUlb
-              ? `${universalCoverage.toLocaleString()} of ${seats.length.toLocaleString()} seats fall back`
-              : `${seats.length.toLocaleString()} seats have no fallback`
-          }
-          ctaLabel="Manage"
-          onCta={() => window.dispatchEvent(new CustomEvent(NAV_TO_UNIVERSAL_EVENT))}
-          icon={<UsersThree size={16} weight="duotone" className="text-neutral-400" />}
-          tone={universalUlb ? 'neutral' : 'warn'}
-        />
-        <UlbStateCard
-          title="Individual ULBs"
-          value={`${indCoverage.withInd.toLocaleString()} / ${indCoverage.total.toLocaleString()}`}
-          subtitle={
-            forecast.totalBudgeted > 0
-              ? `${formatCurrency(forecast.totalBudgeted)} allocated · ${forecast.alreadyOver + forecast.projectedOver} at risk`
-              : 'No individual overrides set'
-          }
-          ctaLabel="Manage"
-          onCta={() =>
-            window.dispatchEvent(
-              new CustomEvent(NAV_TO_INDIVIDUAL_EVENT, { detail: {} }),
-            )
-          }
-          icon={<UsersThree size={16} weight="duotone" className="text-neutral-400" />}
-        />
-        <UlbStateCard
-          title="Cost centers w/ Copilot"
-          value={ccCount.toLocaleString()}
-          subtitle={`${pool.costCenters.filter(s => s.budgetAmount !== null).length} capped · ${pool.costCenters.filter(s => s.budgetAmount === null).length} uncapped`}
-          ctaLabel="Edit"
-          onCta={() => window.dispatchEvent(new CustomEvent(NAV_TO_BUDGET_MODEL_EVENT))}
-          icon={<Buildings size={16} weight="duotone" className="text-neutral-400" />}
-        />
-      </div>
-
-      <LicenseCostCard seatCost={seatCost} entBudget={entAmount} usage={usageSummary} />
+      {/* § 4 — Action items: blocked users, missing budgets, allocation
+          risk. */}
+      <SectionHeader number={4} title="Action items" />
+      <ActionItemsCard
+        forecast={forecast}
+        universalUlb={universalUlb}
+        entAmount={entAmount}
+        pool={pool}
+        seats={seats}
+        budgets={budgets}
+        loginToCostCenter={loginToCostCenter}
+      />
     </div>
   )
 }
@@ -365,10 +320,6 @@ function ForecastBreakdownCard({
     <Card>
       <CardHeader>
         <CardTitle>Forecasted metered charges</CardTitle>
-        <p className="text-xs text-neutral-500 mt-1">
-          Metered charges accrue once the shared AI credit pool is exhausted.
-          Pool drawdown shown above is not reflected here.
-        </p>
       </CardHeader>
       <CardContent className="grid gap-4">
         <div className={cn('grid gap-4', tracked.hasActual ? 'md:grid-cols-4' : 'md:grid-cols-3')}>
@@ -459,29 +410,22 @@ function ForecastBreakdownCard({
 
         {tracked.hasActual ? (
           <div className="text-[11px] text-neutral-500">
-            Totals from the billing usage summary API (
-            <code className="font-mono">copilot_ai_unit</code> SKU). Universal +
-            Individual rows come from the budgets API; the &ldquo;CC-routed&rdquo;
-            slice is the residual that flows through cost-center budgets — those
-            scopes don&rsquo;t report <code className="font-mono">consumed_amount</code>.
+            Total from the billing usage summary API. "CC-routed" is the
+            residual not attributable to ULB scopes — those budgets don't
+            report consumed_amount.
           </div>
         ) : tracked.untrackedSeats > 0 ? (
           <div className="rounded-md border border-amber-200 dark:border-amber-900/60 bg-amber-50 dark:bg-amber-950/30 text-amber-900 dark:text-amber-200 px-3 py-2 text-xs">
             {tracked.untrackedSeats.toLocaleString()} seat
-            {tracked.untrackedSeats === 1 ? ' is' : 's are'} covered by a cost-center
-            budget with no individual ULB — their spend isn&rsquo;t included above.
-            The budgets API doesn&rsquo;t report{' '}
-            <code className="font-mono">consumed_amount</code> for{' '}
-            <code className="font-mono">enterprise</code>- or{' '}
-            <code className="font-mono">cost_center</code>-scope budgets. Grant
-            this PAT enhanced-billing access to pull the real totals from the
-            usage summary API.
+            {tracked.untrackedSeats === 1 ? ' is' : 's are'} covered by a
+            cost-center budget with no individual ULB — their spend isn't
+            included above. Grant the PAT enhanced-billing access for full
+            totals.
           </div>
         ) : (
           <div className="text-[11px] text-neutral-500">
-            Spend is summed from <code className="font-mono">multi_user_customer</code>{' '}
-            and <code className="font-mono">user</code> budget scopes — the only
-            two that report <code className="font-mono">consumed_amount</code>.
+            Spend summed from the two budget scopes that report consumed
+            amounts: universal ULB and individual ULBs.
           </div>
         )}
       </CardContent>
@@ -520,202 +464,7 @@ function BreakdownStat({
   )
 }
 
-// Stable palette for the pool donut; first N colors apply to CC slices, the
-// last two are reserved for "unassigned" + "headroom" so they always look
-// distinct from CCs no matter how many you have.
-const CC_COLORS = [
-  '#10b981', // emerald
-  '#3b82f6', // blue
-  '#f59e0b', // amber
-  '#a855f7', // violet
-  '#ec4899', // pink
-  '#14b8a6', // teal
-  '#f97316', // orange
-  '#84cc16', // lime
-]
-const COLOR_UNASSIGNED = '#737373' // neutral-500
-const COLOR_HEADROOM = '#d4d4d8' // neutral-300 (light gap chunk)
-const COLOR_OVERFLOW = '#dc2626' // red-600 (when committed > ent budget)
-
-interface DonutDatum {
-  key: string
-  name: string
-  value: number
-  color: string
-  kind: 'cc-capped' | 'cc-uncapped' | 'unassigned' | 'headroom' | 'overflow'
-  /** Optional secondary metric to show in tooltip (e.g. CC budget). */
-  meta?: string
-}
-
-function PoolSplitCard({ pool }: { pool: ReturnType<typeof computePoolSplit> }) {
-  const data = useMemo<DonutDatum[]>(() => {
-    const arr: DonutDatum[] = []
-    pool.costCenters.forEach((s, i) => {
-      arr.push({
-        key: s.costCenterId,
-        name: s.name,
-        value: s.effectiveDraw,
-        color: CC_COLORS[i % CC_COLORS.length],
-        kind: s.budgetAmount === null ? 'cc-uncapped' : 'cc-capped',
-        meta:
-          s.budgetAmount === null
-            ? `${s.seatCount} seats · uncapped, ULB ceiling ${formatCurrencyShort(s.ulbCeiling)}`
-            : `${s.seatCount} seats · budget ${formatCurrencyShort(s.budgetAmount)}`,
-      })
-    })
-    if (pool.unassignedTotal > 0) {
-      arr.push({
-        key: 'unassigned',
-        name: 'Unassigned seats',
-        value: pool.unassignedTotal,
-        color: COLOR_UNASSIGNED,
-        kind: 'unassigned',
-        meta: 'Seats not routed to any cost center',
-      })
-    }
-    if (pool.headroom > 0) {
-      arr.push({
-        key: 'headroom',
-        name: 'Headroom',
-        value: pool.headroom,
-        color: COLOR_HEADROOM,
-        kind: 'headroom',
-        meta: 'Unallocated portion of the enterprise budget',
-      })
-    }
-    if (pool.overAllocated && pool.enterpriseBudget !== null) {
-      const overshoot =
-        pool.cappedTotal + pool.uncappedTotal + pool.unassignedTotal - pool.enterpriseBudget
-      arr.push({
-        key: 'overflow',
-        name: 'Over-allocated',
-        value: overshoot,
-        color: COLOR_OVERFLOW,
-        kind: 'overflow',
-        meta: 'Committed draws exceed the enterprise budget',
-      })
-    }
-    return arr
-  }, [pool])
-
-  const total = useMemo(() => data.reduce((s, d) => s + d.value, 0), [data])
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>AI credit pool split</CardTitle>
-      </CardHeader>
-      <CardContent>
-        {total === 0 ? (
-          <EmptyChart message="No cost centers route Copilot today, and no enterprise budget is set." />
-        ) : (
-          <div className="grid gap-4 md:grid-cols-[1fr_auto] items-center">
-            <div style={{ height: 240 }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={data}
-                    dataKey="value"
-                    nameKey="name"
-                    innerRadius={60}
-                    outerRadius={95}
-                    paddingAngle={1}
-                    isAnimationActive={false}
-                  >
-                    {data.map(d => (
-                      <Cell key={d.key} fill={d.color} stroke="none" />
-                    ))}
-                  </Pie>
-                  <Tooltip
-                    contentStyle={{
-                      fontSize: 12,
-                      borderRadius: 6,
-                      border: '1px solid #e5e5e5',
-                    }}
-                    formatter={(value: number, _name: string, item) => {
-                      const datum = item?.payload as DonutDatum | undefined
-                      const pct = total > 0 ? (value / total) * 100 : 0
-                      return [
-                        `${formatCurrency(value)} (${pct.toFixed(1)}%)${datum?.meta ? `\n${datum.meta}` : ''}`,
-                        datum?.name ?? '',
-                      ]
-                    }}
-                  />
-                  <Legend
-                    verticalAlign="bottom"
-                    iconType="circle"
-                    wrapperStyle={{ fontSize: 11 }}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-            <div className="text-xs text-neutral-600 dark:text-neutral-400 space-y-1.5 min-w-[180px]">
-              <Stat
-                label="Enterprise budget"
-                value={
-                  pool.enterpriseBudget === null
-                    ? 'Not set'
-                    : formatCurrency(pool.enterpriseBudget)
-                }
-              />
-              <Stat label="Capped CC draws" value={formatCurrency(pool.cappedTotal)} />
-              <Stat
-                label="Uncapped (ULB ceiling)"
-                value={formatCurrency(pool.uncappedTotal)}
-              />
-              {pool.unassignedTotal > 0 ? (
-                <Stat
-                  label="Unassigned seats"
-                  value={formatCurrency(pool.unassignedTotal)}
-                />
-              ) : null}
-              {pool.enterpriseBudget !== null ? (
-                <Stat
-                  label={pool.overAllocated ? 'Over-allocated' : 'Headroom'}
-                  value={
-                    pool.overAllocated
-                      ? `+${formatCurrency(
-                          pool.cappedTotal +
-                            pool.uncappedTotal +
-                            pool.unassignedTotal -
-                            pool.enterpriseBudget,
-                        )}`
-                      : formatCurrency(pool.headroom)
-                  }
-                  tone={pool.overAllocated ? 'warn' : 'neutral'}
-                />
-              ) : null}
-            </div>
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  )
-}
-
-function Stat({
-  label,
-  value,
-  tone = 'neutral',
-}: {
-  label: string
-  value: string
-  tone?: 'neutral' | 'warn'
-}) {
-  return (
-    <div className="flex items-baseline justify-between gap-3">
-      <span className="text-neutral-500 dark:text-neutral-400">{label}</span>
-      <span
-        className={cn(
-          'font-medium tabular-nums',
-          tone === 'warn' ? 'text-amber-600 dark:text-amber-400' : 'text-neutral-800 dark:text-neutral-200',
-        )}
-      >
-        {value}
-      </span>
-    </div>
-  )
-}
+// CC palette retained for future use.
 
 function BudgetVsCapCard({ pool }: { pool: ReturnType<typeof computePoolSplit> }) {
   const data = useMemo(
@@ -815,303 +564,91 @@ function EmptyChart({ message }: { message: string }) {
   )
 }
 
-function UlbStateCard({
+
+
+ */
+ */
+
+
+// ============================================================================
+// Reorganized dashboard sections — § 1 Pool & licenses · § 2 Metered ·
+// § 3 Cost centers · § 4 Action items.
+// ============================================================================
+
+function SectionHeader({
+  number,
   title,
-  value,
   subtitle,
-  ctaLabel,
-  onCta,
-  icon,
-  tone = 'neutral',
 }: {
+  number: number
   title: string
-  value: string
-  subtitle: string
-  ctaLabel: string
-  onCta: () => void
-  icon?: React.ReactNode
-  tone?: 'neutral' | 'warn'
+  subtitle?: string
 }) {
   return (
-    <Card>
-      <CardContent className="p-3 space-y-1.5">
-        <div className="flex items-center justify-between gap-2">
-          <div className="text-[11px] uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
-            {title}
-          </div>
-          {icon}
+    <div className="flex items-baseline gap-2 mt-2">
+      <div className="text-[11px] font-medium text-neutral-400 dark:text-neutral-500 tabular-nums">
+        {String(number).padStart(2, '0')}
+      </div>
+      <h2 className="text-base font-semibold text-neutral-900 dark:text-neutral-100">
+        {title}
+      </h2>
+      {subtitle ? (
+        <div className="text-xs text-neutral-500 dark:text-neutral-400">
+          · {subtitle}
         </div>
-        <div
-          className={cn(
-            'text-lg font-semibold tabular-nums',
-            tone === 'warn' && 'text-amber-600 dark:text-amber-400',
-          )}
-        >
-          {value}
-        </div>
-        <div className="text-[11px] text-neutral-500 leading-snug">{subtitle}</div>
-        <button
-          type="button"
-          onClick={onCta}
-          className="text-[11px] text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 hover:underline underline-offset-2 cursor-pointer"
-        >
-          {ctaLabel} →
-        </button>
-      </CardContent>
-    </Card>
+      ) : null}
+    </div>
   )
 }
 
-function LicenseCostCard({
+/**
+ * § 1 — AI credit pool & licenses. Replaces the old SharedPoolCard +
+ * LicenseCostCard + BudgetModelBanner. One card answering "how is my
+ * current state — pool, licenses, used so far". Per-license rows include
+ * AIC contribution AND billed MTD so the same row tells the licensing
+ * story and the spend story.
+ */
+function PoolAndLicensesCard({
   seatCost,
-  entBudget,
   usage,
+  meteredMtd,
 }: {
   seatCost: ReturnType<typeof seatCostBreakdown>
-  entBudget: number | null
   usage: import('@/lib/api').CopilotUsageSummary | null
-}) {
-  // When the billing usage summary is available, the prorated month-to-date
-  // license cost reported by GitHub is more accurate than our list-price
-  // estimate (it accounts for negotiated discounts, mid-month seat moves,
-  // and the actual day-count). Surface that as the headline.
-  const billedMtd =
-    usage !== null ? usage.cbLicenseNet + usage.ceLicenseNet : null
-  const headlineCost = billedMtd ?? seatCost.monthlyCost
-  const ratio =
-    entBudget !== null && headlineCost > 0 ? entBudget / headlineCost : null
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>License cost vs. enterprise budget</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <div className="grid gap-3 grid-cols-1 sm:grid-cols-4">
-          <LicenseRow
-            label="Copilot Business"
-            count={seatCost.business}
-            unitPrice={COPILOT_BUSINESS_LIST_PRICE}
-            billed={usage?.cbLicenseNet ?? null}
-          />
-          <LicenseRow
-            label="Copilot Enterprise"
-            count={seatCost.enterprise}
-            unitPrice={COPILOT_ENTERPRISE_LIST_PRICE}
-            billed={usage?.ceLicenseNet ?? null}
-          />
-          {seatCost.other > 0 ? (
-            <LicenseRow
-              label="Other plan"
-              count={seatCost.other}
-              unitPrice={0}
-              unitLabel="—"
-              billed={null}
-            />
-          ) : (
-            <div />
-          )}
-          <div className="rounded-md border border-neutral-200 dark:border-neutral-800 p-3">
-            <div className="text-[11px] uppercase tracking-wide text-neutral-500">
-              {billedMtd !== null ? 'Billed month-to-date' : 'Monthly license cost'}
-            </div>
-            <div className="text-xl font-semibold mt-1 tabular-nums">
-              {formatCurrency(headlineCost)}
-            </div>
-            <div className="text-xs text-neutral-500 mt-0.5">
-              {billedMtd !== null
-                ? `${seatCost.total.toLocaleString()} seats · est. ${formatCurrency(seatCost.monthlyCost)} full month`
-                : `${seatCost.total.toLocaleString()} total seats`}
-            </div>
-          </div>
-        </div>
-
-        {ratio !== null ? (
-          <div className="text-xs text-neutral-600 dark:text-neutral-400">
-            Enterprise budget ({formatCurrency(entBudget ?? 0)}) is{' '}
-            <span className="font-medium tabular-nums">{formatPercent(ratio)}</span> of
-            monthly license spend — caps metered charges only, not the shared
-            pool itself (see Shared AI Credit Pool above).
-          </div>
-        ) : null}
-        <p className="text-[11px] text-neutral-500 dark:text-neutral-500 leading-snug">
-          {billedMtd !== null ? (
-            <>
-              &ldquo;Billed&rdquo; values come from the billing usage summary API
-              (prorated, post-discount). Full-month estimate uses GitHub Copilot{' '}
-              <a
-                href="https://github.com/features/copilot/plans"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline hover:text-neutral-800 dark:hover:text-neutral-300"
-              >
-                list pricing
-              </a>
-              {' '}(${COPILOT_BUSINESS_LIST_PRICE}/seat/mo Business, $
-              {COPILOT_ENTERPRISE_LIST_PRICE}/seat/mo Enterprise).
-            </>
-          ) : (
-            <>
-              Uses GitHub Copilot{' '}
-              <a
-                href="https://github.com/features/copilot/plans"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline hover:text-neutral-800 dark:hover:text-neutral-300"
-              >
-                list pricing
-              </a>{' '}
-              (${COPILOT_BUSINESS_LIST_PRICE}/seat/mo Business, $
-              {COPILOT_ENTERPRISE_LIST_PRICE}/seat/mo Enterprise) — your negotiated
-              rate may differ.
-            </>
-          )}
-        </p>
-      </CardContent>
-    </Card>
-  )
-}
-
-function LicenseRow({
-  label,
-  count,
-  unitPrice,
-  unitLabel,
-  billed,
-}: {
-  label: string
-  count: number
-  unitPrice: number
-  unitLabel?: string
-  /** Actual MTD billed amount from the usage summary API, when available. */
-  billed: number | null
-}) {
-  return (
-    <div className="rounded-md border border-neutral-200 dark:border-neutral-800 p-3">
-      <div className="text-[11px] uppercase tracking-wide text-neutral-500">{label}</div>
-      <div className="text-xl font-semibold mt-1 tabular-nums">
-        {count.toLocaleString()}
-      </div>
-      {billed !== null ? (
-        <div className="text-xs text-neutral-500 mt-0.5">
-          <span className="tabular-nums">{formatCurrency(billed)}</span> billed MTD
-          <span className="text-neutral-400">
-            {' · '}~{unitLabel ?? `$${unitPrice}/mo`}
-          </span>
-        </div>
-      ) : (
-        <div className="text-xs text-neutral-500 mt-0.5">
-          seats × {unitLabel ?? `$${unitPrice}/mo`} ={' '}
-          <span className="tabular-nums">{formatCurrency(count * unitPrice)}</span>
-        </div>
-      )}
-    </div>
-  )
-}
-
-/**
- * BudgetModelBanner — primer that frames the page using the docs'
- * canonical terms: a shared AI credit pool is drawn first,
- * and metered charges accrue once it's exhausted. Enterprise and cost
- * center budgets only cap metered charges; only user-level budgets
- * (universal + individual) constrain per-user pool drawdown.
- */
-function BudgetModelBanner({
-  hasUsage,
-  meteredMtd,
-}: {
-  hasUsage: boolean
-  meteredMtd: number
-}) {
-  const meteredActive = hasUsage && meteredMtd > 0
-  return (
-    <div className="rounded-md border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900/40 px-3 py-2 text-xs flex items-start gap-2">
-      <Stack
-        size={16}
-        weight="duotone"
-        className="mt-0.5 shrink-0 text-neutral-500"
-      />
-      <div className="flex-1 min-w-0 leading-relaxed text-neutral-700 dark:text-neutral-300">
-        <span className="font-medium text-neutral-900 dark:text-neutral-100">
-          How AI credits bill.
-        </span>{' '}
-        <span className="text-neutral-600 dark:text-neutral-400">
-          Your CB and CE licenses fund a <strong>shared AI credit pool</strong>, drawn first and constrained only by user-level
-          budgets (universal ULB + individual overrides). Once the pool is
-          exhausted, usage becomes <strong>metered charges</strong> at $0.01
-          per AI credit — that's what the enterprise budget and any cost
-          center budgets cap. The KPIs below describe metered charges only.
-        </span>
-        <span className="ml-2 inline-flex items-center gap-1 align-middle">
-          {hasUsage ? (
-            meteredActive ? (
-              <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-900 dark:text-amber-200 px-2 py-0.5 text-[10px] font-medium">
-                <WarningCircle size={11} weight="fill" />
-                Metered charges active · pool exhausted
-              </span>
-            ) : (
-              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-900 dark:text-emerald-200 px-2 py-0.5 text-[10px] font-medium">
-                Pool still funding usage · $0 metered
-              </span>
-            )
-          ) : (
-            <span className="inline-flex items-center gap-1 rounded-full bg-neutral-200 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 px-2 py-0.5 text-[10px] font-medium">
-              Metered status unknown · billing API not reachable
-            </span>
-          )}
-        </span>
-        <a
-          href="https://docs.github.com/en/copilot/concepts/billing/usage-based-billing-for-organizations-and-enterprises#how-do-ai-credits-work"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="ml-2 underline-offset-2 hover:underline text-neutral-500"
-        >
-          Docs ↗
-        </a>
-      </div>
-    </div>
-  )
-}
-
-/**
- * SharedPoolCard — visualizes the included AI credit pool that the
- * enterprise's CB and CE licenses entitle the organization to consume
- * before any metered charges begin. Terminology matches the GitHub Copilot
- * billing docs ("shared AI credit pool", "pool value", "metered charges").
- *
- * We intentionally do NOT display a "drawdown percentage" against the pool:
- * the billing usage summary API only reports metered charges. The closest
- * inference is binary — if `meteredMtd > 0`, the pool was exhausted at some
- * point this period; otherwise it's still funding usage. A fabricated
- * drawdown ratio would mislead.
- */
-function SharedPoolCard({
-  seatCost,
-  meteredMtd,
-}: {
-  seatCost: ReturnType<typeof seatCostBreakdown>
   meteredMtd: number | null
 }) {
   const credits = includedAiCredits(seatCost.business, seatCost.enterprise)
   if (credits.totalCredits === 0) {
-    return null
+    return (
+      <Card>
+        <CardContent className="text-sm text-neutral-500">
+          No Copilot Business or Enterprise seats found.
+        </CardContent>
+      </Card>
+    )
   }
-  const poolExhausted = meteredMtd !== null && meteredMtd > 0
-  // Whole dollars — fractional cents aren't meaningful at this scale and
-  // make the headline harder to scan.
   const poolValueWhole = `$${Math.round(credits.totalDollars).toLocaleString('en-US')}`
+  const poolExhausted = meteredMtd !== null && meteredMtd > 0
+  const billedMtd = usage !== null ? usage.cbLicenseNet + usage.ceLicenseNet : null
+
   return (
     <Card>
       <CardHeader>
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div>
-            <CardTitle>Shared AI Credit Pool</CardTitle>
+            <CardTitle>AI credit pool &amp; licenses</CardTitle>
             <p className="text-xs text-neutral-500 mt-1 max-w-2xl">
-              Included AI credits from your CB and CE licenses, pooled at the
-              enterprise and drawn before any metered charges.{' '}
-              <strong className="text-neutral-700 dark:text-neutral-300">
-                Enterprise and cost center budgets do not govern the pool
-              </strong>{' '}
-              — only user-level budgets cap individual drawdown.
+              Your CB and CE seats fund a <strong>shared AI credit pool</strong>{' '}
+              that's drawn before any metered charges. Only user-level budgets
+              (universal ULB + individual overrides) constrain pool drawdown.{' '}
+              <a
+                href="https://docs.github.com/en/copilot/concepts/billing/usage-based-billing-for-organizations-and-enterprises#how-do-ai-credits-work"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline-offset-2 hover:underline text-neutral-500"
+              >
+                Docs ↗
+              </a>
             </p>
           </div>
           {credits.promoActive ? (
@@ -1122,7 +659,7 @@ function SharedPoolCard({
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* 2-tile primary readout — Total AICs + Pool value. */}
+        {/* Pool headline tiles */}
         <div className="grid gap-3 grid-cols-1 sm:grid-cols-2">
           <div className="rounded-md border border-indigo-200 dark:border-indigo-900/60 bg-indigo-50/60 dark:bg-indigo-950/30 p-3">
             <div className="text-[11px] uppercase tracking-wide text-indigo-700 dark:text-indigo-300">
@@ -1148,28 +685,59 @@ function SharedPoolCard({
           </div>
         </div>
 
-        {/* Per-license breakdown rows */}
-        <div className="space-y-2">
-          {seatCost.business > 0 ? (
-            <PoolLicenseRow
-              label="Copilot Business"
-              seats={seatCost.business}
-              creditsPerSeat={credits.perBusiness}
-            />
-          ) : null}
-          {seatCost.enterprise > 0 ? (
-            <PoolLicenseRow
-              label="Copilot Enterprise"
-              seats={seatCost.enterprise}
-              creditsPerSeat={credits.perEnterprise}
-            />
-          ) : null}
+        {/* License contribution table — answers "how many CB / CE licenses
+            do I have and how does that affect the pool". One row tells the
+            full story per license type. */}
+        <div className="rounded-md border border-neutral-200 dark:border-neutral-800 overflow-hidden">
+          <table className="w-full text-xs">
+            <thead className="bg-neutral-50 dark:bg-neutral-900/40 text-neutral-500">
+              <tr>
+                <th className="text-left font-medium px-3 py-2">License</th>
+                <th className="text-right font-medium px-3 py-2">Seats</th>
+                <th className="text-right font-medium px-3 py-2">$/seat</th>
+                <th className="text-right font-medium px-3 py-2">AICs/seat</th>
+                <th className="text-right font-medium px-3 py-2">Pool contribution</th>
+                <th className="text-right font-medium px-3 py-2">License MTD</th>
+              </tr>
+            </thead>
+            <tbody>
+              {seatCost.business > 0 ? (
+                <LicenseContribRow
+                  label="Copilot Business"
+                  seats={seatCost.business}
+                  unitPrice={COPILOT_BUSINESS_LIST_PRICE}
+                  creditsPerSeat={credits.perBusiness}
+                  billedMtd={usage?.cbLicenseNet ?? null}
+                />
+              ) : null}
+              {seatCost.enterprise > 0 ? (
+                <LicenseContribRow
+                  label="Copilot Enterprise"
+                  seats={seatCost.enterprise}
+                  unitPrice={COPILOT_ENTERPRISE_LIST_PRICE}
+                  creditsPerSeat={credits.perEnterprise}
+                  billedMtd={usage?.ceLicenseNet ?? null}
+                />
+              ) : null}
+              {seatCost.other > 0 ? (
+                <tr className="border-t border-neutral-200 dark:border-neutral-800 text-neutral-500">
+                  <td className="px-3 py-2">Other plan</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{seatCost.other.toLocaleString()}</td>
+                  <td className="px-3 py-2 text-right">—</td>
+                  <td className="px-3 py-2 text-right">—</td>
+                  <td className="px-3 py-2 text-right">—</td>
+                  <td className="px-3 py-2 text-right">—</td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
         </div>
 
-        {/* Status line — binary, not a fabricated percentage. */}
+        {/* Status line — answers "how much pool used so far". Binary because
+            the billing API doesn't report pool drawdown directly. */}
         <div
           className={
-            'rounded-md border px-3 py-2 text-xs ' +
+            'rounded-md border px-3 py-2 text-xs flex flex-wrap items-baseline gap-x-2 gap-y-1 ' +
             (meteredMtd === null
               ? 'border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900/40 text-neutral-600 dark:text-neutral-400'
               : poolExhausted
@@ -1178,65 +746,410 @@ function SharedPoolCard({
           }
         >
           {meteredMtd === null ? (
-            <>
-              Pool drawdown is not directly reported by the billing API. Connect
-              billing scope to see whether the pool has been exhausted.
-            </>
+            <span>
+              Metered status unknown — connect a billing-scope token to see
+              whether the pool has been exhausted.
+            </span>
           ) : poolExhausted ? (
             <>
-              <strong>Pool exhausted this billing period.</strong>{' '}
-              {formatCurrency(meteredMtd)} of metered charges accrued so far —
-              see metered-charge metrics above and the forecast below.
+              <strong>Pool exhausted this period.</strong>
+              <span>
+                {formatCurrency(meteredMtd)} in metered charges so far — see
+                details below.
+              </span>
             </>
           ) : (
             <>
-              <strong>Pool is still funding all AI credit usage this period.</strong>{' '}
-              $0 in metered charges so far — the enterprise and cost center
-              budgets below are precautionary until the pool runs out.
+              <strong>Pool still funding all usage.</strong>
+              <span>$0 in metered charges so far this period.</span>
             </>
           )}
+          {billedMtd !== null ? (
+            <span className="ml-auto text-neutral-500 dark:text-neutral-400 text-[11px]">
+              License spend MTD {formatCurrency(billedMtd)} · full-month
+              estimate {formatCurrency(seatCost.monthlyCost)}
+            </span>
+          ) : null}
         </div>
-
-        <p className="text-[11px] text-neutral-500 dark:text-neutral-500 leading-snug">
-          Included credits per{' '}
-          <a
-            href="https://docs.github.com/en/copilot/concepts/billing/usage-based-billing-for-organizations-and-enterprises#how-do-ai-credits-work"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="underline hover:text-neutral-700 dark:hover:text-neutral-300"
-          >
-            GitHub Copilot billing docs
-          </a>
-          : {credits.promoActive ? '3,000' : '1,900'} AICs/seat/mo Business,{' '}
-          {credits.promoActive ? '7,000' : '3,900'} AICs/seat/mo Enterprise.
-        </p>
       </CardContent>
     </Card>
   )
 }
 
-function PoolLicenseRow({
+function LicenseContribRow({
   label,
   seats,
+  unitPrice,
   creditsPerSeat,
+  billedMtd,
 }: {
   label: string
   seats: number
+  unitPrice: number
   creditsPerSeat: number
+  billedMtd: number | null
 }) {
-  const total = seats * creditsPerSeat
+  const totalAics = seats * creditsPerSeat
+  const poolValue = totalAics * 0.01
   return (
-    <div className="flex items-center justify-between gap-3 rounded-md border border-neutral-200 dark:border-neutral-800 px-3 py-2 text-xs">
-      <div className="font-medium text-neutral-700 dark:text-neutral-300">
+    <tr className="border-t border-neutral-200 dark:border-neutral-800">
+      <td className="px-3 py-2 font-medium text-neutral-700 dark:text-neutral-300">
         {label}
-      </div>
-      <div className="text-neutral-500 tabular-nums">
-        {seats.toLocaleString()} seats × {creditsPerSeat.toLocaleString()} AICs ={' '}
-        <span className="font-semibold text-neutral-800 dark:text-neutral-200">
-          {total.toLocaleString()}
-        </span>{' '}
-        AICs <span className="text-neutral-400">({formatCurrency(total * 0.01)})</span>
-      </div>
-    </div>
+      </td>
+      <td className="px-3 py-2 text-right tabular-nums">{seats.toLocaleString()}</td>
+      <td className="px-3 py-2 text-right tabular-nums text-neutral-500">
+        ${unitPrice}
+      </td>
+      <td className="px-3 py-2 text-right tabular-nums text-neutral-500">
+        {creditsPerSeat.toLocaleString()}
+      </td>
+      <td className="px-3 py-2 text-right tabular-nums">
+        <span className="font-medium">{totalAics.toLocaleString()}</span>
+        <span className="text-neutral-500 ml-1">
+          (${Math.round(poolValue).toLocaleString()})
+        </span>
+      </td>
+      <td className="px-3 py-2 text-right tabular-nums text-neutral-700 dark:text-neutral-300">
+        {billedMtd !== null ? formatCurrency(billedMtd) : '—'}
+      </td>
+    </tr>
+  )
+}
+
+/**
+ * § 3 — Cost centers status. Per-CC rollup answering "how are my cost
+ * centers doing today". MTD per CC is derived from sum of user-budget
+ * consumed_amount for users routed to the CC (the only thing the budgets
+ * API can give us — cost_center-scope budgets don't report consumed). For
+ * CCs whose seats rely on the universal ULB, MTD shows as "—" with a
+ * footnote caveat.
+ */
+function CostCenterStatusCard({
+  pool,
+  seats,
+  budgets,
+  loginToCostCenter,
+}: {
+  pool: ReturnType<typeof computePoolSplit>
+  seats: import('@/lib/api').CopilotSeat[]
+  budgets: import('@/lib/api').UserBudget[]
+  loginToCostCenter: ReturnType<typeof useCredentials>['loginToCostCenter']
+}) {
+  // Per-CC derived MTD: sum of user-budget consumed_amount for users routed
+  // to each CC, plus count of seats with vs. without individual ULB so we
+  // can warn when our MTD only represents a fraction of the CC's seats.
+  const perCc = useMemo(() => {
+    type CcRow = {
+      ccId: string
+      ulbMtd: number
+      ulbProjected: number
+      seatsWithUlb: number
+      seatsTotal: number
+    }
+    const rows = new Map<string, CcRow>()
+    const budgetByLogin = new Map<string, import('@/lib/api').UserBudget>()
+    for (const b of budgets) if (b.user) budgetByLogin.set(b.user.toLowerCase(), b)
+    for (const seat of seats) {
+      const login = seat.login.toLowerCase()
+      const cc = loginToCostCenter.get(login)?.cc
+      if (!cc) continue
+      let row = rows.get(cc.id)
+      if (!row) {
+        row = { ccId: cc.id, ulbMtd: 0, ulbProjected: 0, seatsWithUlb: 0, seatsTotal: 0 }
+        rows.set(cc.id, row)
+      }
+      row.seatsTotal += 1
+      const b = budgetByLogin.get(login)
+      if (b) {
+        row.seatsWithUlb += 1
+        row.ulbMtd += b.consumedAmount
+        row.ulbProjected += projectMonthlyBudget(b.consumedAmount, 0).projectedMonthTotal
+      }
+    }
+    return rows
+  }, [seats, budgets, loginToCostCenter])
+
+  if (pool.costCenters.length === 0) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Cost centers</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <EmptyChart message="No cost centers route Copilot today." />
+        </CardContent>
+      </Card>
+    )
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Cost centers</CardTitle>
+        <p className="text-xs text-neutral-500 mt-1">
+          {pool.costCenters.length} CC{pool.costCenters.length === 1 ? '' : 's'} routing Copilot today.
+          MTD comes from individual ULBs in each CC — universal-ULB users aren't reported per CC.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="rounded-md border border-neutral-200 dark:border-neutral-800 overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead className="bg-neutral-50 dark:bg-neutral-900/40 text-neutral-500">
+              <tr>
+                <th className="text-left font-medium px-3 py-2">Cost center</th>
+                <th className="text-right font-medium px-3 py-2">Seats</th>
+                <th className="text-right font-medium px-3 py-2">Budget</th>
+                <th className="text-right font-medium px-3 py-2">ULB ceiling</th>
+                <th className="text-right font-medium px-3 py-2">MTD (ULB users)</th>
+                <th className="text-right font-medium px-3 py-2">Projected (ULB users)</th>
+                <th className="text-left font-medium px-3 py-2 pl-4">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {pool.costCenters.map(cc => {
+                const data = perCc.get(cc.costCenterId)
+                const mtd = data?.ulbMtd ?? 0
+                const proj = data?.ulbProjected ?? 0
+                const seatsWithUlb = data?.seatsWithUlb ?? 0
+                const seatsTotal = data?.seatsTotal ?? cc.seatCount
+                const measured = seatsWithUlb > 0
+                const partial = measured && seatsWithUlb < seatsTotal
+                const budgetExceeded =
+                  cc.budgetAmount !== null && proj > cc.budgetAmount
+                const ceilingBinds =
+                  cc.budgetAmount !== null && cc.ulbCeiling < cc.budgetAmount
+                let status: { label: string; tone: 'ok' | 'warn' | 'info' }
+                if (cc.budgetAmount === null) {
+                  status = { label: 'Uncapped · bounded by ULB ceiling', tone: 'info' }
+                } else if (budgetExceeded) {
+                  status = { label: 'Projected to exceed budget', tone: 'warn' }
+                } else if (ceilingBinds) {
+                  status = { label: 'ULB ceiling < budget', tone: 'info' }
+                } else {
+                  status = { label: 'On track', tone: 'ok' }
+                }
+                return (
+                  <tr key={cc.costCenterId} className="border-t border-neutral-200 dark:border-neutral-800">
+                    <td className="px-3 py-2 font-medium text-neutral-700 dark:text-neutral-300">
+                      {cc.name}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      {seatsTotal.toLocaleString()}
+                      {partial ? (
+                        <span className="text-neutral-400 ml-1" title={`${seatsWithUlb} have individual ULB`}>
+                          ({seatsWithUlb}/{seatsTotal})
+                        </span>
+                      ) : null}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      {cc.budgetAmount === null ? (
+                        <span className="text-neutral-500">Uncapped</span>
+                      ) : (
+                        formatCurrency(cc.budgetAmount)
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums text-neutral-600 dark:text-neutral-400">
+                      {formatCurrency(cc.ulbCeiling)}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      {measured ? formatCurrency(mtd) : <span className="text-neutral-400">—</span>}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      {measured ? formatCurrency(proj) : <span className="text-neutral-400">—</span>}
+                    </td>
+                    <td className="px-3 py-2 pl-4">
+                      <span
+                        className={cn(
+                          'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium',
+                          status.tone === 'warn' && 'bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-200',
+                          status.tone === 'info' && 'bg-neutral-100 text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300',
+                          status.tone === 'ok' && 'bg-emerald-100 text-emerald-900 dark:bg-emerald-900/40 dark:text-emerald-200',
+                        )}
+                      >
+                        {status.label}
+                      </span>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+        {pool.unassignedTotal > 0 ? (
+          <div className="text-[11px] text-neutral-500">
+            Plus {formatCurrency(pool.unassignedTotal)} of effective draw from seats not routed to any cost center.
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
+  )
+}
+
+/**
+ * § 4 — Action items. Surfaces already-computed signals (forecast over,
+ * missing budgets, over-allocation) that the rest of the dashboard hints
+ * at but doesn't make actionable. Each row deeplinks to the tab that
+ * can fix it. Renders "All clear" when nothing is flagged.
+ */
+type ActionItem = {
+  id: string
+  severity: 'high' | 'medium' | 'low'
+  title: string
+  hint?: string
+  ctaLabel: string
+  onCta: () => void
+}
+
+function ActionItemsCard({
+  forecast,
+  universalUlb,
+  entAmount,
+  pool,
+  seats,
+  budgets,
+  loginToCostCenter,
+}: {
+  forecast: ReturnType<typeof forecastSummary>
+  universalUlb: import('@/lib/api').UniversalUlb | null
+  entAmount: number | null
+  pool: ReturnType<typeof computePoolSplit>
+  seats: import('@/lib/api').CopilotSeat[]
+  budgets: import('@/lib/api').UserBudget[]
+  loginToCostCenter: ReturnType<typeof useCredentials>['loginToCostCenter']
+}) {
+  const items: ActionItem[] = []
+
+  if (forecast.alreadyOver > 0) {
+    items.push({
+      id: 'already-over',
+      severity: 'high',
+      title: `${forecast.alreadyOver} user${forecast.alreadyOver === 1 ? '' : 's'} blocked at their ULB`,
+      hint: 'Already over their individual ULB this cycle.',
+      ctaLabel: 'Review',
+      onCta: () =>
+        window.dispatchEvent(new CustomEvent(NAV_TO_INDIVIDUAL_EVENT, { detail: {} })),
+    })
+  }
+  if (forecast.projectedOver > 0) {
+    items.push({
+      id: 'projected-over',
+      severity: 'medium',
+      title: `${forecast.projectedOver} user${forecast.projectedOver === 1 ? '' : 's'} projected over their ULB`,
+      hint: 'On track to exceed cap at current burn.',
+      ctaLabel: 'Review',
+      onCta: () =>
+        window.dispatchEvent(new CustomEvent(NAV_TO_INDIVIDUAL_EVENT, { detail: {} })),
+    })
+  }
+  if (entAmount === null) {
+    items.push({
+      id: 'missing-ent',
+      severity: 'medium',
+      title: 'No enterprise budget set',
+      hint: "Metered charges aren't capped at the enterprise level.",
+      ctaLabel: 'Set budget',
+      onCta: () => window.dispatchEvent(new CustomEvent(NAV_TO_BUDGET_MODEL_EVENT)),
+    })
+  }
+  if (pool.overAllocated && entAmount !== null) {
+    const overshoot = pool.cappedTotal + pool.uncappedTotal + pool.unassignedTotal - entAmount
+    items.push({
+      id: 'over-alloc',
+      severity: 'high',
+      title: `CC commitments exceed enterprise budget by ${formatCurrency(overshoot)}`,
+      hint: 'Sum of CC effective draws is higher than the enterprise cap.',
+      ctaLabel: 'Open budgets',
+      onCta: () => window.dispatchEvent(new CustomEvent(NAV_TO_BUDGET_MODEL_EVENT)),
+    })
+  }
+  if (!universalUlb) {
+    const indLogins = new Set(budgets.filter(b => b.user).map(b => b.user.toLowerCase()))
+    const fallbackSeats = seats.filter(s => !indLogins.has(s.login.toLowerCase())).length
+    if (fallbackSeats > 0) {
+      items.push({
+        id: 'missing-univ',
+        severity: 'medium',
+        title: `No universal ULB · ${fallbackSeats.toLocaleString()} seat${fallbackSeats === 1 ? '' : 's'} have no per-user cap`,
+        hint: 'Their pool drawdown is unconstrained until the pool runs out.',
+        ctaLabel: 'Set universal ULB',
+        onCta: () => window.dispatchEvent(new CustomEvent(NAV_TO_UNIVERSAL_EVENT)),
+      })
+    }
+  }
+  // Uncapped CCs whose seats include any without individual ULB coverage —
+  // a recipe for surprise spend once the pool exhausts.
+  const indLoginsForCcCheck = new Set(
+    budgets.filter(b => b.user).map(b => b.user.toLowerCase()),
+  )
+  const uncappedRiskyCcs = pool.costCenters.filter(cc => {
+    if (cc.budgetAmount !== null) return false
+    if (universalUlb) return false // universal ULB covers them
+    // count seats in this CC without an individual ULB
+    let bare = 0
+    for (const seat of seats) {
+      const r = loginToCostCenter.get(seat.login.toLowerCase())?.cc
+      if (r?.id !== cc.costCenterId) continue
+      if (!indLoginsForCcCheck.has(seat.login.toLowerCase())) bare += 1
+    }
+    return bare > 0
+  })
+  if (uncappedRiskyCcs.length > 0) {
+    items.push({
+      id: 'uncapped-risky',
+      severity: 'medium',
+      title: `${uncappedRiskyCcs.length} uncapped CC${uncappedRiskyCcs.length === 1 ? '' : 's'} have seats with no ULB fallback`,
+      hint: 'No CC budget AND no user-level cap once the pool exhausts.',
+      ctaLabel: 'Open budgets',
+      onCta: () => window.dispatchEvent(new CustomEvent(NAV_TO_BUDGET_MODEL_EVENT)),
+    })
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Action items</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {items.length === 0 ? (
+          <div className="flex items-center gap-2 text-sm text-emerald-700 dark:text-emerald-300">
+            <span className="inline-block w-2 h-2 rounded-full bg-emerald-500" />
+            All clear — no items to address.
+          </div>
+        ) : (
+          <ul className="divide-y divide-neutral-200 dark:divide-neutral-800 -mx-4 -my-2">
+            {items.map(item => (
+              <li
+                key={item.id}
+                className="px-4 py-3 flex items-start gap-3"
+              >
+                <span
+                  className={cn(
+                    'mt-1.5 inline-block w-2 h-2 rounded-full shrink-0',
+                    item.severity === 'high' && 'bg-red-500',
+                    item.severity === 'medium' && 'bg-amber-500',
+                    item.severity === 'low' && 'bg-neutral-400',
+                  )}
+                />
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                    {item.title}
+                  </div>
+                  {item.hint ? (
+                    <div className="text-xs text-neutral-500 mt-0.5">{item.hint}</div>
+                  ) : null}
+                </div>
+                <button
+                  type="button"
+                  onClick={item.onCta}
+                  className="text-xs text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 hover:underline underline-offset-2 shrink-0"
+                >
+                  {item.ctaLabel} →
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
   )
 }
