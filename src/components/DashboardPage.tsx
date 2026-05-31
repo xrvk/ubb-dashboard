@@ -906,18 +906,12 @@ function CostCenterBulletList({
   rows: CcBulletRow[]
   unassignedDraw: number
 }) {
-  // Shared scale across all rows so budget/ceiling ticks line up visually
-  // and CCs are comparable in size. Round up to a "nice" number so the
-  // right edge feels stable.
-  const rawMax = Math.max(
-    1,
-    ...rows.flatMap(r => [r.budget ?? 0, r.projected, r.mtd]),
-    unassignedDraw,
-  )
-  const scaleMax = niceCeil(rawMax)
-  const sorted = [...rows].sort(
-    (a, b) => (b.budget ?? b.ceiling) - (a.budget ?? a.ceiling),
-  )
+  // Sort: budgeted CCs first (by budget desc), uncapped last.
+  const sorted = [...rows].sort((a, b) => {
+    if (a.budget === null && b.budget !== null) return 1
+    if (b.budget === null && a.budget !== null) return -1
+    return (b.budget ?? b.mtd) - (a.budget ?? a.mtd)
+  })
   return (
     <div className="rounded-md border border-neutral-200 dark:border-neutral-800 p-3 space-y-3">
       <div className="flex items-center gap-4 text-[10px] text-neutral-500">
@@ -927,13 +921,10 @@ function CostCenterBulletList({
         <span className="inline-flex items-center gap-1.5">
           <span className="inline-block w-3 h-2 rounded-sm bg-emerald-300 dark:bg-emerald-500/40" />Projected
         </span>
-        <span className="inline-flex items-center gap-1">
-          <span className="inline-block w-0.5 h-3 bg-neutral-900 dark:bg-neutral-200" />Budget cap
-        </span>
-        <span className="ml-auto tabular-nums">scale 0 – {formatCurrency(scaleMax)}</span>
+        <span className="ml-auto">Each bar = 0 → CC budget</span>
       </div>
       {sorted.map(row => (
-        <CcBulletRowView key={row.key} row={row} scaleMax={scaleMax} />
+        <CcBulletRowView key={row.key} row={row} />
       ))}
       {unassignedDraw > 0 ? (
         <CcBulletRowView
@@ -947,7 +938,6 @@ function CostCenterBulletList({
             projected: unassignedDraw,
             measured: true,
           }}
-          scaleMax={scaleMax}
           muted
         />
       ) : null}
@@ -955,37 +945,28 @@ function CostCenterBulletList({
   )
 }
 
-/** Round up to a friendly axis max so the right edge feels stable. */
-function niceCeil(value: number): number {
-  if (value <= 0) return 1
-  const exp = Math.floor(Math.log10(value))
-  const pow = Math.pow(10, exp)
-  const norm = value / pow
-  let nice: number
-  if (norm <= 1) nice = 1
-  else if (norm <= 2) nice = 2
-  else if (norm <= 2.5) nice = 2.5
-  else if (norm <= 5) nice = 5
-  else nice = 10
-  return nice * pow
-}
-
 function CcBulletRowView({
   row,
-  scaleMax,
   muted = false,
 }: {
   row: CcBulletRow
-  scaleMax: number
   muted?: boolean
 }) {
   const { name, budget, mtd, projected, measured } = row
-  const mtdPct = Math.min(100, (mtd / scaleMax) * 100)
-  const projPct = Math.min(100, (projected / scaleMax) * 100)
-  const budgetPct = budget !== null ? Math.min(100, (budget / scaleMax) * 100) : null
 
-  const overBudget = budget !== null && projected > budget
-  const nearBudget = budget !== null && projected > budget * 0.8 && !overBudget
+  // Per-row scale: budget = 100% of the bar. Overflow is clamped at 100%
+  // and surfaced via the right-side "112%" label. Uncapped CCs (and the
+  // muted unassigned row) get a faint full-width bar so the bar still
+  // reads — there's no cap to scale against.
+  const hasBudget = budget !== null && budget > 0
+  const mtdPct = hasBudget ? Math.min(100, (mtd / budget!) * 100) : 100
+  const projPct = hasBudget ? Math.min(100, (projected / budget!) * 100) : 100
+  const projOverPct = hasBudget && projected > budget!
+    ? Math.round((projected / budget!) * 100)
+    : null
+
+  const overBudget = hasBudget && projected > budget!
+  const nearBudget = hasBudget && projected > budget! * 0.8 && !overBudget
   const fillColor = muted
     ? 'bg-neutral-400 dark:bg-neutral-500'
     : overBudget
@@ -1000,6 +981,8 @@ function CcBulletRowView({
       : nearBudget
         ? 'bg-amber-300 dark:bg-amber-500/40'
         : 'bg-emerald-300 dark:bg-emerald-500/40'
+  // Uncapped: render a faint single-tone bar so we don't imply 100%.
+  const uncappedBar = !hasBudget && !muted
 
   const numericLabel = (() => {
     if (muted) {
@@ -1009,21 +992,33 @@ function CcBulletRowView({
         </span>
       )
     }
+    if (!hasBudget) {
+      return measured ? (
+        <span className="text-neutral-500">
+          {formatCurrency(mtd)} spend · proj {formatCurrency(projected)} · uncapped
+        </span>
+      ) : (
+        <span className="text-neutral-400">no spend yet · uncapped</span>
+      )
+    }
     if (!measured) {
       return (
         <span className="text-neutral-400">
-          no spend yet
-          {budget !== null ? ` · budget ${formatCurrency(budget)}` : ''}
+          no spend yet · budget {formatCurrency(budget!)}
         </span>
       )
     }
-    const left = budget !== null
-      ? `${formatCurrency(mtd)} / ${formatCurrency(budget)}`
-      : `${formatCurrency(mtd)} spend · uncapped`
     return (
       <>
-        <span className="text-neutral-700 dark:text-neutral-200">{left}</span>
+        <span className="text-neutral-700 dark:text-neutral-200">
+          {formatCurrency(mtd)} / {formatCurrency(budget!)}
+        </span>
         <span className="text-neutral-500"> · proj {formatCurrency(projected)}</span>
+        {projOverPct !== null ? (
+          <span className="ml-1.5 rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-medium text-red-700 dark:bg-red-900/40 dark:text-red-200">
+            {projOverPct}% of budget
+          </span>
+        ) : null}
       </>
     )
   })()
@@ -1039,7 +1034,14 @@ function CcBulletRowView({
       >
         {name}
       </div>
-      <div className="relative h-3 rounded-sm bg-neutral-100 dark:bg-neutral-800/70 overflow-hidden">
+      <div
+        className={cn(
+          'relative h-3 rounded-sm overflow-hidden',
+          uncappedBar
+            ? 'bg-neutral-50 dark:bg-neutral-800/30 border border-dashed border-neutral-200 dark:border-neutral-700'
+            : 'bg-neutral-100 dark:bg-neutral-800/70',
+        )}
+      >
         {/* Projected trail (lighter, behind MTD) */}
         <div
           className={cn('absolute inset-y-0 left-0', trailColor)}
@@ -1052,16 +1054,10 @@ function CcBulletRowView({
           style={{ width: `${mtdPct}%` }}
           title={`MTD ${formatCurrency(mtd)}`}
         />
-        {/* Budget tick (dark vertical line) */}
-        {budgetPct !== null ? (
-          <div
-            className="absolute inset-y-0 w-0.5 bg-neutral-900 dark:bg-neutral-200"
-            style={{ left: `calc(${budgetPct}% - 1px)` }}
-            title={`Budget ${formatCurrency(budget!)}`}
-          />
-        ) : null}
       </div>
-      <div className="text-[11px] tabular-nums text-right whitespace-nowrap">{numericLabel}</div>
+      <div className="text-[11px] tabular-nums text-right whitespace-nowrap flex items-center justify-end gap-0">
+        {numericLabel}
+      </div>
     </div>
   )
 }
