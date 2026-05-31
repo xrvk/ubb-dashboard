@@ -255,19 +255,21 @@ export function UniversalUlbPage() {
   }
 
   // Resolved create-targets (selected outliers + their final $ amounts).
-  // Computed every render so the confirm dialog and the create call share
-  // the exact same numbers shown to the user. (React Compiler memoizes.)
+  // Buffer is applied last so it uniformly inflates whichever base $ is in
+  // play (edited override or max-month spend). Computed every render so the
+  // confirm dialog and the create call share the exact same numbers shown
+  // to the user. (React Compiler memoizes.)
+  const bufferMultiplier = 1 + outlierBufferPct / 100
   const outlierTargets = threshold.powerUsers
     .filter(u => selectedOutliers.has(u.login))
     .map(u => {
-      const suggested = Math.max(
-        1,
-        Math.ceil((u.totalAICs / AICS_PER_USD) * (1 + outlierBufferPct / 100)),
-      )
+      const baseMaxMonthDollars = u.totalAICs / AICS_PER_USD
       const edited = editedOutlierUlbs[u.login]
+      const base = edited ?? baseMaxMonthDollars
+      const amount = Math.max(1, Math.ceil(base * bufferMultiplier))
       return {
         login: u.login,
-        amount: edited ?? suggested,
+        amount,
         isEdited: edited !== undefined,
       }
     })
@@ -603,7 +605,7 @@ export function UniversalUlbPage() {
                 Step 3 · Outliers ({threshold.powerUsers.length.toLocaleString()})
               </h2>
               <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
-                Suggested individual ULB = max-month $ × (1 + growth buffer). Edit rows below or tweak the buffer before applying.
+                Suggested individual ULB = max-month $. Edit rows below; a growth buffer is added when you apply.
               </p>
             </div>
             {threshold.powerUsers.length > 0 && (
@@ -716,7 +718,7 @@ export function UniversalUlbPage() {
                         {pageRows.map(u => {
                           const suggested = Math.max(
                             1,
-                            Math.ceil((u.totalAICs / AICS_PER_USD) * (1 + outlierBufferPct / 100)),
+                            Math.ceil(u.totalAICs / AICS_PER_USD),
                           )
                           const isEdited = editedOutlierLogins.has(u.login)
                           const value = isEdited ? editedOutlierUlbs[u.login] : suggested
