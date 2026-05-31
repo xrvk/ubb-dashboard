@@ -75,8 +75,8 @@ export function UniversalUlbPage() {
   // reset overrides without a setState-in-effect.
   const [customThresholdEntry, setCustomThresholdEntry] = useState<{ sig: string; value: number } | null>(null)
   const [ulbOverrideEntry, setUlbOverrideEntry] = useState<{ sig: string; value: number } | null>(null)
-  /** Logins the admin explicitly UNCHECKED. All outliers are selected by default. */
-  const [deselectedOutliers, setDeselectedOutliers] = useState<Set<string>>(new Set())
+  /** Logins the admin has explicitly checked. None are selected by default. */
+  const [selectedOutlierLogins, setSelectedOutlierLogins] = useState<Set<string>>(new Set())
   /** Per-outlier ULB override in dollars. Logins in this map are treated as
    * "manually configured" — they're excluded from the select-all toggle and
    * their value is used directly instead of the suggested formula. */
@@ -175,11 +175,11 @@ export function UniversalUlbPage() {
     [seats, indUlbLogins],
   )
 
-  // Default-selected outliers, derived: every power user except those the
-  // admin explicitly unchecked.
+  // Selected outliers, derived: intersection of the admin's explicit picks
+  // with the current power-user set (drops stale logins when threshold changes).
   const selectedOutliers = useMemo(
-    () => new Set(threshold.powerUsers.map(u => u.login).filter(l => !deselectedOutliers.has(l))),
-    [threshold.powerUsers, deselectedOutliers],
+    () => new Set(threshold.powerUsers.map(u => u.login).filter(l => selectedOutlierLogins.has(l))),
+    [threshold.powerUsers, selectedOutlierLogins],
   )
 
   const handleEditCap = async (newAmount: number) => {
@@ -272,11 +272,10 @@ export function UniversalUlbPage() {
   const editedTargetCount = outlierTargets.filter(t => t.isEdited).length
 
   const toggleOutlier = (login: string) => {
-    setDeselectedOutliers(prev => {
+    setSelectedOutlierLogins(prev => {
       const next = new Set(prev)
-      // Selected → moving to deselected, and vice-versa.
-      if (selectedOutliers.has(login)) next.add(login)
-      else next.delete(login)
+      if (next.has(login)) next.delete(login)
+      else next.add(login)
       return next
     })
   }
@@ -293,12 +292,12 @@ export function UniversalUlbPage() {
       if (idxA >= 0 && idxB >= 0) {
         const [lo, hi] = idxA < idxB ? [idxA, idxB] : [idxB, idxA]
         const targetSelected = !selectedOutliers.has(login)
-        setDeselectedOutliers(prev => {
+        setSelectedOutlierLogins(prev => {
           const next = new Set(prev)
           for (let i = lo; i <= hi; i++) {
             const u = filteredPowerUsers[i]
-            if (targetSelected) next.delete(u.login)
-            else next.add(u.login)
+            if (targetSelected) next.add(u.login)
+            else next.delete(u.login)
           }
           return next
         })
@@ -376,16 +375,16 @@ export function UniversalUlbPage() {
   const toggleAll = () => {
     if (allSelected) {
       // Deselect all unmodified; leave edited rows' state untouched.
-      setDeselectedOutliers(prev => {
+      setSelectedOutlierLogins(prev => {
         const next = new Set(prev)
-        for (const u of unmodifiedPowerUsers) next.add(u.login)
+        for (const u of unmodifiedPowerUsers) next.delete(u.login)
         return next
       })
     } else {
       // Select all unmodified; leave edited rows' state untouched.
-      setDeselectedOutliers(prev => {
+      setSelectedOutlierLogins(prev => {
         const next = new Set(prev)
-        for (const u of unmodifiedPowerUsers) next.delete(u.login)
+        for (const u of unmodifiedPowerUsers) next.add(u.login)
         return next
       })
     }
