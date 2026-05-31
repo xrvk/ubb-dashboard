@@ -188,7 +188,7 @@ export function BudgetStructureDiagram() {
                       <Tooltip key={seg.id}>
                         <TooltipTrigger asChild>
                           <div
-                            className="h-full flex items-center justify-center px-1 text-[10px] font-medium bg-amber-500/25 text-amber-900 dark:bg-amber-400/25 dark:text-amber-200 cursor-help transition-all duration-200 truncate"
+                            className="h-full flex items-center justify-start px-1.5 text-[10px] font-medium bg-amber-500/25 text-amber-900 dark:bg-amber-400/25 dark:text-amber-200 cursor-help transition-all duration-200 truncate"
                             style={{
                               width: `${seg.percent}%`,
                               minWidth: ccSegments.length <= 6 ? '2rem' : '0.5rem',
@@ -275,7 +275,7 @@ export function BudgetStructureDiagram() {
                       <TooltipTrigger asChild>
                         <div
                           className={cn(
-                            'h-full flex items-center justify-center px-1 text-[10px] font-medium cursor-help transition-all duration-200 truncate',
+                            'h-full flex items-center justify-start px-1.5 text-[10px] font-medium cursor-help transition-all duration-200 truncate',
                             seg.uncapped
                               ? 'text-red-700 dark:text-red-300'
                               : 'bg-amber-500/30 text-amber-900 dark:bg-amber-400/30 dark:text-amber-200',
