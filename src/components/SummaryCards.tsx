@@ -29,7 +29,7 @@ export function SummaryCards({ summary, onSelectOver, onSelectNear, onReset }: P
       hint: 'Click to clear filters',
     },
     {
-      label: 'Over budget',
+      label: 'Users capped',
       value: summary.over.toLocaleString(),
       icon: <Warning size={20} weight="duotone" className="text-red-600" />,
       accent: summary.over > 0 ? 'text-red-600 dark:text-red-400' : '',
