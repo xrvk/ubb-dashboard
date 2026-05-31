@@ -19,7 +19,7 @@ import { runBatch, type BatchProgress } from '@/lib/batch'
 import { clearSnapshot, endOfMonth, loadSnapshot, saveSnapshot, type BulkApplySnapshot } from '@/lib/snapshot'
 
 export function App() {
-  const { credentials, budgets, totalBudgetCount, seats, loading, loadProgress, apiFetch, refresh } = useCredentials()
+  const { credentials, budgets, totalBudgetCount, seats, costCenters, loginToCostCenter, loading, loadProgress, apiFetch, refresh } = useCredentials()
   const { resolvedTheme, setTheme } = useTheme()
 
   const [editing, setEditing] = useState<UserBudget | null>(null)
@@ -323,6 +323,8 @@ export function App() {
                       onEdit={setEditing}
                       onDelete={setDeleting}
                       onBulkUnblock={items => setBulkUnblock(items)}
+                      costCenters={costCenters}
+                      loginToCostCenter={loginToCostCenter}
                     />
                   </div>
                 </>
