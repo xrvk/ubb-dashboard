@@ -18,7 +18,15 @@ import {
   type UniversalUlb,
   type UserBudget,
 } from '@/lib/api'
-import { generateDemoBudgets, generateDemoSeats, readDemoCountFromUrl } from '@/lib/demo'
+import {
+  generateDemoBudgets,
+  generateDemoCostCenterBudgets,
+  generateDemoCostCenters,
+  generateDemoEnterpriseBudget,
+  generateDemoSeats,
+  generateDemoUniversalUlb,
+  readDemoCountFromUrl,
+} from '@/lib/demo'
 
 interface CredentialsContextValue {
   credentials: Credentials | null
@@ -78,10 +86,10 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
       setBudgets(demoBudgets)
       setTotalBudgetCount(demoBudgets.length)
       setSeats(generateDemoSeats(demoCount))
-      setCostCenters([])
-      setUniversalUlb(null)
-      setEnterpriseBudget(null)
-      setCostCenterBudgetsByName(new Map())
+      setCostCenters(generateDemoCostCenters(demoCount))
+      setUniversalUlb(generateDemoUniversalUlb())
+      setEnterpriseBudget(generateDemoEnterpriseBudget())
+      setCostCenterBudgetsByName(generateDemoCostCenterBudgets())
       return
     }
     if (!apiFetch) return
@@ -172,6 +180,10 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
         setBudgets(demoBudgets)
         setTotalBudgetCount(demoBudgets.length)
         setSeats(generateDemoSeats(demoCount))
+        setCostCenters(generateDemoCostCenters(demoCount))
+        setUniversalUlb(generateDemoUniversalUlb())
+        setEnterpriseBudget(generateDemoEnterpriseBudget())
+        setCostCenterBudgetsByName(generateDemoCostCenterBudgets())
       })
       return
     }

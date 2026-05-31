@@ -1,4 +1,10 @@
-import type { UserBudget } from './api'
+import type {
+  CostCenter,
+  CostCenterBudget,
+  EnterpriseBudget,
+  UniversalUlb,
+  UserBudget,
+} from './api'
 
 /**
  * Generate N synthetic user budgets for UI scale testing.
@@ -94,5 +100,93 @@ export function generateDemoSeats(count: number) {
       planType: 'business',
     })
   }
+  return out
+}
+
+/**
+ * Build a deterministic set of cost centers whose member sums + budgets are
+ * deliberately calibrated to trip two common constraint failures, so demo
+ * mode shows the Overview banner with real action items:
+ *
+ *   1. per_cc — both capped CCs (platform-eng, data-platform) have effective
+ *      ULB sums (~$500 default × member count) that exceed their cost-center
+ *      budgets, so they over-allocate.
+ *   2. cc_vs_enterprise — sum of capped CC budgets + leftover users at the
+ *      universal ULB exceeds the enterprise cap.
+ *
+ * Membership is keyed off the same `demo-user-NNNN` login scheme used by
+ * generateDemoSeats so loginToCostCenter resolves cleanly.
+ */
+export function generateDemoCostCenters(count: number): CostCenter[] {
+  const totalSeats = Math.ceil(count * 1.5)
+  // Split the active seat pool four ways with one slice intentionally left
+  // unassigned so the cc_vs_enterprise leftover branch is exercised.
+  const peSize = Math.min(Math.round(totalSeats * 0.4), totalSeats)
+  const dpSize = Math.min(Math.round(totalSeats * 0.27), totalSeats - peSize)
+  const dxSize = Math.min(Math.round(totalSeats * 0.2), totalSeats - peSize - dpSize)
+  const secSize = Math.min(Math.round(totalSeats * 0.07), totalSeats - peSize - dpSize - dxSize)
+  const range = (start: number, n: number) =>
+    Array.from({ length: n }, (_, i) => ({
+      type: 'User' as const,
+      name: `demo-user-${String(start + i).padStart(4, '0')}`,
+    }))
+
+  let cursor = 1
+  const platformEng = range(cursor, peSize); cursor += peSize
+  const dataPlatform = range(cursor, dpSize); cursor += dpSize
+  const devx = range(cursor, dxSize); cursor += dxSize
+  const security = range(cursor, secSize)
+  // Anything past cursor + secSize stays unassigned (leftover users).
+
+  return [
+    { id: 'demo-cc-pe', name: 'platform-eng', state: 'active', resources: platformEng },
+    { id: 'demo-cc-dp', name: 'data-platform', state: 'active', resources: dataPlatform },
+    { id: 'demo-cc-dx', name: 'devx', state: 'active', resources: devx },
+    { id: 'demo-cc-sec', name: 'security', state: 'active', resources: security },
+  ]
+}
+
+export function generateDemoEnterpriseBudget(): EnterpriseBudget {
+  return {
+    id: 'demo-ent',
+    budgetAmount: 5000,
+    excludeCostCenterUsage: false,
+    preventFurtherUsage: true,
+    willAlert: true,
+    alertRecipients: ['finance@demo.test'],
+  }
+}
+
+export function generateDemoUniversalUlb(): UniversalUlb {
+  return {
+    id: 'demo-uulb',
+    budgetAmount: 500,
+    consumedAmount: 0,
+    preventFurtherUsage: true,
+    willAlert: false,
+    alertRecipients: [],
+  }
+}
+
+/**
+ * Two of the four CCs get budgets; the remaining two stay uncapped so the
+ * uncapped-CC affordances ("at least $X", Set budget) also appear in demo.
+ * Budgets are intentionally too low for the membership × universal-ULB math
+ * to satisfy them — that's what produces the per_cc failures.
+ */
+export function generateDemoCostCenterBudgets(): Map<string, CostCenterBudget> {
+  const out = new Map<string, CostCenterBudget>()
+  const add = (name: string, amount: number, hard: boolean, alert: boolean) => {
+    out.set(name.toLowerCase(), {
+      id: `demo-ccb-${name}`,
+      costCenterName: name,
+      budgetAmount: amount,
+      preventFurtherUsage: hard,
+      willAlert: alert,
+      alertRecipients: alert ? ['platform-leads@demo.test'] : [],
+    })
+  }
+  add('platform-eng', 5000, true, true)
+  add('data-platform', 3000, true, false)
   return out
 }
