@@ -998,7 +998,7 @@ export function BudgetPlanner() {
                             <td className="px-3 py-1.5 text-right font-mono">
                               <div className="flex items-center justify-end gap-1.5 pr-[18px]">
                                 {uncappedCount > 0 ? (
-                                  <span className="text-neutral-500">at least</span>
+                                  <span className="text-neutral-500">up to</span>
                                 ) : null}
                                 <span className="font-semibold text-neutral-700 dark:text-neutral-200">
                                   {formatCurrency(cappedTotal + uncappedFloor)}
