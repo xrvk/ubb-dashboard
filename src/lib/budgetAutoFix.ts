@@ -115,9 +115,16 @@ export function proposeLowerUniversalUlb(
   if (!Number.isFinite(result.maxSafeUniversalUlb)) return null
   const safe = floorCent(result.maxSafeUniversalUlb)
   if (currentUniversalUlb <= safe) return null
+  // Suppress the proposal when the safe value would be $0 (or negative). At
+  // that point "lower the universal ULB" effectively means "turn it off" —
+  // which isn't a real fix, it just shifts the problem onto whatever still
+  // needs an envelope (the enterprise budget or per-CC budgets). The caller
+  // should surface a different action (raise enterprise, set per-CC budgets)
+  // in that case.
+  if (safe <= 0) return null
   return {
     label: `Lower universal ULB to ${fmt(safe)}`,
-    newValue: Math.max(0, safe),
+    newValue: safe,
     scope: 'universal_ulb',
   }
 }

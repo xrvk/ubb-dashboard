@@ -244,6 +244,21 @@ describe('proposeLowerUniversalUlb', () => {
     )
     expect(proposeLowerUniversalUlb(r, 10)).toBeNull()
   })
+
+  it('returns null when safe max would be $0 (no real fix)', () => {
+    // Ent $0.01, 3 seats, universal $1. Max safe universal ≈ $0.003, floors
+    // to $0 → lowering to $0 isn't a real fix, so the proposal should be
+    // suppressed and the caller should suggest raising the enterprise budget
+    // (or setting per-CC budgets) instead.
+    const r = computeBudgetConstraints(
+      baseInput({
+        enterpriseBudget: entBudget(0.01),
+        universalUlb: universal(1),
+        seats: [seat('a'), seat('b'), seat('c')],
+      }),
+    )
+    expect(proposeLowerUniversalUlb(r, 1)).toBeNull()
+  })
 })
 
 describe('computeRequiredMinimums', () => {
