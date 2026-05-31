@@ -41,8 +41,6 @@ export function saveCachedReport(report: CachedReport): void {
   try {
     localStorage.setItem(key(report.enterprise, report.monthKey), JSON.stringify(report))
   } catch (e) {
-    // localStorage quota errors are non-fatal; just warn so the user knows
-    // the dashboard won't remember this ingestion across reloads.
     console.warn('[ind-ulb-dashboard] Failed to cache report:', e)
   }
 }
@@ -53,4 +51,50 @@ export function clearCachedReport(enterprise: string, monthKey: string): void {
   } catch {
     // ignore
   }
+}
+
+/**
+ * Return all cached month keys for an enterprise, sorted ascending (e.g.
+ * ["2025-03", "2025-04"]).
+ */
+export function listCachedMonths(enterprise: string): string[] {
+  const prefix = `${PREFIX}${enterprise}:`
+  const months: string[] = []
+  try {
+    for (let i = 0; i < localStorage.length; i += 1) {
+      const k = localStorage.key(i)
+      if (!k || !k.startsWith(prefix)) continue
+      months.push(k.slice(prefix.length))
+    }
+  } catch {
+    return []
+  }
+  return months.sort()
+}
+
+/** Load every cached report for an enterprise, sorted by monthKey ascending. */
+export function loadAllCachedReports(enterprise: string): CachedReport[] {
+  return listCachedMonths(enterprise)
+    .map(m => loadCachedReport(enterprise, m))
+    .filter((r): r is CachedReport => r !== null)
+}
+
+/**
+ * Per-user aggregate across multiple monthly aggregations: returns the MAX
+ * single-month consumption per user. Used as the sizing input for the
+ * universal ULB so that seasonal spikes drive the cap, not the average.
+ */
+export function aggregateMaxMonth(
+  monthlyRows: UserAicAggregate[][],
+): UserAicAggregate[] {
+  const max = new Map<string, UserAicAggregate>()
+  for (const month of monthlyRows) {
+    for (const row of month) {
+      const cur = max.get(row.username)
+      if (!cur || row.aicConsumed > cur.aicConsumed) {
+        max.set(row.username, { ...row })
+      }
+    }
+  }
+  return Array.from(max.values()).sort((a, b) => b.aicConsumed - a.aicConsumed)
 }

@@ -11,19 +11,42 @@ import {
   fetchUniversalULB,
   patchUniversalULB,
 } from '@/lib/api'
-import { formatCurrency, formatPercent } from '@/lib/utils'
-import { loadCachedReport, type CachedReport } from '@/lib/reportCache'
-import { monthKey as toMonthKey } from '@/lib/usageReport'
+import { formatCurrency } from '@/lib/utils'
+import {
+  loadAllCachedReports,
+  aggregateMaxMonth,
+  type CachedReport,
+} from '@/lib/reportCache'
 import { runBatch } from '@/lib/batch'
+import {
+  calcThreshold,
+  toCsvUserUsage,
+  type ThresholdMode,
+} from '@/lib/consumptionAnalysis'
 import { EditUniversalUlbDialog } from '@/components/EditUniversalUlbDialog'
-import { ReportPanel } from '@/components/ReportPanel'
-import { UniversalUlbTable } from '@/components/UniversalUlbTable'
+import { UsageCsvImport } from '@/components/UsageCsvImport'
+import { ConsumptionCurve } from '@/components/ConsumptionCurve'
+
+// 100 AICs = $1.00 in GitHub billing (1 AIC = $0.01).
+const AICS_PER_USD = 100
+const OUTLIER_BUFFER_PCT = 0.1
+
+const MODE_LABELS: Record<ThresholdMode, string> = {
+  'top-10': 'Top 10%',
+  'top-20': 'Top 20%',
+  'top-30': 'Top 30%',
+  custom: 'Custom',
+}
 
 /**
- * Surface for tracking universal-ULB-covered users. Lets admins:
- *  - view & edit the enterprise-wide cap
- *  - ingest a billing usage report to see per-user AI-credit consumption
- *  - bulk-convert users into individual ULBs once a cap is approaching
+ * Universal-ULB planner.
+ *
+ * Three-step workflow:
+ *   1. Ingest one or more monthly usage-report CSVs (UsageCsvImport).
+ *   2. Drag the ConsumptionCurve threshold + ULB lines to pick a cap and
+ *      classify outliers ("power users") that need individual ULBs.
+ *   3. Apply the chosen universal ULB and optionally batch-create per-outlier
+ *      individual ULBs (suggested at user.maxAICs × 1.10).
  */
 export function UniversalUlbPage() {
   const {
@@ -31,69 +54,97 @@ export function UniversalUlbPage() {
     apiFetch,
     budgets,
     seats,
-    costCenters,
-    loginToCostCenter,
     universalUlb,
     setUniversalUlb,
   } = useCredentials()
 
   const [editing, setEditing] = useState(false)
-  // Default to the current month in UTC (matters near month boundaries
-  // where local time and UTC can disagree on which month we're in).
-  const [month, setMonth] = useState(() => {
-    const n = new Date()
-    return new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), 1))
-  })
-  // Bump this when ReportPanel ingests a new file so the cache memo re-reads.
   const [cacheBust, setCacheBust] = useState(0)
-  // Cache lookup derived from current ent + month — pure read, no effect needed.
-  const cached = useMemo<CachedReport | null>(
-    () => (credentials ? loadCachedReport(credentials.ent, toMonthKey(month)) : null),
+  const [thresholdMode, setThresholdMode] = useState<ThresholdMode>('top-20')
+  // Overrides are tagged with a session signature derived from the current
+  // dataset; when the dataset changes (new CSV ingested, ent switched) the
+  // tag no longer matches and the override naturally falls away. Lets us
+  // reset overrides without a setState-in-effect.
+  const [customThresholdEntry, setCustomThresholdEntry] = useState<{ sig: string; value: number } | null>(null)
+  const [ulbOverrideEntry, setUlbOverrideEntry] = useState<{ sig: string; value: number } | null>(null)
+  /** Logins the admin explicitly UNCHECKED. All outliers are selected by default. */
+  const [deselectedOutliers, setDeselectedOutliers] = useState<Set<string>>(new Set())
+  const [applying, setApplying] = useState(false)
+  const [batchProgress, setBatchProgress] = useState<{ done: number; total: number } | null>(null)
+
+  // Reload cached months whenever import changes them.
+  const cachedMonths = useMemo<CachedReport[]>(
+    () => (credentials ? loadAllCachedReports(credentials.ent) : []),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [credentials, month, cacheBust],
+    [credentials, cacheBust],
   )
 
-  // Bulk-convert dialog state.
-  const [bulkConvert, setBulkConvert] = useState<string[] | null>(null)
-  const [bulkAmount, setBulkAmount] = useState('100')
-  const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null)
-
-  // Refresh cache whenever enterprise or month changes.
-
-  // Seats not covered by an individual ULB. Universal ULB applies to everyone
-  // else — cost-center-assigned users are included per the plan decision.
+  // Users already covered by an individual ULB are excluded from sizing —
+  // we're sizing the cap for users who fall under the universal ULB.
   const indUlbLogins = useMemo(
     () => new Set(budgets.map(b => b.user.toLowerCase())),
     [budgets],
   )
-  const eligibleSeats = useMemo(
-    () => seats.filter(s => !indUlbLogins.has(s.login.toLowerCase())),
+
+  // Per-user max-month AICs across all ingested months. Drives the curve.
+  const csvUsers = useMemo(() => {
+    if (cachedMonths.length === 0) return []
+    const merged = aggregateMaxMonth(cachedMonths.map(c => c.rows))
+    return merged
+      .filter(u => !indUlbLogins.has(u.username.toLowerCase()))
+      .map(toCsvUserUsage)
+  }, [cachedMonths, indUlbLogins])
+
+  // Dataset signature — invalidates overrides when the input data changes.
+  const datasetSig = `${credentials?.ent ?? ''}:${csvUsers.length}`
+  const customThreshold =
+    customThresholdEntry?.sig === datasetSig ? customThresholdEntry.value : null
+  const ulbOverrideAICs =
+    ulbOverrideEntry?.sig === datasetSig ? ulbOverrideEntry.value : null
+
+  // Apply threshold mode → power user split.
+  const threshold = useMemo(
+    () => calcThreshold(csvUsers, thresholdMode, customThreshold ?? undefined),
+    [csvUsers, thresholdMode, customThreshold],
+  )
+
+  // ULB to display on the chart, in AICs.
+  // Priority: explicit drag override → existing universal ULB (USD→AICs) → suggested from threshold.
+  const existingUlbAICs =
+    universalUlb && universalUlb.budgetAmount > 0
+      ? universalUlb.budgetAmount * AICS_PER_USD
+      : null
+  const ulbAICs =
+    ulbOverrideAICs !== null
+      ? ulbOverrideAICs
+      : existingUlbAICs !== null
+        ? existingUlbAICs
+        : threshold.suggestedULB
+  const ulbIsOverridden = ulbOverrideAICs !== null
+
+  // Coverage: how many regular users fit under the chosen ULB?
+  const coverage = useMemo(() => {
+    if (threshold.regularUsers.length === 0) return { covered: 0, total: 0, pct: 0 }
+    const covered = threshold.regularUsers.filter(u => u.totalAICs <= ulbAICs).length
+    return {
+      covered,
+      total: threshold.regularUsers.length,
+      pct: covered / threshold.regularUsers.length,
+    }
+  }, [threshold.regularUsers, ulbAICs])
+
+  // Eligible seats = seats not currently on an individual ULB.
+  const eligibleSeatCount = useMemo(
+    () => seats.filter(s => !indUlbLogins.has(s.login.toLowerCase())).length,
     [seats, indUlbLogins],
   )
 
-  // Aggregate usage across only the universal-ULB-covered users so the
-  // "total consumed" tile matches the table totals (it would otherwise count
-  // ind-ULB users too, which is misleading).
-  const eligibleLoginSet = useMemo(
-    () => new Set(eligibleSeats.map(s => s.login.toLowerCase())),
-    [eligibleSeats],
+  // Default-selected outliers, derived: every power user except those the
+  // admin explicitly unchecked.
+  const selectedOutliers = useMemo(
+    () => new Set(threshold.powerUsers.map(u => u.login).filter(l => !deselectedOutliers.has(l))),
+    [threshold.powerUsers, deselectedOutliers],
   )
-  const filteredUsage = useMemo(
-    () => (cached?.rows ?? []).filter(r => eligibleLoginSet.has(r.username.toLowerCase())),
-    [cached, eligibleLoginSet],
-  )
-
-  const totals = useMemo(() => {
-    let aic = 0
-    let gross = 0
-    for (const r of filteredUsage) {
-      aic += r.aicConsumed
-      gross += r.grossAmount
-    }
-    return { aic, gross }
-  }, [filteredUsage])
-
-  const cap = universalUlb?.budgetAmount ?? 0
 
   const handleEditCap = async (newAmount: number) => {
     if (credentials?.base === 'demo://') {
@@ -111,53 +162,97 @@ export function UniversalUlbPage() {
     toast.success(`Universal ULB set to ${formatCurrency(newAmount)}`)
   }
 
-  const handleBulkConvertSubmit = async () => {
-    if (!bulkConvert) return
-    const amount = Number(bulkAmount)
-    if (!Number.isFinite(amount) || amount < 0) {
-      toast.error('Enter a non-negative amount.')
+  /** Convert the chart's ULB (AICs) → USD and write to the enterprise. */
+  const handleApplyUniversalULB = async () => {
+    const newUsd = Math.max(1, Math.ceil(ulbAICs / AICS_PER_USD))
+    setApplying(true)
+    try {
+      await handleEditCap(newUsd)
+      setUlbOverrideEntry(null)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err))
+    } finally {
+      setApplying(false)
+    }
+  }
+
+  /** Create individual ULBs for selected outliers at ceil(maxAICs/100 × 1.10). */
+  const handleCreateOutlierUlbs = async () => {
+    if (!apiFetch) return
+    const targets = threshold.powerUsers
+      .filter(u => selectedOutliers.has(u.login))
+      .map(u => ({
+        login: u.login,
+        amount: Math.max(1, Math.ceil((u.totalAICs / AICS_PER_USD) * (1 + OUTLIER_BUFFER_PCT))),
+      }))
+    if (targets.length === 0) {
+      toast.error('Select at least one outlier.')
       return
     }
     if (credentials?.base === 'demo://') {
-      toast.info(`Demo mode: would create ${bulkConvert.length} individual ULBs at $${amount}`)
-      setBulkConvert(null)
+      toast.info(`Demo mode: would create ${targets.length} individual ULBs.`)
       return
     }
-    if (!apiFetch) return
-    setBulkProgress({ done: 0, total: bulkConvert.length })
-    const results = await runBatch(
-      bulkConvert.map(login => ({ login })),
-      async item => {
-        await apiCreateUserBudget(apiFetch, item.login, amount)
-      },
-      {
-        concurrency: 5,
-        perTaskDelayMs: 50,
-        maxRetriesOn429: 2,
-        defaultRetryAfterMs: 60_000,
-        onProgress: p => setBulkProgress({ done: p.completed, total: p.total }),
-      },
-    )
-    const failed = results.filter(r => !r.ok).length
-    const ok = results.length - failed
-    if (failed === 0) toast.success(`Created ${ok.toLocaleString()} individual ULBs.`)
-    else if (ok === 0) toast.error(`Failed to create ${failed.toLocaleString()} ULBs.`)
-    else toast.warning(`Created ${ok.toLocaleString()}, failed ${failed.toLocaleString()}.`)
-    setBulkConvert(null)
-    setBulkProgress(null)
+    setBatchProgress({ done: 0, total: targets.length })
+    try {
+      const results = await runBatch(
+        targets,
+        async item => {
+          await apiCreateUserBudget(apiFetch, item.login, item.amount)
+        },
+        {
+          concurrency: 5,
+          perTaskDelayMs: 50,
+          maxRetriesOn429: 2,
+          defaultRetryAfterMs: 60_000,
+          onProgress: p => setBatchProgress({ done: p.completed, total: p.total }),
+        },
+      )
+      const failed = results.filter(r => !r.ok).length
+      const ok = results.length - failed
+      if (failed === 0) toast.success(`Created ${ok.toLocaleString()} individual ULBs.`)
+      else if (ok === 0) toast.error(`Failed to create ${failed.toLocaleString()} ULBs.`)
+      else toast.warning(`Created ${ok.toLocaleString()}, failed ${failed.toLocaleString()}.`)
+    } finally {
+      setBatchProgress(null)
+    }
   }
 
-  const aggregatePctOfCap = cap > 0 ? totals.gross / cap : 0
+  const toggleOutlier = (login: string) => {
+    setDeselectedOutliers(prev => {
+      const next = new Set(prev)
+      // Selected → moving to deselected, and vice-versa.
+      if (selectedOutliers.has(login)) next.add(login)
+      else next.delete(login)
+      return next
+    })
+  }
+
+  const allSelected =
+    threshold.powerUsers.length > 0 && selectedOutliers.size === threshold.powerUsers.length
+  const toggleAll = () => {
+    if (allSelected) {
+      setDeselectedOutliers(new Set(threshold.powerUsers.map(u => u.login)))
+    } else {
+      setDeselectedOutliers(new Set())
+    }
+  }
+
+  const hasData = csvUsers.length > 0
+  const ulbDeltaUsd = Math.ceil(ulbAICs / AICS_PER_USD)
 
   return (
     <div className="grid gap-6">
+      {/* Header tiles */}
       <div className="grid gap-3 grid-cols-1 md:grid-cols-3">
         <Card>
           <CardContent className="flex items-start justify-between gap-3">
             <div>
               <div className="text-xs text-neutral-500 dark:text-neutral-400">Universal ULB cap</div>
               <div className="text-2xl font-semibold mt-1">
-                {universalUlb ? formatCurrency(cap) : <span className="text-neutral-400">not set</span>}
+                {universalUlb ? formatCurrency(universalUlb.budgetAmount) : (
+                  <span className="text-neutral-400">not set</span>
+                )}
               </div>
               <Button size="sm" variant="outline" className="mt-2" onClick={() => setEditing(true)}>
                 <PencilSimple size={14} weight="duotone" />
@@ -170,11 +265,10 @@ export function UniversalUlbPage() {
         <Card>
           <CardContent className="flex items-start justify-between gap-3">
             <div>
-              <div className="text-xs text-neutral-500 dark:text-neutral-400">Consumed (from report)</div>
-              <div className="text-2xl font-semibold mt-1">{formatCurrency(totals.gross)}</div>
+              <div className="text-xs text-neutral-500 dark:text-neutral-400">Months ingested</div>
+              <div className="text-2xl font-semibold mt-1">{cachedMonths.length.toLocaleString()}</div>
               <div className="text-xs text-neutral-500 mt-1">
-                {totals.aic.toFixed(2)} AI credits
-                {cap > 0 ? ` · ${formatPercent(aggregatePctOfCap)} of cap` : ''}
+                {csvUsers.length.toLocaleString()} eligible users sized
               </div>
             </div>
             <ChartLine size={22} weight="duotone" className="text-neutral-400" />
@@ -183,10 +277,10 @@ export function UniversalUlbPage() {
         <Card>
           <CardContent className="flex items-start justify-between gap-3">
             <div>
-              <div className="text-xs text-neutral-500 dark:text-neutral-400">Covered users</div>
-              <div className="text-2xl font-semibold mt-1">{eligibleSeats.length.toLocaleString()}</div>
+              <div className="text-xs text-neutral-500 dark:text-neutral-400">Universal-ULB coverage</div>
+              <div className="text-2xl font-semibold mt-1">{eligibleSeatCount.toLocaleString()}</div>
               <div className="text-xs text-neutral-500 mt-1">
-                {filteredUsage.length.toLocaleString()} with report data
+                seats not on an individual ULB
               </div>
             </div>
             <Users size={22} weight="duotone" className="text-neutral-400" />
@@ -194,34 +288,228 @@ export function UniversalUlbPage() {
         </Card>
       </div>
 
-      <div className="flex items-center gap-2">
-        <label className="text-xs text-neutral-500">Billing month</label>
-        <input
-          type="month"
-          value={`${month.getUTCFullYear()}-${String(month.getUTCMonth() + 1).padStart(2, '0')}`}
-          onChange={e => {
-            const [y, m] = e.target.value.split('-').map(Number)
-            if (!Number.isFinite(y) || !Number.isFinite(m)) return
-            setMonth(new Date(Date.UTC(y, m - 1, 1)))
-          }}
-          className="h-8 rounded-md border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 text-xs"
-        />
-      </div>
+      {/* Step 1: import */}
+      <Card>
+        <CardContent className="grid gap-3">
+          <div>
+            <h2 className="text-sm font-semibold">Step 1 · Upload historical usage</h2>
+            <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+              Download the detailed billing usage report from GitHub for one or more recent months,
+              then upload the CSV(s) below. Sizing uses each user's biggest single month across
+              everything you load.
+            </p>
+          </div>
+          {credentials ? (
+            <UsageCsvImport
+              enterprise={credentials.ent}
+              months={cachedMonths}
+              onChanged={() => setCacheBust(n => n + 1)}
+            />
+          ) : null}
+        </CardContent>
+      </Card>
 
-      <ReportPanel month={month} cached={cached} onIngested={() => setCacheBust(n => n + 1)} />
+      {/* Step 2: pick threshold + ULB */}
+      <Card>
+        <CardContent className="grid gap-3">
+          <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h2 className="text-sm font-semibold">Step 2 · Choose your universal ULB</h2>
+              <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+                Drag the threshold line to split regular users from outliers, then drag the dashed
+                ULB line to set the cap. Outliers get individual ULBs in step 3.
+              </p>
+            </div>
+            {hasData ? (
+              <div className="flex flex-wrap items-center gap-1.5">
+                {(['top-10', 'top-20', 'top-30', 'custom'] as ThresholdMode[]).map(mode => (
+                  <Button
+                    key={mode}
+                    size="sm"
+                    variant={thresholdMode === mode ? 'primary' : 'outline'}
+                    onClick={() => {
+                      setThresholdMode(mode)
+                      if (mode !== 'custom') setCustomThresholdEntry(null)
+                    }}
+                  >
+                    {MODE_LABELS[mode]}
+                  </Button>
+                ))}
+              </div>
+            ) : null}
+          </div>
 
-      <UniversalUlbTable
-        seats={eligibleSeats}
-        usage={filteredUsage}
-        cap={cap}
-        costCenters={costCenters}
-        loginToCostCenter={loginToCostCenter}
-        onBulkConvert={logins => {
-          setBulkConvert(logins)
-          setBulkAmount('100')
-        }}
-        onCreateOne={login => setBulkConvert([login])}
-      />
+          <ConsumptionCurve
+            sortedUsers={[...csvUsers].sort((a, b) => b.totalAICs - a.totalAICs)}
+            thresholdAICs={threshold.thresholdAICs}
+            powerUserCount={threshold.powerUsers.length}
+            ulbAICs={ulbAICs}
+            ulbIsOverridden={ulbIsOverridden}
+            onUlbChange={
+              hasData
+                ? aics =>
+                    setUlbOverrideEntry(
+                      aics === null ? null : { sig: datasetSig, value: aics },
+                    )
+                : undefined
+            }
+            onSetCutoff={
+              hasData
+                ? aics => {
+                    setThresholdMode('custom')
+                    setCustomThresholdEntry({ sig: datasetSig, value: aics })
+                  }
+                : undefined
+            }
+          />
+
+          {hasData ? (
+            <div className="rounded-md border border-neutral-200 dark:border-neutral-800 p-3 text-xs grid gap-1.5 sm:grid-cols-3">
+              <div>
+                <div className="text-neutral-500 dark:text-neutral-400">Suggested ULB (P95 of regulars)</div>
+                <div className="font-semibold text-sm">
+                  {threshold.suggestedULB.toLocaleString()} AICs
+                  <span className="text-neutral-500 font-normal"> · ~${Math.ceil(threshold.suggestedULB / AICS_PER_USD)}</span>
+                </div>
+              </div>
+              <div>
+                <div className="text-neutral-500 dark:text-neutral-400">Chart ULB</div>
+                <div className="font-semibold text-sm">
+                  {Math.round(ulbAICs).toLocaleString()} AICs
+                  <span className="text-neutral-500 font-normal"> · ~${ulbDeltaUsd}</span>
+                </div>
+              </div>
+              <div>
+                <div className="text-neutral-500 dark:text-neutral-400">Coverage of regulars</div>
+                <div className="font-semibold text-sm">
+                  {coverage.covered.toLocaleString()} / {coverage.total.toLocaleString()}
+                  <span className="text-neutral-500 font-normal"> · {Math.round(coverage.pct * 100)}%</span>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          {thresholdMode === 'custom' && hasData ? (
+            <div className="flex items-center gap-2 text-xs">
+              <label className="text-neutral-600 dark:text-neutral-400">Custom threshold (AICs):</label>
+              <Input
+                type="number"
+                min={0}
+                step="1"
+                value={customThreshold ?? ''}
+                onChange={e => {
+                  const n = Number(e.target.value)
+                  setCustomThresholdEntry(
+                    Number.isFinite(n) ? { sig: datasetSig, value: n } : null,
+                  )
+                }}
+                className="h-7 w-32"
+              />
+            </div>
+          ) : null}
+
+          <div className="flex flex-wrap gap-2">
+            <Button
+              onClick={handleApplyUniversalULB}
+              disabled={!hasData || applying || ulbAICs <= 0}
+              title={!hasData ? 'Upload a CSV first' : undefined}
+            >
+              {applying ? 'Applying…' : `Apply universal ULB ($${ulbDeltaUsd})`}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Step 3: outliers */}
+      <Card>
+        <CardContent className="grid gap-3">
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <h2 className="text-sm font-semibold">
+                Step 3 · Outliers ({threshold.powerUsers.length.toLocaleString()})
+              </h2>
+              <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+                Suggested individual ULB = max-month AICs ÷ 100 × 1.10 (10% buffer).
+              </p>
+            </div>
+          </div>
+
+          {threshold.powerUsers.length === 0 ? (
+            <div className="rounded-md border border-dashed border-neutral-300 dark:border-neutral-700 p-4 text-center text-xs text-neutral-500">
+              {hasData ? 'No outliers at the current threshold.' : 'Upload a CSV to identify outliers.'}
+            </div>
+          ) : (
+            <>
+              <div className="rounded-md border border-neutral-200 dark:border-neutral-800 overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-neutral-50 dark:bg-neutral-900/50 text-left">
+                    <tr>
+                      <th className="px-3 py-2 w-8">
+                        <input
+                          type="checkbox"
+                          checked={allSelected}
+                          onChange={toggleAll}
+                          aria-label="Select all outliers"
+                        />
+                      </th>
+                      <th className="px-3 py-2 font-medium">User</th>
+                      <th className="px-3 py-2 text-right font-medium">Max-month AICs</th>
+                      <th className="px-3 py-2 text-right font-medium">Gross $</th>
+                      <th className="px-3 py-2 text-right font-medium">Suggested ULB</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {threshold.powerUsers.map(u => {
+                      const suggested = Math.max(
+                        1,
+                        Math.ceil((u.totalAICs / AICS_PER_USD) * (1 + OUTLIER_BUFFER_PCT)),
+                      )
+                      return (
+                        <tr
+                          key={u.login}
+                          className="border-t border-neutral-100 dark:border-neutral-800/50"
+                        >
+                          <td className="px-3 py-2">
+                            <input
+                              type="checkbox"
+                              checked={selectedOutliers.has(u.login)}
+                              onChange={() => toggleOutlier(u.login)}
+                              aria-label={`Select ${u.login}`}
+                            />
+                          </td>
+                          <td className="px-3 py-2 font-medium">{u.login}</td>
+                          <td className="px-3 py-2 text-right tabular-nums">
+                            {Math.round(u.totalAICs).toLocaleString()}
+                          </td>
+                          <td className="px-3 py-2 text-right tabular-nums">
+                            {formatCurrency(u.grossAmount)}
+                          </td>
+                          <td className="px-3 py-2 text-right tabular-nums">${suggested}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="flex items-center justify-between gap-2 text-xs">
+                <div className="text-neutral-500">
+                  {selectedOutliers.size.toLocaleString()} of {threshold.powerUsers.length.toLocaleString()} selected
+                  {batchProgress
+                    ? ` · ${batchProgress.done.toLocaleString()} / ${batchProgress.total.toLocaleString()} done…`
+                    : ''}
+                </div>
+                <Button
+                  onClick={handleCreateOutlierUlbs}
+                  disabled={selectedOutliers.size === 0 || batchProgress !== null}
+                >
+                  {batchProgress ? 'Creating…' : 'Create individual ULBs for selected'}
+                </Button>
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
 
       <EditUniversalUlbDialog
         universalUlb={universalUlb}
@@ -229,55 +517,6 @@ export function UniversalUlbPage() {
         onOpenChange={setEditing}
         onSubmit={handleEditCap}
       />
-
-      {/* Inline bulk-convert dialog — light, since the only input is one number. */}
-      {bulkConvert ? (
-        <div
-          role="dialog"
-          aria-modal="true"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-          onClick={() => {
-            if (!bulkProgress) setBulkConvert(null)
-          }}
-        >
-          <div
-            className="bg-white dark:bg-neutral-950 rounded-lg border border-neutral-200 dark:border-neutral-800 max-w-md w-full p-5 shadow-xl"
-            onClick={e => e.stopPropagation()}
-          >
-            <h3 className="text-base font-semibold">Convert to individual ULB</h3>
-            <p className="text-sm text-neutral-600 dark:text-neutral-400 mt-1">
-              Create a new individual ULB for{' '}
-              <strong>{bulkConvert.length.toLocaleString()}</strong>{' '}
-              user{bulkConvert.length === 1 ? '' : 's'} at the cap below.
-            </p>
-            <label className="grid gap-1 mt-3 text-sm">
-              <span className="text-neutral-600 dark:text-neutral-400">Cap per user (USD)</span>
-              <Input
-                type="number"
-                min={0}
-                step="1"
-                value={bulkAmount}
-                onChange={e => setBulkAmount(e.target.value)}
-                disabled={bulkProgress !== null}
-                autoFocus
-              />
-            </label>
-            {bulkProgress ? (
-              <div className="mt-3 text-xs text-neutral-600 dark:text-neutral-400">
-                {bulkProgress.done.toLocaleString()} of {bulkProgress.total.toLocaleString()} done…
-              </div>
-            ) : null}
-            <div className="flex justify-end gap-2 mt-4">
-              <Button variant="ghost" onClick={() => setBulkConvert(null)} disabled={bulkProgress !== null}>
-                Cancel
-              </Button>
-              <Button onClick={handleBulkConvertSubmit} disabled={bulkProgress !== null}>
-                {bulkProgress ? 'Creating…' : 'Create'}
-              </Button>
-            </div>
-          </div>
-        </div>
-      ) : null}
     </div>
   )
 }

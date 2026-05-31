@@ -1,65 +1,12 @@
 /**
- * GitHub Enterprise Billing Usage Reports (public preview, X-GitHub-Api-Version: 2026-03-10).
+ * GitHub Enterprise Billing Usage Reports — CSV parsing.
  *
- * Flow:
- *   1. POST /reports with {report_type, start_date, end_date?} → 202 with {id, status: 'processing'}
- *   2. Poll GET /reports/{id} until status === 'completed'; the response then
- *      includes `download_urls[]` (Azure blob SAS links, 1-hour expiry).
- *   3. The browser cannot fetch() the download URL — Azure blob has no CORS.
- *      We open the URL in a new tab (Content-Disposition: attachment → browser
- *      saves the file) and ask the user to upload it back via a file picker.
+ * The async report-generation API (POST /reports + polling) was removed in
+ * favor of a pure CSV-upload flow: admins download a detailed billing report
+ * from GitHub themselves and feed it into UsageCsvImport.
  *
- * `detailed` reports include per-row `username`, `quantity`, and `gross_amount`,
- * which lets us aggregate per-user AI-credit consumption client-side.
- *
- * Docs: https://docs.github.com/en/enterprise-cloud@latest/rest/billing/usage-reports
+ * Docs: https://docs.github.com/en/enterprise-cloud@latest/billing/tutorials/automate-usage-reporting
  */
-
-import type { ApiFetch } from '@/lib/api'
-
-export type ReportType = 'detailed' | 'summarized' | 'premium_request'
-export type ReportStatus = 'processing' | 'completed' | 'failed' | string
-
-export interface UsageReport {
-  id: string
-  report_type: ReportType
-  start_date: string
-  end_date: string
-  status: ReportStatus
-  created_at: string
-  actor?: string
-  download_urls?: string[]
-}
-
-interface ReportListResponse {
-  reports?: UsageReport[]
-}
-
-export async function createReport(
-  apiFetch: ApiFetch,
-  body: { report_type: ReportType; start_date: string; end_date?: string },
-): Promise<UsageReport> {
-  return (await apiFetch(`/reports`, {
-    method: 'POST',
-    body: JSON.stringify(body),
-  })) as UsageReport
-}
-
-export async function getReport(apiFetch: ApiFetch, reportId: string): Promise<UsageReport> {
-  return (await apiFetch(`/reports/${reportId}`)) as UsageReport
-}
-
-/**
- * List usage reports, sorted newest-first by created_at. Used to surface the
- * latest report on mount and to enforce the once-per-hour generation guard.
- */
-export async function listReports(apiFetch: ApiFetch): Promise<UsageReport[]> {
-  const data = (await apiFetch(`/reports`)) as ReportListResponse | UsageReport[]
-  const list = Array.isArray(data) ? data : (data?.reports ?? [])
-  return [...list].sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''))
-}
-
-// --- CSV parsing ---
 
 export interface UsageRow {
   date: string
@@ -181,37 +128,4 @@ export function aggregateAicByUser(rows: UsageRow[]): UserAicAggregate[] {
     acc.set(user, cur)
   }
   return Array.from(acc.values()).sort((a, b) => b.aicConsumed - a.aicConsumed)
-}
-
-// --- Date helpers ---
-
-/** Returns YYYY-MM-DD for the first day of the given Date's month (UTC). */
-export function startOfMonthISO(d: Date): string {
-  const y = d.getUTCFullYear()
-  const m = String(d.getUTCMonth() + 1).padStart(2, '0')
-  return `${y}-${m}-01`
-}
-
-/**
- * Returns YYYY-MM-DD for the last day of the given Date's month (UTC),
- * capped at yesterday so the API doesn't reject "end_date cannot be in the future".
- * Billing data isn't available for the current UTC day, so we need to use the day before.
- */
-export function endOfMonthISO(d: Date): string {
-  const y = d.getUTCFullYear()
-  const m = d.getUTCMonth()
-  const last = new Date(Date.UTC(y, m + 1, 0))
-  const now = new Date()
-  // Yesterday in UTC — current day's usage isn't queryable yet.
-  const yesterday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 1))
-  const capped = last.getTime() > yesterday.getTime() ? yesterday : last
-  const yy = capped.getUTCFullYear()
-  const mm = String(capped.getUTCMonth() + 1).padStart(2, '0')
-  const dd = String(capped.getUTCDate()).padStart(2, '0')
-  return `${yy}-${mm}-${dd}`
-}
-
-/** YYYY-MM key for a Date in UTC, used as the report cache key suffix. */
-export function monthKey(d: Date): string {
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`
 }
