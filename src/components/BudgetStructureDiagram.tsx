@@ -8,6 +8,7 @@ import {
 } from '@phosphor-icons/react'
 import { useCredentials } from '@/hooks/use-credentials'
 import { formatCurrency, cn } from '@/lib/utils'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 
 /**
  * Sepia-tinted adaptation of the Budget Structure diagram from
@@ -119,16 +120,17 @@ export function BudgetStructureDiagram() {
     : 'rounded-lg border border-emerald-600/30 bg-emerald-600/5 dark:border-emerald-500/30 dark:bg-emerald-500/5 p-3 space-y-2'
 
   return (
-    <div className={cardCls}>
-      <div className="flex items-center justify-between border-b border-neutral-200 dark:border-neutral-800 px-4 py-2.5">
-        <div className="flex items-center gap-2 text-sm font-semibold">
-          <TreeStructure size={18} weight="duotone" className="text-emerald-700 dark:text-emerald-400" />
-          Budget Structure
+    <TooltipProvider delayDuration={150}>
+      <div className={cardCls}>
+        <div className="flex items-center justify-between border-b border-neutral-200 dark:border-neutral-800 px-4 py-2.5">
+          <div className="flex items-center gap-2 text-sm font-semibold">
+            <TreeStructure size={18} weight="duotone" className="text-emerald-700 dark:text-emerald-400" />
+            Budget Structure
+          </div>
+          <div className="text-xs text-neutral-500">
+            {excludeCcUsage ? 'Cost center exclusion is on' : null}
+          </div>
         </div>
-        <div className="text-xs text-neutral-500">
-          {excludeCcUsage ? 'Cost center exclusion is on' : null}
-        </div>
-      </div>
 
       <div className="p-4 space-y-4">
         {/* ───────────────── Shared / umbrella mode ───────────────── */}
@@ -161,23 +163,34 @@ export function BudgetStructureDiagram() {
                   </div>
                   <div className="flex h-5 rounded-lg overflow-hidden border border-emerald-600/15 dark:border-emerald-500/15 gap-px">
                     {ccSegments.map((seg, i) => (
-                      <div
-                        key={seg.id}
-                        title={`${seg.name} — ${formatCurrency(seg.budget)} sub-limit${seg.preventFurtherUsage ? ' (hard cap)' : ' (soft cap)'}`}
-                        className="h-full flex items-center justify-center text-[10px] font-medium bg-amber-500/25 text-amber-900 dark:bg-amber-400/25 dark:text-amber-200 cursor-help transition-all duration-200"
-                        style={{
-                          width: `${seg.percent}%`,
-                          minWidth: ccSegments.length <= 6 ? '2rem' : '0.5rem',
-                          borderRadius:
-                            i === 0
-                              ? '0.5rem 0 0 0.5rem'
-                              : i === ccSegments.length - 1
-                                ? '0 0.5rem 0.5rem 0'
-                                : 0,
-                        }}
-                      >
-                        {seg.percent > 15 && formatCurrency(seg.budget)}
-                      </div>
+                      <Tooltip key={seg.id}>
+                        <TooltipTrigger asChild>
+                          <div
+                            className="h-full flex items-center justify-center text-[10px] font-medium bg-amber-500/25 text-amber-900 dark:bg-amber-400/25 dark:text-amber-200 cursor-help transition-all duration-200"
+                            style={{
+                              width: `${seg.percent}%`,
+                              minWidth: ccSegments.length <= 6 ? '2rem' : '0.5rem',
+                              borderRadius:
+                                i === 0
+                                  ? '0.5rem 0 0 0.5rem'
+                                  : i === ccSegments.length - 1
+                                    ? '0 0.5rem 0.5rem 0'
+                                    : 0,
+                            }}
+                          >
+                            {seg.percent > 15 && formatCurrency(seg.budget)}
+                          </div>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <div className="font-medium">{seg.name}</div>
+                          <div className="opacity-80">
+                            {formatCurrency(seg.budget)} sub-limit · {seg.preventFurtherUsage ? 'Hard cap' : 'Soft cap'}
+                          </div>
+                          <div className="opacity-70 text-[10px] mt-0.5">
+                            {seg.seatCount.toLocaleString()} Copilot seat{seg.seatCount === 1 ? '' : 's'}
+                          </div>
+                        </TooltipContent>
+                      </Tooltip>
                     ))}
                   </div>
                   <div className="flex justify-between text-[10px] text-neutral-500">
@@ -236,38 +249,47 @@ export function BudgetStructureDiagram() {
                 </div>
                 <div className="flex h-5 rounded-lg overflow-hidden border border-amber-500/15 dark:border-amber-400/15 gap-px">
                   {ccSegments.map((seg, i) => (
-                    <div
-                      key={seg.id}
-                      title={
-                        seg.uncapped
-                          ? `${seg.name} — no per-CC cap (universal ULB is the only backstop)`
-                          : `${seg.name} — ${formatCurrency(seg.budget)} independent cap${seg.preventFurtherUsage ? ' (hard cap)' : ' (soft cap)'}`
-                      }
-                      className={cn(
-                        'h-full flex items-center justify-center text-[10px] font-medium cursor-help transition-all duration-200',
-                        seg.uncapped
-                          ? 'text-red-700 dark:text-red-300'
-                          : 'bg-amber-500/30 text-amber-900 dark:bg-amber-400/30 dark:text-amber-200',
-                      )}
-                      style={{
-                        width: `${seg.percent}%`,
-                        minWidth: ccSegments.length <= 6 ? '2rem' : '0.5rem',
-                        borderRadius:
-                          i === 0
-                            ? '0.5rem 0 0 0.5rem'
-                            : i === ccSegments.length - 1
-                              ? '0 0.5rem 0.5rem 0'
-                              : 0,
-                        ...(seg.uncapped
-                          ? {
-                              background:
-                                'repeating-linear-gradient(135deg, color-mix(in oklch, var(--color-destructive) 25%, transparent), color-mix(in oklch, var(--color-destructive) 25%, transparent) 3px, color-mix(in oklch, var(--color-destructive) 12%, transparent) 3px, color-mix(in oklch, var(--color-destructive) 12%, transparent) 6px)',
-                            }
-                          : {}),
-                      }}
-                    >
-                      {seg.percent > 15 && (seg.uncapped ? 'no cap' : formatCurrency(seg.budget))}
-                    </div>
+                    <Tooltip key={seg.id}>
+                      <TooltipTrigger asChild>
+                        <div
+                          className={cn(
+                            'h-full flex items-center justify-center text-[10px] font-medium cursor-help transition-all duration-200',
+                            seg.uncapped
+                              ? 'text-red-700 dark:text-red-300'
+                              : 'bg-amber-500/30 text-amber-900 dark:bg-amber-400/30 dark:text-amber-200',
+                          )}
+                          style={{
+                            width: `${seg.percent}%`,
+                            minWidth: ccSegments.length <= 6 ? '2rem' : '0.5rem',
+                            borderRadius:
+                              i === 0
+                                ? '0.5rem 0 0 0.5rem'
+                                : i === ccSegments.length - 1
+                                  ? '0 0.5rem 0.5rem 0'
+                                  : 0,
+                            ...(seg.uncapped
+                              ? {
+                                  background:
+                                    'repeating-linear-gradient(135deg, color-mix(in oklch, var(--color-destructive) 25%, transparent), color-mix(in oklch, var(--color-destructive) 25%, transparent) 3px, color-mix(in oklch, var(--color-destructive) 12%, transparent) 3px, color-mix(in oklch, var(--color-destructive) 12%, transparent) 6px)',
+                                }
+                              : {}),
+                          }}
+                        >
+                          {seg.percent > 15 && (seg.uncapped ? 'no cap' : formatCurrency(seg.budget))}
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <div className="font-medium">{seg.name}</div>
+                        <div className="opacity-80">
+                          {seg.uncapped
+                            ? 'No per-CC cap (universal ULB is the only backstop)'
+                            : `${formatCurrency(seg.budget)} independent cap · ${seg.preventFurtherUsage ? 'Hard cap' : 'Soft cap'}`}
+                        </div>
+                        <div className="opacity-70 text-[10px] mt-0.5">
+                          {seg.seatCount.toLocaleString()} Copilot seat{seg.seatCount === 1 ? '' : 's'}
+                        </div>
+                      </TooltipContent>
+                    </Tooltip>
                   ))}
                 </div>
                 <div className="flex justify-between text-[10px] text-neutral-500">
@@ -372,7 +394,8 @@ export function BudgetStructureDiagram() {
             </div>
           )
         })()}
+        </div>
       </div>
-    </div>
+    </TooltipProvider>
   )
 }
