@@ -283,6 +283,11 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
   // Real mode: one `fetchCopilotUsageSummary({ costCenterId })` per CC in
   // parallel; failures degrade per-CC to a missing map entry. Demo mode:
   // distribute the top-line aiCreditsNet proportional to seat share.
+  //
+  // The synchronous resets below are intentional guards (no CCs, no usage
+  // summary in demo, no apiFetch). Refactoring to useMemo would lose the
+  // async-fetch path, so disable the rule for this effect.
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (costCenters.length === 0) {
       setUsageByCostCenterId(new Map())
@@ -319,6 +324,7 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
       cancelled = true
     }
   }, [credentials, apiFetch, costCenters, ccSeatCounts, usageSummary])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const value: CredentialsContextValue = {
     credentials,

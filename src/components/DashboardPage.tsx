@@ -1,13 +1,5 @@
 import { useMemo } from 'react'
 import {
-  Cell,
-  Legend,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip,
-} from 'recharts'
-import {
   Buildings,
   CurrencyDollar,
   Receipt,
@@ -518,18 +510,6 @@ function BreakdownStat({
   )
 }
 
-
-function LegendDot({ color, label }: { color: string; label: string }) {
-  return (
-    <span className="inline-flex items-center gap-1.5">
-      <span
-        className="inline-block w-2.5 h-2.5 rounded-full"
-        style={{ backgroundColor: color }}
-      />
-      {label}
-    </span>
-  )
-}
 
 function EmptyChart({ message }: { message: string }) {
   return (

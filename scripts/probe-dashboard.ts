@@ -153,7 +153,6 @@ async function probe(envPath: string): Promise<Probe> {
   ])
 
   const ccBudgetsByName = allBudgets.costCenterBudgetsByName
-  const ccBudgetList = Array.from(ccBudgetsByName.values())
 
   // Per-CC usage in parallel (matches DashboardPage flow).
   console.error(`> fetching per-CC usage for ${allCcs.length} CCs...`)
