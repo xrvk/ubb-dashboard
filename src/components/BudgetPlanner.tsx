@@ -659,13 +659,6 @@ export function BudgetPlanner() {
                       apiValue={enterpriseBudget.preventFurtherUsage}
                       onChange={next => setPrevent('ent', next)}
                     />
-                    {credentials ? (
-                      <AlertsLink
-                        href={budgetEditUrl(credentials.base, credentials.ent, enterpriseBudget.id)}
-                        willAlert={enterpriseBudget.willAlert}
-                        alertRecipients={enterpriseBudget.alertRecipients}
-                      />
-                    ) : null}
                     {enterpriseBudget.excludeCostCenterUsage && credentials ? (
                       <Tooltip>
                         <TooltipTrigger asChild>
@@ -685,6 +678,13 @@ export function BudgetPlanner() {
                           enterprise pool. Click to edit on github.com.
                         </TooltipContent>
                       </Tooltip>
+                    ) : null}
+                    {credentials ? (
+                      <AlertsLink
+                        href={budgetEditUrl(credentials.base, credentials.ent, enterpriseBudget.id)}
+                        willAlert={enterpriseBudget.willAlert}
+                        alertRecipients={enterpriseBudget.alertRecipients}
+                      />
                     ) : null}
                   </div>
                 </div>

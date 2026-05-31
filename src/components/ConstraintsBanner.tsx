@@ -268,11 +268,9 @@ export function ConstraintsBanner() {
   const Icon = state === 'red' ? XCircle : state === 'amber' ? Warning : CheckCircle
 
   const modeLabel =
-    result.mode === 'independent'
-      ? 'Cost center exclusion is on'
-      : result.mode === 'no-enterprise-budget'
-        ? 'No enterprise budget configured'
-        : null
+    result.mode === 'no-enterprise-budget'
+      ? 'No enterprise budget configured'
+      : null
 
   const headline = hasFailure
     ? `Budget overcommitted — ${failingChecks.length} constraint${failingChecks.length === 1 ? '' : 's'} failing`
@@ -280,7 +278,12 @@ export function ConstraintsBanner() {
       ? `Budget OK — ${result.warnings.length} advisory ${result.warnings.length === 1 ? 'warning' : 'warnings'}`
       : 'Budgets are well-constrained'
 
-  const canExpand = hasFailure || hasWarning || result.maxSafeUniversalUlb !== Infinity
+  // We expand only when there's something actionable: failures or warnings.
+  // (Previously this also expanded to surface "Max safe universal ULB" in the
+  // healthy state, but that wasn't a question users actually asked.) The
+  // alt-fix line below is shown only when expanded for a failure that has a
+  // viable lower-ULB workaround, so it doesn't need its own trigger.
+  const canExpand = hasFailure || hasWarning
 
   return (
     <div role="status" className={cn('rounded-md border px-3 py-2 text-sm', styles)}>
@@ -397,17 +400,11 @@ export function ConstraintsBanner() {
                     </div>
                   )
                 }
-                if (hasFailure) return null
-                return (
-                  <div className="text-xs opacity-90">
-                    <span className="font-semibold">Max safe universal ULB:</span>{' '}
-                    {formatCurrency(safe)}{' '}
-                    <span className="opacity-70">
-                      (the largest universal ULB value that keeps every check passing,
-                      holding individual ULBs and budgets constant)
-                    </span>
-                  </div>
-                )
+                // In the healthy state we deliberately don't surface the max
+                // safe ULB — that's an internal computation, not a question
+                // users ask. The "How the budget model works" link below covers
+                // anyone who wants to dig into how the math is derived.
+                return null
               })() : null}
               <div className="text-xs opacity-75">
                 <button
