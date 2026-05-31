@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { CheckCircle, Warning, XCircle, CaretDown, CaretUp, ArrowDown, ArrowSquareOut, Users, ArrowsClockwise } from '@phosphor-icons/react'
+import { CheckCircle, Warning, XCircle, CaretDown, CaretUp, ArrowDown, ArrowUp, ArrowSquareOut, Users, ArrowsClockwise } from '@phosphor-icons/react'
 import { useCredentials } from '@/hooks/use-credentials'
 import { buildCostCenterIndex, budgetEditUrl } from '@/lib/api'
 import { computeBudgetConstraints } from '@/lib/budgetConstraints'
@@ -50,7 +50,7 @@ interface FailingCheck {
     label: string
     onClick?: () => void
     href?: string
-    icon?: 'scroll' | 'external' | 'users' | 'universal'
+    icon?: 'scroll-up' | 'scroll-down' | 'external' | 'users' | 'universal'
     primary?: boolean
   }>
 }
@@ -133,7 +133,7 @@ export function ConstraintsBanner() {
           actions.push({
             label: `Raise CC budget to ${formatCurrency(required)}`,
             onClick: () => scrollToPlanner(`bp-cc-${c.costCenterId}`),
-            icon: 'scroll',
+            icon: 'scroll-up',
             primary: true,
           })
         }
@@ -187,7 +187,7 @@ export function ConstraintsBanner() {
         actions.push({
           label: `Raise enterprise budget to ${formatCurrency(requiredMins.enterprise)}`,
           onClick: () => scrollToPlanner('bp-ent'),
-          icon: 'scroll',
+          icon: 'scroll-up',
           primary: true,
         })
       }
@@ -203,7 +203,7 @@ export function ConstraintsBanner() {
               new CustomEvent<PlannerHighlightDetail>(PLANNER_HIGHLIGHT_EVENT, { detail }),
             )
           },
-          icon: 'scroll',
+          icon: 'scroll-down',
         })
       }
       if (enterpriseBudget && credentials) {
@@ -225,7 +225,7 @@ export function ConstraintsBanner() {
         actions.push({
           label: `Raise enterprise budget to ${formatCurrency(requiredMins.enterprise)}`,
           onClick: () => scrollToPlanner('bp-ent'),
-          icon: 'scroll',
+          icon: 'scroll-up',
           primary: true,
         })
       }
@@ -327,7 +327,9 @@ export function ConstraintsBanner() {
                                   : 'bg-current/10 hover:bg-current/20',
                               )
                               const iconEl =
-                                a.icon === 'scroll' ? (
+                                a.icon === 'scroll-up' ? (
+                                  <ArrowUp size={10} weight="bold" />
+                                ) : a.icon === 'scroll-down' ? (
                                   <ArrowDown size={10} weight="bold" />
                                 ) : a.icon === 'external' ? (
                                   <ArrowSquareOut size={10} />
