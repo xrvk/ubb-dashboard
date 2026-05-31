@@ -245,7 +245,7 @@ export function ReportPanel({ month, onIngested, cached }: Props) {
             }}
           >
             <FileArrowUp size={14} weight="duotone" />
-            Upload existing CSV
+            Upload CSV
           </Button>
           {showLatestPanel ? (
             <Button size="sm" variant="outline" onClick={handleUseLatest}>
@@ -287,31 +287,21 @@ export function ReportPanel({ month, onIngested, cached }: Props) {
                 </span>
               </div>
               {showDownloadCta ? (
-                <div className="flex flex-wrap items-center gap-2">
-                  <a
-                    href={activeReport.download_urls![0]}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 rounded-md border border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-950/40 px-2.5 h-8 text-xs font-medium text-emerald-900 dark:text-emerald-100 hover:bg-emerald-100 dark:hover:bg-emerald-950/60"
-                  >
-                    <ArrowSquareOut size={14} weight="duotone" />
-                    Download CSV
-                  </a>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => fileInputRef.current?.click()}
-                  >
-                    <FileArrowUp size={14} weight="duotone" />
-                    Upload downloaded file
-                  </Button>
-                </div>
+                <a
+                  href={activeReport.download_urls![0]}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 rounded-md border border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-950/40 px-2.5 h-8 text-xs font-medium text-emerald-900 dark:text-emerald-100 hover:bg-emerald-100 dark:hover:bg-emerald-950/60"
+                >
+                  <ArrowSquareOut size={14} weight="duotone" />
+                  Download CSV
+                </a>
               ) : null}
             </div>
             {showDownloadCta ? (
               <p className="mt-2 text-xs text-neutral-500">
                 The download link is a temporary URL that expires in about 1 hour. Save the file,
-                then upload it back here to ingest.
+                then click <strong>Upload CSV</strong> above to ingest it.
               </p>
             ) : null}
           </div>
