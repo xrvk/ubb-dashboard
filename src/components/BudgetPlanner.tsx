@@ -110,7 +110,7 @@ function RequiredChip({
           )}
         >
           {short ? <Warning size={10} weight="fill" /> : null}
-          Min needed: {formatCurrency(required)}
+          Minimum: {formatCurrency(required)}
         </span>
       </TooltipTrigger>
       <TooltipContent>{tip}</TooltipContent>

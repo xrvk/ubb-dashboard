@@ -30,6 +30,7 @@ import {
   seatCostBreakdown,
 } from '@/lib/pricing'
 import { forecastSummary } from '@/lib/status'
+import { projectMonthlyBudget } from '@/lib/projection'
 import { formatCurrency, formatCurrencyShort, formatPercent, cn } from '@/lib/utils'
 import {
   NAV_TO_BUDGET_MODEL_EVENT,
@@ -99,10 +100,54 @@ export function DashboardPage() {
     return set.size
   }, [loginToCostCenter])
 
+  /**
+   * Forecast breakdown across the two budget scopes that report
+   * `consumed_amount` via the budgets API:
+   *   • `multi_user_customer` (universal ULB)
+   *   • `user` (individual ULBs)
+   *
+   * Note: `enterprise`- and `cost_center`-scope budgets DO NOT report
+   * consumed_amount (verified empirically — see probe-findings.md). Any
+   * Copilot user whose spend is absorbed by a CC budget without an
+   * individual ULB is invisible here. We count those seats so the card can
+   * be honest about coverage.
+   */
+  const trackedForecast = useMemo(() => {
+    const univMtd = universalUlb?.consumedAmount ?? 0
+    const univProj = projectMonthlyBudget(univMtd, 0).projectedMonthTotal
+    const indMtd = forecast.spendMtd
+    const indProj = forecast.projectedEom
+    // Seats whose consumption flows through a CC budget rather than universal
+    // or an individual ULB — these are the "untrackable" ones.
+    const indLogins = new Set(budgets.filter(b => b.user).map(b => b.user.toLowerCase()))
+    let untrackedSeats = 0
+    for (const s of seats) {
+      if (indLogins.has(s.login.toLowerCase())) continue
+      const cc = loginToCostCenter.get(s.login.toLowerCase())?.cc
+      if (cc && costCenterBudgetsByName.has(cc.name.toLowerCase())) untrackedSeats += 1
+    }
+    return {
+      universal: { mtd: univMtd, projected: univProj, hasBudget: !!universalUlb },
+      individual: { mtd: indMtd, projected: indProj, count: indCoverage.withInd },
+      totalMtd: univMtd + indMtd,
+      totalProjected: univProj + indProj,
+      untrackedSeats,
+    }
+  }, [
+    universalUlb,
+    forecast.spendMtd,
+    forecast.projectedEom,
+    indCoverage.withInd,
+    budgets,
+    seats,
+    loginToCostCenter,
+    costCenterBudgetsByName,
+  ])
+
   const entAmount = pool.enterpriseBudget
-  const overDelta = forecast.projectedEom - (entAmount ?? 0)
+  const overDelta = trackedForecast.totalProjected - (entAmount ?? 0)
   const headroomVsEnt =
-    entAmount === null ? null : Math.max(0, entAmount - forecast.spendMtd)
+    entAmount === null ? null : Math.max(0, entAmount - trackedForecast.totalMtd)
 
   return (
     <div className="grid gap-6">
@@ -122,13 +167,13 @@ export function DashboardPage() {
         />
         <KpiTile
           label="Spend to date"
-          value={formatCurrency(forecast.spendMtd)}
-          hint={`Day ${forecast.daysElapsed} of ${forecast.daysInMonth}`}
+          value={formatCurrency(trackedForecast.totalMtd)}
+          hint={`Day ${forecast.daysElapsed} of ${forecast.daysInMonth} · tracked scopes only`}
           icon={<CurrencyDollar size={22} weight="duotone" className="text-neutral-400" />}
         />
         <KpiTile
           label="Projected end-of-month"
-          value={formatCurrency(forecast.projectedEom)}
+          value={formatCurrency(trackedForecast.totalProjected)}
           hint={
             entAmount === null
               ? 'No enterprise cap to compare against'
@@ -145,11 +190,13 @@ export function DashboardPage() {
           hint={
             entAmount === null
               ? 'Requires enterprise budget'
-              : `${formatPercent(forecast.spendMtd / Math.max(1, entAmount))} of ent budget spent`
+              : `${formatPercent(trackedForecast.totalMtd / Math.max(1, entAmount))} of ent budget spent`
           }
           icon={<Receipt size={22} weight="duotone" className="text-neutral-400" />}
         />
       </div>
+
+      <ForecastBreakdownCard tracked={trackedForecast} entBudget={entAmount} />
 
       <div className="grid gap-6 lg:grid-cols-2">
         <PoolSplitCard pool={pool} />
@@ -238,6 +285,154 @@ function KpiTile({
         {icon}
       </CardContent>
     </Card>
+  )
+}
+
+// Color tokens for the spend-forecast stacked bar — kept distinct from the
+// pool donut palette so the two charts read as different metrics.
+const COLOR_UNIVERSAL = '#6366f1' // indigo-500
+const COLOR_INDIVIDUAL = '#10b981' // emerald-500
+
+interface TrackedForecast {
+  universal: { mtd: number; projected: number; hasBudget: boolean }
+  individual: { mtd: number; projected: number; count: number }
+  totalMtd: number
+  totalProjected: number
+  untrackedSeats: number
+}
+
+function ForecastBreakdownCard({
+  tracked,
+  entBudget,
+}: {
+  tracked: TrackedForecast
+  entBudget: number | null
+}) {
+  const pct = (v: number, total: number) =>
+    total > 0 ? `${Math.round((v / total) * 100)}%` : '—'
+  const totalProj = Math.max(1, tracked.totalProjected)
+  const univPctW = (tracked.universal.projected / totalProj) * 100
+  const indPctW = (tracked.individual.projected / totalProj) * 100
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Forecasted end-of-month spend</CardTitle>
+      </CardHeader>
+      <CardContent className="grid gap-4">
+        <div className="grid gap-4 md:grid-cols-3">
+          <BreakdownStat
+            color={COLOR_UNIVERSAL}
+            label="Universal ULB"
+            mtd={tracked.universal.mtd}
+            projected={tracked.universal.projected}
+            sub={
+              tracked.universal.hasBudget
+                ? `${pct(tracked.universal.projected, tracked.totalProjected)} of tracked spend`
+                : 'No universal ULB set — fallback users untracked'
+            }
+          />
+          <BreakdownStat
+            color={COLOR_INDIVIDUAL}
+            label="Individual ULBs"
+            mtd={tracked.individual.mtd}
+            projected={tracked.individual.projected}
+            sub={
+              tracked.individual.count > 0
+                ? `${tracked.individual.count.toLocaleString()} users · ${pct(tracked.individual.projected, tracked.totalProjected)} of tracked spend`
+                : 'No individual overrides set'
+            }
+          />
+          <div className="grid gap-1">
+            <div className="text-xs text-neutral-500 dark:text-neutral-400">
+              Tracked total
+            </div>
+            <div className="text-2xl font-semibold">
+              {formatCurrency(tracked.totalProjected)}
+            </div>
+            <div className="text-xs text-neutral-500">
+              MTD {formatCurrency(tracked.totalMtd)}
+              {entBudget !== null
+                ? ` · ${pct(tracked.totalProjected, entBudget)} of ent budget`
+                : ''}
+            </div>
+          </div>
+        </div>
+
+        {/* Stacked progress bar */}
+        <div>
+          <div className="flex w-full h-3 rounded-full overflow-hidden bg-neutral-100 dark:bg-neutral-800">
+            {tracked.universal.projected > 0 ? (
+              <div
+                className="h-full"
+                style={{ width: `${univPctW}%`, backgroundColor: COLOR_UNIVERSAL }}
+                title={`Universal ULB · ${formatCurrency(tracked.universal.projected)}`}
+              />
+            ) : null}
+            {tracked.individual.projected > 0 ? (
+              <div
+                className="h-full"
+                style={{ width: `${indPctW}%`, backgroundColor: COLOR_INDIVIDUAL }}
+                title={`Individual ULBs · ${formatCurrency(tracked.individual.projected)}`}
+              />
+            ) : null}
+          </div>
+          <div className="flex items-center gap-4 mt-2 text-xs text-neutral-600 dark:text-neutral-400">
+            <LegendDot color={COLOR_UNIVERSAL} label="Universal ULB" />
+            <LegendDot color={COLOR_INDIVIDUAL} label="Individual ULBs" />
+          </div>
+        </div>
+
+        {tracked.untrackedSeats > 0 ? (
+          <div className="rounded-md border border-amber-200 dark:border-amber-900/60 bg-amber-50 dark:bg-amber-950/30 text-amber-900 dark:text-amber-200 px-3 py-2 text-xs">
+            {tracked.untrackedSeats.toLocaleString()} seat
+            {tracked.untrackedSeats === 1 ? ' is' : 's are'} covered by a cost-center
+            budget with no individual ULB — their spend isn't included above. The
+            budgets API doesn't report <code className="font-mono">consumed_amount</code>{' '}
+            for <code className="font-mono">enterprise</code>- or{' '}
+            <code className="font-mono">cost_center</code>-scope budgets, so per-CC
+            burn isn't queryable today.
+          </div>
+        ) : (
+          <div className="text-[11px] text-neutral-500">
+            Spend is summed from <code className="font-mono">multi_user_customer</code>{' '}
+            and <code className="font-mono">user</code> budget scopes — the only
+            two that report <code className="font-mono">consumed_amount</code>.
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+function BreakdownStat({
+  color,
+  label,
+  mtd,
+  projected,
+  sub,
+}: {
+  color: string
+  label: string
+  mtd: number
+  projected: number
+  sub: string
+}) {
+  return (
+    <div className="grid gap-1">
+      <div className="flex items-center gap-2 text-xs text-neutral-500 dark:text-neutral-400">
+        <span
+          className="inline-block h-2 w-2 rounded-full"
+          style={{ backgroundColor: color }}
+        />
+        {label}
+      </div>
+      <div className="text-2xl font-semibold">{formatCurrency(projected)}</div>
+      <div className="text-xs text-neutral-500">
+        MTD {formatCurrency(mtd)} → projected EoM
+      </div>
+      <div className="text-[11px] text-neutral-500">{sub}</div>
+    </div>
   )
 }
 
