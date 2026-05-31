@@ -69,6 +69,12 @@ export function UniversalUlbPage() {
   const [ulbOverrideEntry, setUlbOverrideEntry] = useState<{ sig: string; value: number } | null>(null)
   /** Logins the admin explicitly UNCHECKED. All outliers are selected by default. */
   const [deselectedOutliers, setDeselectedOutliers] = useState<Set<string>>(new Set())
+  /** Per-outlier ULB override in dollars. Logins in this map are treated as
+   * "manually configured" — they're excluded from the select-all toggle and
+   * their value is used directly instead of the suggested formula. */
+  const [editedOutlierUlbsEntry, setEditedOutlierUlbsEntry] = useState<
+    { sig: string; map: Record<string, number> } | null
+  >(null)
   const [applying, setApplying] = useState(false)
   const [batchProgress, setBatchProgress] = useState<{ done: number; total: number } | null>(null)
   const [outlierPage, setOutlierPage] = useState(0)
@@ -103,6 +109,26 @@ export function UniversalUlbPage() {
     customThresholdEntry?.sig === datasetSig ? customThresholdEntry.value : null
   const ulbOverrideAICs =
     ulbOverrideEntry?.sig === datasetSig ? ulbOverrideEntry.value : null
+  const editedOutlierUlbs = useMemo(
+    () =>
+      editedOutlierUlbsEntry?.sig === datasetSig
+        ? editedOutlierUlbsEntry.map
+        : ({} as Record<string, number>),
+    [editedOutlierUlbsEntry, datasetSig],
+  )
+  const editedOutlierLogins = useMemo(
+    () => new Set(Object.keys(editedOutlierUlbs)),
+    [editedOutlierUlbs],
+  )
+
+  const setEditedOutlierUlb = (login: string, amount: number | null) => {
+    setEditedOutlierUlbsEntry(prev => {
+      const base = prev?.sig === datasetSig ? { ...prev.map } : {}
+      if (amount === null) delete base[login]
+      else base[login] = amount
+      return Object.keys(base).length > 0 ? { sig: datasetSig, map: base } : null
+    })
+  }
 
   // Apply threshold mode → power user split.
   const threshold = useMemo(
@@ -172,15 +198,22 @@ export function UniversalUlbPage() {
     }
   }
 
-  /** Create individual ULBs for selected outliers at ceil(maxAICs/100 × 1.10). */
+  /** Create individual ULBs for selected outliers at ceil(maxAICs/100 × 1.10),
+   * or at the admin's edited amount if they've customized the row. */
   const handleCreateOutlierUlbs = async () => {
     if (!apiFetch) return
     const targets = threshold.powerUsers
       .filter(u => selectedOutliers.has(u.login))
-      .map(u => ({
-        login: u.login,
-        amount: Math.max(1, Math.ceil((u.totalAICs / AICS_PER_USD) * (1 + OUTLIER_BUFFER_PCT))),
-      }))
+      .map(u => {
+        const suggested = Math.max(
+          1,
+          Math.ceil((u.totalAICs / AICS_PER_USD) * (1 + OUTLIER_BUFFER_PCT)),
+        )
+        return {
+          login: u.login,
+          amount: editedOutlierUlbs[u.login] ?? suggested,
+        }
+      })
     if (targets.length === 0) {
       toast.error('Select at least one outlier.')
       return
@@ -224,13 +257,30 @@ export function UniversalUlbPage() {
     })
   }
 
+  // Edited rows are treated as already configured — they're not toggled by
+  // "select all" and don't affect the all/none counter.
+  const unmodifiedPowerUsers = useMemo(
+    () => threshold.powerUsers.filter(u => !editedOutlierLogins.has(u.login)),
+    [threshold.powerUsers, editedOutlierLogins],
+  )
   const allSelected =
-    threshold.powerUsers.length > 0 && selectedOutliers.size === threshold.powerUsers.length
+    unmodifiedPowerUsers.length > 0 &&
+    unmodifiedPowerUsers.every(u => selectedOutliers.has(u.login))
   const toggleAll = () => {
     if (allSelected) {
-      setDeselectedOutliers(new Set(threshold.powerUsers.map(u => u.login)))
+      // Deselect all unmodified; leave edited rows' state untouched.
+      setDeselectedOutliers(prev => {
+        const next = new Set(prev)
+        for (const u of unmodifiedPowerUsers) next.add(u.login)
+        return next
+      })
     } else {
-      setDeselectedOutliers(new Set())
+      // Select all unmodified; leave edited rows' state untouched.
+      setDeselectedOutliers(prev => {
+        const next = new Set(prev)
+        for (const u of unmodifiedPowerUsers) next.delete(u.login)
+        return next
+      })
     }
   }
 
@@ -475,11 +525,16 @@ export function UniversalUlbPage() {
                         type="checkbox"
                         checked={allSelected}
                         onChange={toggleAll}
-                        aria-label="Select all outliers"
+                        aria-label="Select all unedited outliers"
                       />
                       <span className="text-neutral-700 dark:text-neutral-300">
-                        Select all ({threshold.powerUsers.length.toLocaleString()})
+                        Select all ({unmodifiedPowerUsers.length.toLocaleString()})
                       </span>
+                      {editedOutlierLogins.size > 0 && (
+                        <span className="text-neutral-500 dark:text-neutral-400">
+                          · {editedOutlierLogins.size.toLocaleString()} edited (skipped)
+                        </span>
+                      )}
                     </label>
                     <div className="text-neutral-500">
                       {selectedOutliers.size.toLocaleString()} selected
@@ -506,6 +561,8 @@ export function UniversalUlbPage() {
                             1,
                             Math.ceil((u.totalAICs / AICS_PER_USD) * (1 + OUTLIER_BUFFER_PCT)),
                           )
+                          const isEdited = editedOutlierLogins.has(u.login)
+                          const value = isEdited ? editedOutlierUlbs[u.login] : suggested
                           return (
                             <tr
                               key={u.login}
@@ -526,7 +583,45 @@ export function UniversalUlbPage() {
                               <td className="px-3 py-2 text-right tabular-nums">
                                 {formatCurrency(u.grossAmount)}
                               </td>
-                              <td className="px-3 py-2 text-right tabular-nums">${suggested}</td>
+                              <td className="px-3 py-2 text-right tabular-nums">
+                                <div className="inline-flex items-center justify-end gap-1">
+                                  <span className="text-neutral-400">$</span>
+                                  <input
+                                    type="number"
+                                    min={1}
+                                    value={value}
+                                    onChange={e => {
+                                      const raw = e.target.value
+                                      if (raw === '') {
+                                        setEditedOutlierUlb(u.login, null)
+                                        return
+                                      }
+                                      const n = Math.max(1, Math.round(Number(raw)))
+                                      if (!Number.isFinite(n)) return
+                                      if (n === suggested) setEditedOutlierUlb(u.login, null)
+                                      else setEditedOutlierUlb(u.login, n)
+                                    }}
+                                    aria-label={`ULB for ${u.login}`}
+                                    className={`w-24 h-7 rounded border px-1.5 text-right tabular-nums bg-white dark:bg-neutral-900 ${
+                                      isEdited
+                                        ? 'border-amber-500 dark:border-amber-400 font-semibold'
+                                        : 'border-neutral-300 dark:border-neutral-700'
+                                    }`}
+                                  />
+                                  {isEdited ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => setEditedOutlierUlb(u.login, null)}
+                                      title={`Reset to suggested ($${suggested})`}
+                                      className="text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 text-xs px-1"
+                                    >
+                                      ↺
+                                    </button>
+                                  ) : (
+                                    <span className="w-4" />
+                                  )}
+                                </div>
+                              </td>
                             </tr>
                           )
                         })}
