@@ -31,70 +31,65 @@ export function BudgetConstraintsHelpPage({ onBack }: Props) {
         <CardContent className="p-6 space-y-6 text-sm leading-relaxed">
           <Section title="The four budget controls">
             <p>
-              GitHub Copilot governs spend with four controls. This dashboard
-              helps you size and align them so usage limits behave the way you
-              expect.
+              Before you adjust budgets, make sure you understand how the four
+              budget controls work and how this dashboard evaluates them. This
+              page focuses on what the red banner checks before it warns about
+              blocking risk.
             </p>
             <ul className="list-disc pl-6 space-y-1">
               <li>
-                <Term>Universal user-level budget (universal ULB)</Term> — one
-                cap applied to every Copilot user in the enterprise.
+                <Term>Universal user-level budget (universal ULB)</Term>. One
+                cap applied to every regular user.
               </li>
               <li>
-                <Term>Individual user-level budget overrides</Term> — per-user
-                caps that replace the universal ULB for specific people (power
-                users, exceptions, etc.).
+                <Term>Individual user-level budget overrides</Term>. Per-user
+                caps for exceptions who need higher limits.
               </li>
               <li>
-                <Term>Cost center budgets</Term> — metered-spend caps on a
-                group of users routed to a cost center.
+                <Term>Cost center budget</Term>. A metered-spend cap for users
+                assigned to that cost center.
               </li>
               <li>
-                <Term>Enterprise budget</Term> — the failsafe metered-spend
-                cap covering the whole enterprise (or just the users outside
-                any budgeted cost center, depending on the cost-center
-                exclusion setting).
+                <Term>Enterprise budget</Term>. A metered-spend cap for the
+                enterprise.
               </li>
             </ul>
             <p className="text-xs opacity-75">
-              Each budget can be configured to either alert only or{' '}
-              <Term>Stop usage when budget limit is reached</Term>. The
-              constraint checks below assume the hard-stop behavior — that&apos;s
-              the configuration this dashboard is designed to keep coherent.
+              Each budget can alert only, or{' '}
+              <Term>Stop usage when budget limit is reached</Term>. The banner
+              checks are most important when stop usage is enabled, because that
+              is when users can be blocked.
             </p>
           </Section>
 
           <Section title="Effective ULB">
-            <p>
-              For any user, the cap GitHub actually enforces is the
-              <Term> effective ULB</Term>, the maximum of the individual
-              override and the universal ULB:
-            </p>
+            <p>GitHub evaluates an effective ULB for each user:</p>
             <Formula>
               effective ULB = max(individual ULB override, universal ULB)
             </Formula>
             <p>
               <Term>Regular users</Term> are users without an individual
-              override — their effective ULB is just the universal ULB.
+              override. Their effective ULB is the universal ULB.
             </p>
           </Section>
 
-          <Section title="Pool, metered, and the sizing gap">
+          <Section title="Shared pool and metered charges">
             <p>
-              Your enterprise has a <Term>shared pool</Term> of included
-              credits each month:
+              Included credits are one enterprise-wide <Term>shared pool</Term>.
+              There is no per-user included allowance. There is no per-user plan
+              default.
             </p>
             <Formula>
               pool value = (Copilot Business seats × $19) + (Copilot Enterprise
               seats × $39)
             </Formula>
             <p>
-              If user-level budgets collectively allow more consumption than
-              the pool covers, the difference becomes <Term>metered charges</Term>.
-              Your cost center and enterprise budgets need to be high enough to
-              cover that gap, or users will hit a budget block before they
-              reach their own ULB.
+              If user-level budgets collectively allow more consumption than the
+              pool value provides, the difference becomes{' '}
+              <Term>metered charges</Term>. Cost center budgets and enterprise
+              budget need to be high enough to cover that gap.
             </p>
+            <p>Here&apos;s how to estimate:</p>
             <Formula>
               max user consumption = (regular users × universal ULB) + Σ
               individual ULB overrides{'\n'}
@@ -103,56 +98,53 @@ export function BudgetConstraintsHelpPage({ onBack }: Props) {
               budget ≥ gap
             </Formula>
             <p className="text-xs opacity-75">
-              Tip: whenever you raise the universal ULB or add overrides,
-              re-check this — raising ULBs without raising the enterprise
-              budget can cause the enterprise budget to block users before
-              they reach their individual budgets.
+              <strong>Tip:</strong> Whenever you raise universal ULB or
+              individual user-level budget overrides, re-check this calculation.
+              Raising ULBs without raising shared budgets can block users before
+              they reach their individual limits.
             </p>
           </Section>
 
           <Section title="Cost center exclusion">
             <p>
               The enterprise budget has a <Term>cost center exclusion</Term>{' '}
-              setting that decides whether cost center spend also counts
-              against it:
+              setting that changes scope.
             </p>
+            <p>Here&apos;s how it works:</p>
             <ul className="list-disc pl-6 space-y-1">
               <li>
-                <Term>Cost center exclusion off</Term> (default) — cost-center
-                spend draws from the enterprise budget too. The sum of cost
-                center budgets must be ≤ the enterprise budget, otherwise the
-                enterprise budget will block CC users before their own CC
-                budgets do.
+                <Term>Cost center exclusion off</Term> (default). Cost center
+                spend also draws from enterprise budget capacity. If the sum of
+                cost center budgets is above the enterprise budget, the
+                enterprise budget can block cost center users early.
               </li>
               <li>
-                <Term>Cost center exclusion on</Term> — cost centers operate
-                independently. CC users can keep spending even if the
-                enterprise budget hits $0; their metered charges are only
-                capped by their own CC budget. The enterprise budget then only
-                covers users not assigned to a budgeted cost center.
+                <Term>Cost center exclusion on</Term>. Cost centers are capped
+                by their own budgets, and enterprise budget covers only users
+                outside budgeted cost centers.
               </li>
             </ul>
           </Section>
 
           <Section title="The three coherence checks">
             <p>
-              The Overview banner turns red when any of these fail — that&apos;s
-              the dashboard&apos;s way of saying &quot;your budgets will block
-              users earlier than you intended&quot;:
+              The red banner appears when any check fails. This means your
+              configuration can block usage earlier than intended.
             </p>
+            <p>Here&apos;s how to read it:</p>
             <ol className="list-decimal pl-6 space-y-2">
               <li>
-                <Term>Per-cost-center fit</Term> — for every cost center that
-                has a budget,
+                <Term>Per-cost-center fit</Term>. For every cost center that has
+                a budget,
                 <Formula>Σ effective ULBs of CC members ≤ CC budget</Formula>
               </li>
               <li>
-                <Term>Cost-center vs enterprise fit</Term> (when cost center
-                exclusion is off),
+                <Term>Cost-center vs enterprise fit</Term>. When cost center
+                exclusion is off,
                 <Formula>Σ cost center budgets ≤ enterprise budget</Formula>
               </li>
               <li>
-                <Term>Unassigned-users fit</Term> — for users not routed to a
+                <Term>Unassigned-users fit</Term>. For users not routed to a
                 budgeted cost center,
                 <Formula>
                   Σ effective ULBs of unassigned users ≤ leftover enterprise
@@ -162,18 +154,28 @@ export function BudgetConstraintsHelpPage({ onBack }: Props) {
                 </Formula>
               </li>
             </ol>
+            <p className="text-xs opacity-75">
+              <strong>Tip:</strong> Start by fixing per-cost-center fit, then
+              check cost-center vs enterprise fit (when exclusion is off), then
+              re-check unassigned-users fit.
+            </p>
           </Section>
 
           <Section title="Max safe universal ULB">
             <p>
-              When you change the universal ULB, only regular users — those
-              without an individual override at or above the universal value —
-              are affected. The dashboard computes the largest universal ULB
-              that still keeps every check passing, holding individual
-              overrides and budgets constant. If even $0 won&apos;t resolve a
-              failure, individual overrides alone already exceed an envelope,
-              and the fix has to be one of: raise the CC or enterprise budget,
-              lower specific individual overrides, or re-route members between
+              The dashboard computes the highest universal ULB that keeps all
+              three checks passing, with budgets and individual user-level
+              budget overrides held fixed.
+            </p>
+            <p>
+              Situation: You want to raise universal ULB but keep the current
+              budgets.
+            </p>
+            <p>
+              Configuration: Raise universal ULB only up to the max safe
+              universal ULB value. If even universal ULB = $0 fails, individual
+              user-level budget overrides already exceed your current envelopes.
+              Raise budgets, lower specific overrides, or reroute users between
               cost centers.
             </p>
           </Section>
@@ -181,34 +183,37 @@ export function BudgetConstraintsHelpPage({ onBack }: Props) {
           <Section title="Worked example">
             <p>
               Cost center <Term>&quot;eng&quot;</Term> has a $500 budget and 3
-              members; two have individual overrides of $100, the third has
-              none. With a universal ULB of $50:
+              members. Two have individual overrides of $100. The third has
+              none. With universal ULB = $50:
             </p>
             <Formula>
               effective ULBs = max(100, 50) + max(100, 50) + max(0, 50) = 100 +
               100 + 50 = $250
             </Formula>
-            <p>$250 ≤ $500, so the per-cost-center check passes. Raise the universal ULB to $200:</p>
+            <p>
+              $250 ≤ $500, so the per-cost-center check passes. Raise universal
+              ULB to $200:
+            </p>
             <Formula>
               effective ULBs = max(100, 200) + max(100, 200) + max(0, 200) =
               200 + 200 + 200 = $600
             </Formula>
             <p>
-              $600 &gt; $500 — the check fails. The max safe universal ULB here
-              is $150 ($150 + $150 + $150 = $450 ≤ $500).
+              $600 &gt; $500, so the check fails. The max safe universal ULB is
+              $150 ($150 + $150 + $150 = $450 ≤ $500).
+            </p>
+            <p className="text-xs opacity-75">
+              <strong>Tip:</strong> This example is a per-cost-center fit check.
+              If cost center exclusion is off, you still need the other two
+              checks to pass.
             </p>
           </Section>
 
-          <Section title="Alerts vs hard stops">
+          <Section title="Alerts and hard stops">
             <p>
-              Everything above is about <em>limits</em>, not notifications.
-              Each budget independently has alert thresholds and recipients
-              you configure on github.com — surfaced as the{' '}
-              <Term>Alerts on / off</Term> flag on each row of the Budget
-              planner. Alerts fire whether or not{' '}
-              <Term>Stop usage when budget limit is reached</Term> is enabled;
-              the hard-stop behavior is what actually blocks consumption at
-              100%.
+              Alerts and limits are separate. Alerts notify. Blocking only
+              happens when <Term>Stop usage when budget limit is reached</Term>{' '}
+              is enabled.
             </p>
           </Section>
 
