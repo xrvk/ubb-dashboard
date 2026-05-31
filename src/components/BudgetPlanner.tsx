@@ -688,7 +688,7 @@ export function BudgetPlanner() {
                     ) : null}
                   </div>
                 </div>
-                <div className="text-right text-xs">
+                <div className="text-right text-xs pr-3">
                   <SeatsLink
                     seats={seats.length}
                     href={credentials ? enterpriseSeatsUrl(credentials.base, credentials.ent) : null}
