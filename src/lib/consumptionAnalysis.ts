@@ -142,7 +142,7 @@ export function applyThreshold(
 export function calcThreshold(
   users: CsvUserUsage[],
   mode: ThresholdMode,
-  customAICs?: number,
+  customPct?: number,
 ): ThresholdResult {
   if (users.length === 0) return applyThreshold([], 0)
 
@@ -161,8 +161,12 @@ export function calcThreshold(
       const count = Math.max(1, Math.ceil(sorted.length * 0.3))
       return applyThreshold(users, sorted[count - 1].totalAICs)
     }
-    case 'custom':
-      return applyThreshold(users, customAICs ?? 0)
+    case 'custom': {
+      const pct = Math.max(0, Math.min(100, customPct ?? 0))
+      if (pct <= 0) return applyThreshold(users, sorted[0].totalAICs + 1)
+      const count = Math.max(1, Math.ceil(sorted.length * (pct / 100)))
+      return applyThreshold(users, sorted[Math.min(count, sorted.length) - 1].totalAICs)
+    }
   }
 }
 

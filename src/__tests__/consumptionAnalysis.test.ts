@@ -130,10 +130,9 @@ describe('calcThreshold', () => {
     expect(calcThreshold(users, 'top-30').powerUserCount).toBe(3)
   })
 
-  it('custom mode uses provided threshold', () => {
-    const result = calcThreshold(users, 'custom', 500)
+  it('custom mode treats value as top-N%', () => {
+    const result = calcThreshold(users, 'custom', 60)
     expect(result.powerUserCount).toBe(6)
-    expect(result.thresholdAICs).toBe(500)
   })
 
   it('handles empty input', () => {

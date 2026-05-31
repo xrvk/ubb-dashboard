@@ -99,15 +99,15 @@ export function UniversalUlbPage() {
 
   // Dataset signature — invalidates overrides when the input data changes.
   const datasetSig = `${credentials?.ent ?? ''}:${csvUsers.length}`
-  const customThreshold =
+  const customPct =
     customThresholdEntry?.sig === datasetSig ? customThresholdEntry.value : null
   const ulbOverrideAICs =
     ulbOverrideEntry?.sig === datasetSig ? ulbOverrideEntry.value : null
 
   // Apply threshold mode → power user split.
   const threshold = useMemo(
-    () => calcThreshold(csvUsers, thresholdMode, customThreshold ?? undefined),
-    [csvUsers, thresholdMode, customThreshold],
+    () => calcThreshold(csvUsers, thresholdMode, customPct ?? undefined),
+    [csvUsers, thresholdMode, customPct],
   )
 
   // ULB to display on the chart, in AICs.
@@ -354,8 +354,18 @@ export function UniversalUlbPage() {
             onSetCutoff={
               hasData
                 ? aics => {
+                    // Convert clicked AIC value to top-N% rank.
+                    const sorted = [...csvUsers]
+                      .map(u => u.totalAICs)
+                      .sort((a, b) => b - a)
+                    const rank = sorted.findIndex(v => v < aics)
+                    const count = rank === -1 ? sorted.length : Math.max(1, rank)
+                    const pct = Math.max(
+                      1,
+                      Math.min(100, Math.round((count / sorted.length) * 100)),
+                    )
                     setThresholdMode('custom')
-                    setCustomThresholdEntry({ sig: datasetSig, value: aics })
+                    setCustomThresholdEntry({ sig: datasetSig, value: pct })
                     // Snap ULB back to the recomputed P95 of regulars by
                     // clearing any manual y override.
                     setUlbOverrideEntry(null)
@@ -392,20 +402,24 @@ export function UniversalUlbPage() {
 
           {thresholdMode === 'custom' && hasData ? (
             <div className="flex items-center gap-2 text-xs">
-              <label className="text-neutral-600 dark:text-neutral-400">Custom threshold (AICs):</label>
+              <label className="text-neutral-600 dark:text-neutral-400">Top</label>
               <Input
                 type="number"
-                min={0}
+                min={1}
+                max={100}
                 step="1"
-                value={customThreshold ?? ''}
+                value={customPct ?? ''}
                 onChange={e => {
                   const n = Number(e.target.value)
                   setCustomThresholdEntry(
-                    Number.isFinite(n) ? { sig: datasetSig, value: Math.round(n) } : null,
+                    Number.isFinite(n)
+                      ? { sig: datasetSig, value: Math.max(1, Math.min(100, Math.round(n))) }
+                      : null,
                   )
                 }}
-                className="h-7 w-32"
+                className="h-7 w-20"
               />
+              <span className="text-neutral-600 dark:text-neutral-400">% are outliers</span>
             </div>
           ) : null}
 
