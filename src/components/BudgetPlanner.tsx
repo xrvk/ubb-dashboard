@@ -931,7 +931,7 @@ export function BudgetPlanner() {
                                   )}
                                 </div>
                               ) : (
-                                <div className="flex items-center justify-end gap-2">
+                                <div className="flex items-center justify-end gap-1.5">
                                   {row.affectsCopilot && row.floor > 0 ? (
                                     <Tooltip>
                                       <TooltipTrigger asChild>
@@ -944,16 +944,24 @@ export function BudgetPlanner() {
                                       </TooltipContent>
                                     </Tooltip>
                                   ) : null}
+                                  <span className="text-sm text-neutral-400 dark:text-neutral-600">$</span>
                                   <button
                                     type="button"
                                     onClick={() => startCreating(row.key)}
-                                    className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10"
                                     title="Set a budget for this cost center"
+                                    className="w-36 h-9 px-3 text-right font-mono text-sm rounded-md border border-dashed border-neutral-300 dark:border-neutral-700 bg-transparent text-neutral-400 dark:text-neutral-600 hover:border-emerald-500 hover:text-emerald-700 dark:hover:text-emerald-400 hover:bg-emerald-500/5 transition-colors"
                                   >
-                                    <Plus size={10} weight="bold" />
-                                    Set budget
+                                    Not set
                                   </button>
-                                  <span className="w-[14px]" aria-hidden />
+                                  <button
+                                    type="button"
+                                    onClick={() => startCreating(row.key)}
+                                    className="text-emerald-700 dark:text-emerald-400 hover:text-emerald-800 dark:hover:text-emerald-300"
+                                    title="Set a budget for this cost center"
+                                    aria-label={`Set budget for ${row.name}`}
+                                  >
+                                    <Plus size={14} weight="bold" />
+                                  </button>
                                 </div>
                               )}
                             </td>
