@@ -36,7 +36,7 @@ import { ConsumptionCurve } from '@/components/ConsumptionCurve'
 
 // 100 AICs = $1.00 in GitHub billing (1 AIC = $0.01).
 const AICS_PER_USD = 100
-const DEFAULT_OUTLIER_BUFFER_PCT = 10
+const DEFAULT_OUTLIER_BUFFER_PCT = 5
 const MAX_OUTLIER_BUFFER_PCT = 200
 
 const MODE_LABELS: Record<ThresholdMode, string> = {
