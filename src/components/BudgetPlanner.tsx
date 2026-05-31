@@ -8,6 +8,8 @@ import {
   Warning,
   ArrowCounterClockwise,
   ArrowSquareOut,
+  Bell,
+  BellSlash,
   Lock,
   LockOpen,
   Plus,
@@ -160,8 +162,38 @@ function CapToggle({
  * Deep-link to the GHEC budget edit page. We don't manage alert thresholds or
  * recipients from this app because GitHub already has a richer UI for them;
  * pointing admins at that page keeps a single source of truth.
+ *
+ * When `willAlert` is provided we surface the on/off state inline so admins
+ * can tell at a glance which budgets have alerts wired up vs. which are
+ * silently overspending. The link target is the same either way.
  */
-function AlertsLink({ href, label = 'Alerts' }: { href: string; label?: string }) {
+function AlertsLink({
+  href,
+  willAlert,
+  alertRecipients,
+}: {
+  href: string
+  willAlert?: boolean
+  alertRecipients?: string[]
+}) {
+  const known = typeof willAlert === 'boolean'
+  const on = known && willAlert
+  const off = known && !willAlert
+  const recipientCount = alertRecipients?.length ?? 0
+  const stateClass = on
+    ? 'text-emerald-700 dark:text-emerald-400 hover:text-emerald-800 dark:hover:text-emerald-300'
+    : off
+    ? 'text-amber-700 dark:text-amber-400 hover:text-amber-800 dark:hover:text-amber-300'
+    : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100'
+  const Icon = on ? Bell : off ? BellSlash : null
+  const label = on ? 'Alerts on' : off ? 'Alerts off' : 'Alerts'
+  const tooltip = on
+    ? recipientCount > 0
+      ? `Alerts on — ${recipientCount} recipient${recipientCount === 1 ? '' : 's'}. Click to manage on github.com.`
+      : 'Alerts on. Click to manage thresholds and recipients on github.com.'
+    : off
+    ? 'No alerts configured for this budget. Click to add alert thresholds and recipients on github.com.'
+    : 'Configure alert thresholds and recipients on github.com.'
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -170,13 +202,14 @@ function AlertsLink({ href, label = 'Alerts' }: { href: string; label?: string }
           target="_blank"
           rel="noopener noreferrer"
           onClick={openExternal(href)}
-          className="inline-flex items-center gap-1 text-[11px] text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100 hover:underline"
+          className={cn('inline-flex items-center gap-1 text-[11px] hover:underline', stateClass)}
         >
+          {Icon ? <Icon size={11} weight={on ? 'fill' : 'regular'} /> : null}
           {label}
           <ArrowSquareOut size={10} />
         </a>
       </TooltipTrigger>
-      <TooltipContent>Configure alert thresholds and recipients on github.com.</TooltipContent>
+      <TooltipContent>{tooltip}</TooltipContent>
     </Tooltip>
   )
 }
@@ -252,6 +285,8 @@ export function BudgetPlanner() {
     preventFurtherUsage: boolean
     seatCount: number
     affectsCopilot: boolean
+    willAlert: boolean
+    alertRecipients: string[]
   }
   const rows: Row[] = useMemo(() => {
     const seatsByCcId = new Map<string, number>()
@@ -272,6 +307,8 @@ export function BudgetPlanner() {
           preventFurtherUsage: b?.preventFurtherUsage ?? false,
           seatCount: seatsByCcId.get(cc.id) ?? 0,
           affectsCopilot: ccIdsAffectingCopilot.has(cc.id),
+          willAlert: b?.willAlert ?? false,
+          alertRecipients: b?.alertRecipients ?? [],
         }
       })
       .sort((a, b) => {
@@ -594,7 +631,11 @@ export function BudgetPlanner() {
                     onChange={next => setPrevent('ent', next)}
                   />
                   {credentials ? (
-                    <AlertsLink href={budgetEditUrl(credentials.base, credentials.ent, enterpriseBudget.id)} />
+                    <AlertsLink
+                      href={budgetEditUrl(credentials.base, credentials.ent, enterpriseBudget.id)}
+                      willAlert={enterpriseBudget.willAlert}
+                      alertRecipients={enterpriseBudget.alertRecipients}
+                    />
                   ) : null}
                 </div>
               </div>
@@ -732,7 +773,11 @@ export function BudgetPlanner() {
                             </td>
                             <td className="px-3 py-1.5 text-xs">
                               {row.budgetId && credentials ? (
-                                <AlertsLink href={budgetEditUrl(credentials.base, credentials.ent, row.budgetId)} />
+                                <AlertsLink
+                                  href={budgetEditUrl(credentials.base, credentials.ent, row.budgetId)}
+                                  willAlert={row.willAlert}
+                                  alertRecipients={row.alertRecipients}
+                                />
                               ) : (
                                 <span className="text-neutral-500">—</span>
                               )}
