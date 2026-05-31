@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Gauge, Moon, Sun, ArrowCounterClockwise, BookOpen } from '@phosphor-icons/react'
+import { Gauge, Moon, Sun, ArrowCounterClockwise, BookOpen, ArrowsClockwise, PlugsConnected } from '@phosphor-icons/react'
 import { Toaster } from 'sonner'
 import { useTheme } from 'next-themes'
 import { useCredentials } from '@/hooks/use-credentials'
@@ -31,7 +31,7 @@ const TAB_LABELS: Record<Tab, string> = {
 }
 
 export function App() {
-  const { credentials } = useCredentials()
+  const { credentials, refresh, disconnect, loading } = useCredentials()
   const { resolvedTheme, setTheme } = useTheme()
 
   const [tab, setTab] = useState<Tab>('overview')
@@ -86,10 +86,23 @@ export function App() {
           </div>
           <Button
             variant="ghost"
+            size="sm"
+            onClick={() => setTab('budget-model')}
+            title="How the budget constraint model works"
+            className={cn(
+              'ml-auto',
+              tab === 'budget-model' &&
+                'bg-neutral-100 text-neutral-900 dark:bg-neutral-800 dark:text-neutral-100',
+            )}
+          >
+            <BookOpen size={14} weight="duotone" />
+            <span className="hidden sm:inline">Budget model</span>
+          </Button>
+          <Button
+            variant="ghost"
             size="icon"
             aria-label="Toggle theme"
             onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
-            className="ml-auto"
           >
             {resolvedTheme === 'dark' ? <Sun size={18} weight="duotone" /> : <Moon size={18} weight="duotone" />}
           </Button>
@@ -116,19 +129,6 @@ export function App() {
               ))}
             </div>
             <div className="ml-auto flex items-center gap-2">
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => setTab('budget-model')}
-                title="How the budget constraint model works"
-                className={cn(
-                  tab === 'budget-model' &&
-                    'bg-neutral-100 text-neutral-900 dark:bg-neutral-800 dark:text-neutral-100',
-                )}
-              >
-                <BookOpen size={14} weight="duotone" />
-                <span className="hidden sm:inline">Budget model</span>
-              </Button>
               {snapshot ? (
                 <Button
                   size="sm"
@@ -140,6 +140,42 @@ export function App() {
                   <span className="hidden sm:inline">Revert ({snapshot.entries.length.toLocaleString()})</span>
                 </Button>
               ) : null}
+              <div className="hidden md:flex items-center gap-1.5 px-2 py-1 rounded-md border border-neutral-200 dark:border-neutral-800 text-xs">
+                <PlugsConnected
+                  size={14}
+                  weight="duotone"
+                  className={credentials.base === 'demo://' ? 'text-amber-500' : 'text-emerald-600'}
+                />
+                <span className="font-medium text-neutral-700 dark:text-neutral-200">
+                  {credentials.base === 'demo://'
+                    ? `Demo · ${credentials.ent.replace('demo-', '')} users`
+                    : new URL(credentials.base).host}
+                </span>
+              </div>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => void refresh()}
+                disabled={loading}
+                title={credentials.base === 'demo://' ? 'Regenerate demo dataset' : 'Refresh data from API'}
+                aria-label="Refresh"
+              >
+                <ArrowsClockwise size={14} weight="duotone" />
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  if (credentials.base === 'demo://') {
+                    window.location.search = ''
+                  } else {
+                    disconnect()
+                  }
+                }}
+                title={credentials.base === 'demo://' ? 'Exit demo mode' : 'Disconnect from enterprise'}
+              >
+                {credentials.base === 'demo://' ? 'Exit demo' : 'Disconnect'}
+              </Button>
             </div>
           </div>
         </div>
