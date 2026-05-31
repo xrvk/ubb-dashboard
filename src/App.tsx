@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Gauge, Moon, Sun, ArrowCounterClockwise } from '@phosphor-icons/react'
+import { Gauge, Moon, Sun, ArrowCounterClockwise, BookOpen } from '@phosphor-icons/react'
 import { Toaster } from 'sonner'
 import { useTheme } from 'next-themes'
 import { useCredentials } from '@/hooks/use-credentials'
@@ -7,18 +7,24 @@ import { ImportPanel } from '@/components/ImportPanel'
 import { IndividualUlbPage } from '@/components/IndividualUlbPage'
 import { OverviewPage } from '@/components/OverviewPage'
 import { UniversalUlbPage } from '@/components/UniversalUlbPage'
+import { BudgetConstraintsHelpPage } from '@/components/BudgetConstraintsHelpPage'
 import { Button } from '@/components/ui/button'
 import { cn, openExternal } from '@/lib/utils'
 import { EMPTY_FILTERS, type TableFilters } from '@/components/BudgetsTable'
-import { NAV_TO_INDIVIDUAL_EVENT, type NavToIndividualDetail } from '@/lib/navEvents'
+import {
+  NAV_TO_BUDGET_MODEL_EVENT,
+  NAV_TO_INDIVIDUAL_EVENT,
+  type NavToIndividualDetail,
+} from '@/lib/navEvents'
 import type { BulkApplySnapshot } from '@/lib/snapshot'
 
-type Tab = 'overview' | 'individual' | 'universal'
+type Tab = 'overview' | 'individual' | 'universal' | 'budget-model'
 
 const TAB_LABELS: Record<Tab, string> = {
   overview: 'Overview',
   individual: 'Individual ULBs',
   universal: 'Universal ULB',
+  'budget-model': 'Budget model',
 }
 
 export function App() {
@@ -44,6 +50,12 @@ export function App() {
     }
     window.addEventListener(NAV_TO_INDIVIDUAL_EVENT, handler)
     return () => window.removeEventListener(NAV_TO_INDIVIDUAL_EVENT, handler)
+  }, [])
+
+  useEffect(() => {
+    const handler = () => setTab('budget-model')
+    window.addEventListener(NAV_TO_BUDGET_MODEL_EVENT, handler)
+    return () => window.removeEventListener(NAV_TO_BUDGET_MODEL_EVENT, handler)
   }, [])
   return (
     <div className="min-h-screen">
@@ -91,6 +103,19 @@ export function App() {
               ))}
             </div>
             <div className="ml-auto flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setTab('budget-model')}
+                title="How the budget constraint model works"
+                className={cn(
+                  tab === 'budget-model' &&
+                    'bg-neutral-100 text-neutral-900 dark:bg-neutral-800 dark:text-neutral-100',
+                )}
+              >
+                <BookOpen size={14} weight="duotone" />
+                <span className="hidden sm:inline">Budget model</span>
+              </Button>
               {snapshot ? (
                 <Button
                   size="sm"
@@ -123,6 +148,8 @@ export function App() {
               pendingFilter={pendingIndividualFilter}
               onPendingFilterConsumed={() => setPendingIndividualFilter(null)}
             />
+          ) : tab === 'budget-model' ? (
+            <BudgetConstraintsHelpPage onBack={() => setTab('overview')} />
           ) : (
             <UniversalUlbPage />
           )

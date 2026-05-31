@@ -6,7 +6,11 @@ import { computeBudgetConstraints } from '@/lib/budgetConstraints'
 import { computeRequiredMinimums } from '@/lib/budgetAutoFix'
 import { formatCurrency, cn, openExternal } from '@/lib/utils'
 import { EMPTY_FILTERS } from '@/components/BudgetsTable'
-import { NAV_TO_INDIVIDUAL_EVENT, type NavToIndividualDetail } from '@/lib/navEvents'
+import {
+  NAV_TO_BUDGET_MODEL_EVENT,
+  NAV_TO_INDIVIDUAL_EVENT,
+  type NavToIndividualDetail,
+} from '@/lib/navEvents'
 
 /**
  * Scroll to a BudgetPlanner row (ent card or a specific CC row) and flash a
@@ -405,7 +409,13 @@ export function ConstraintsBanner() {
                 )
               })() : null}
               <div className="text-xs opacity-75">
-                See <code className="rounded bg-black/5 px-1 py-0.5 dark:bg-white/5">docs/budget-constraints.md</code> for the constraint model.
+                <button
+                  type="button"
+                  onClick={() => window.dispatchEvent(new CustomEvent(NAV_TO_BUDGET_MODEL_EVENT))}
+                  className="underline-offset-2 hover:underline cursor-pointer text-current"
+                >
+                  How the budget model works →
+                </button>
               </div>
             </div>
           ) : null}
