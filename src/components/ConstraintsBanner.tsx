@@ -310,9 +310,12 @@ export function ConstraintsBanner() {
                         {fc.actions.length > 0 ? (
                           <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
                             {fc.actions.map((a, j) => {
+                              const isExternalLink = a.icon === 'external'
                               const baseClass = cn(
                                 'inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-medium transition-colors',
-                                'bg-current/10 hover:bg-current/20',
+                                isExternalLink
+                                  ? 'opacity-70 hover:opacity-100 hover:underline'
+                                  : 'bg-current/10 hover:bg-current/20',
                               )
                               const iconEl =
                                 a.icon === 'scroll' ? (
