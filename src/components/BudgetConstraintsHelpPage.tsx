@@ -74,7 +74,7 @@ export function BudgetConstraintsHelpPage({ onBack }: Props) {
             </p>
           </Section>
 
-          <Section title="Shared pool and metered charges">
+          <Section title="Shared AI Credit Pool and metered charges">
             <p>
               Included credits are one enterprise-wide <Term>shared pool</Term>.
               There is no per-user included allowance. There is no per-user plan

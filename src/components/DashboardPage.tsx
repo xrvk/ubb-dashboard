@@ -218,8 +218,9 @@ export function DashboardPage() {
         />
       </div>
 
-      {/* Shared pool — drawn first, governed by ULBs only. Sits above the
-          metered-charge forecast so readers see the upstream funding tier first. */}
+      {/* Shared AI credit pool — drawn first, governed by ULBs only. Sits
+          above the metered-charge forecast so readers see the upstream
+          funding tier first. */}
       <SharedPoolCard seatCost={seatCost} meteredMtd={usageSummary?.aiCreditsNet ?? null} />
 
       <ForecastBreakdownCard tracked={trackedForecast} entBudget={entAmount} />
@@ -365,8 +366,8 @@ function ForecastBreakdownCard({
       <CardHeader>
         <CardTitle>Forecasted metered charges</CardTitle>
         <p className="text-xs text-neutral-500 mt-1">
-          Metered charges accrue once the shared pool is exhausted. Pool
-          drawdown shown above is not reflected here.
+          Metered charges accrue once the shared AI credit pool is exhausted.
+          Pool drawdown shown above is not reflected here.
         </p>
       </CardHeader>
       <CardContent className="grid gap-4">
@@ -929,7 +930,7 @@ function LicenseCostCard({
             Enterprise budget ({formatCurrency(entBudget ?? 0)}) is{' '}
             <span className="font-medium tabular-nums">{formatPercent(ratio)}</span> of
             monthly license spend — caps metered charges only, not the shared
-            pool itself (see Shared Pool above).
+            pool itself (see Shared AI Credit Pool above).
           </div>
         ) : null}
         <p className="text-[11px] text-neutral-500 dark:text-neutral-500 leading-snug">
@@ -1009,7 +1010,7 @@ function LicenseRow({
 
 /**
  * BudgetModelBanner — primer that frames the page using the docs'
- * canonical terms: a shared pool of included AI credits is drawn first,
+ * canonical terms: a shared AI credit pool is drawn first,
  * and metered charges accrue once it's exhausted. Enterprise and cost
  * center budgets only cap metered charges; only user-level budgets
  * (universal + individual) constrain per-user pool drawdown.
@@ -1034,8 +1035,7 @@ function BudgetModelBanner({
           How AI credits bill.
         </span>{' '}
         <span className="text-neutral-600 dark:text-neutral-400">
-          Your CB and CE licenses fund a <strong>shared pool</strong> of
-          included AI credits, drawn first and constrained only by user-level
+          Your CB and CE licenses fund a <strong>shared AI credit pool</strong>, drawn first and constrained only by user-level
           budgets (universal ULB + individual overrides). Once the pool is
           exhausted, usage becomes <strong>metered charges</strong> at $0.01
           per AI credit — that's what the enterprise budget and any cost
@@ -1076,7 +1076,7 @@ function BudgetModelBanner({
  * SharedPoolCard — visualizes the included AI credit pool that the
  * enterprise's CB and CE licenses entitle the organization to consume
  * before any metered charges begin. Terminology matches the GitHub Copilot
- * billing docs ("shared pool", "pool value", "metered charges").
+ * billing docs ("shared AI credit pool", "pool value", "metered charges").
  *
  * We intentionally do NOT display a "drawdown percentage" against the pool:
  * the billing usage summary API only reports metered charges. The closest
@@ -1095,15 +1095,16 @@ function SharedPoolCard({
   if (credits.totalCredits === 0) {
     return null
   }
-  const avgCreditsPerSeat =
-    seatCost.total > 0 ? credits.totalCredits / seatCost.total : 0
   const poolExhausted = meteredMtd !== null && meteredMtd > 0
+  // Whole dollars — fractional cents aren't meaningful at this scale and
+  // make the headline harder to scan.
+  const poolValueWhole = `$${Math.round(credits.totalDollars).toLocaleString('en-US')}`
   return (
     <Card>
       <CardHeader>
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div>
-            <CardTitle>Shared pool</CardTitle>
+            <CardTitle>Shared AI Credit Pool</CardTitle>
             <p className="text-xs text-neutral-500 mt-1 max-w-2xl">
               Included AI credits from your CB and CE licenses, pooled at the
               enterprise and drawn before any metered charges.{' '}
@@ -1121,8 +1122,8 @@ function SharedPoolCard({
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* 3-tile primary readout */}
-        <div className="grid gap-3 grid-cols-1 sm:grid-cols-3">
+        {/* 2-tile primary readout — Total AICs + Pool value. */}
+        <div className="grid gap-3 grid-cols-1 sm:grid-cols-2">
           <div className="rounded-md border border-indigo-200 dark:border-indigo-900/60 bg-indigo-50/60 dark:bg-indigo-950/30 p-3">
             <div className="text-[11px] uppercase tracking-wide text-indigo-700 dark:text-indigo-300">
               Total AI credits / month
@@ -1139,21 +1140,10 @@ function SharedPoolCard({
               Pool value
             </div>
             <div className="text-2xl font-semibold mt-1 tabular-nums text-emerald-950 dark:text-emerald-100">
-              {formatCurrency(credits.totalDollars)}
+              {poolValueWhole}
             </div>
             <div className="text-[11px] text-emerald-700 dark:text-emerald-300 mt-0.5">
               @ $0.01 per AI credit
-            </div>
-          </div>
-          <div className="rounded-md border border-neutral-200 dark:border-neutral-800 p-3">
-            <div className="text-[11px] uppercase tracking-wide text-neutral-500">
-              Avg per user
-            </div>
-            <div className="text-2xl font-semibold mt-1 tabular-nums">
-              {Math.round(avgCreditsPerSeat).toLocaleString()}
-            </div>
-            <div className="text-[11px] text-neutral-500 mt-0.5">
-              credits/seat · {formatCurrency(avgCreditsPerSeat * 0.01)} value
             </div>
           </div>
         </div>
