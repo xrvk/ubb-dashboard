@@ -557,7 +557,7 @@ export function UniversalUlbPage() {
                 onClick={() => setConfirmCreateOpen(true)}
                 disabled={selectedOutliers.size === 0 || batchProgress !== null}
               >
-                {batchProgress ? 'Creating…' : `Review & create (${selectedOutliers.size.toLocaleString()})`}
+                {batchProgress ? 'Creating…' : `Review ULB changes (${selectedOutliers.size.toLocaleString()})`}
               </Button>
             )}
           </div>
