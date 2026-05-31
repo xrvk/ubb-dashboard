@@ -187,6 +187,6 @@ export function generateDemoCostCenterBudgets(): Map<string, CostCenterBudget> {
     })
   }
   add('platform-eng', 5000, true, true)
-  add('data-platform', 3000, true, false)
+  add('data-platform', 20000, true, false)
   return out
 }
