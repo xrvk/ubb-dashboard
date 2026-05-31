@@ -113,6 +113,23 @@ export function readDemoExcludeCcFromUrl(): boolean {
 }
 
 /**
+ * Demo "as of" date for projections. When set via `?asof=YYYY-MM-DD`,
+ * projection helpers treat that date as today so the projected trail
+ * is visible even when the real calendar date is the last day of the
+ * month (where projected == MTD by definition). Returns null when the
+ * param is missing or not a valid date.
+ */
+export function readDemoAsofFromUrl(): Date | null {
+  if (typeof window === 'undefined') return null
+  const params = new URLSearchParams(window.location.search)
+  const v = params.get('asof')
+  if (!v) return null
+  const d = new Date(v + 'T12:00:00')
+  if (Number.isNaN(d.getTime())) return null
+  return d
+}
+
+/**
  * Demo seats: a superset of the demo budget users so the "Add ULB" autocomplete
  * can suggest users who don't yet have an individual cap. The org assignment
  * mirrors the CC layout in generateDemoCostCenters so seats line up cleanly

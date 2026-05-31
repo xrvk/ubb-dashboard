@@ -24,6 +24,7 @@ import {
 } from '@/lib/pricing'
 import { forecastSummary } from '@/lib/status'
 import { projectMonthlyBudget } from '@/lib/projection'
+import { readDemoAsofFromUrl } from '@/lib/demo'
 import { formatCurrency, formatCurrencyWhole, formatPercent, cn } from '@/lib/utils'
 import {
   NAV_TO_BUDGET_MODEL_EVENT,
@@ -743,6 +744,7 @@ function CostCenterStatusCard({
   // to each CC, plus count of seats with vs. without individual ULB so we
   // can warn when our MTD only represents a fraction of the CC's seats.
   const perCc = useMemo(() => {
+    const asof = readDemoAsofFromUrl() ?? undefined
     type CcRow = {
       ccId: string
       ulbMtd: number
@@ -767,7 +769,7 @@ function CostCenterStatusCard({
       if (b) {
         row.seatsWithUlb += 1
         row.ulbMtd += b.consumedAmount
-        row.ulbProjected += projectMonthlyBudget(b.consumedAmount, 0).projectedMonthTotal
+        row.ulbProjected += projectMonthlyBudget(b.consumedAmount, 0, asof).projectedMonthTotal
       }
     }
     return rows
@@ -988,14 +990,14 @@ function CcBulletRowView({
     if (muted) {
       return (
         <span className="text-neutral-500">
-          {formatCurrencyWhole(mtd)} draw · no CC budget
+          {formatCurrencyWhole(mtd)} · no CC budget
         </span>
       )
     }
     if (!hasBudget) {
       return measured ? (
         <span className="text-neutral-500">
-          {formatCurrencyWhole(mtd)} spend · proj {formatCurrencyWhole(projected)} · uncapped
+          {formatCurrencyWhole(mtd)} · uncapped
         </span>
       ) : (
         <span className="text-neutral-400">no spend yet · uncapped</span>
@@ -1004,7 +1006,7 @@ function CcBulletRowView({
     if (!measured) {
       return (
         <span className="text-neutral-400">
-          no spend yet · budget {formatCurrencyWhole(budget!)}
+          no spend · budget {formatCurrencyWhole(budget!)}
         </span>
       )
     }
@@ -1013,10 +1015,9 @@ function CcBulletRowView({
         <span className="text-neutral-700 dark:text-neutral-200">
           {formatCurrencyWhole(mtd)} / {formatCurrencyWhole(budget!)}
         </span>
-        <span className="text-neutral-500"> · proj {formatCurrencyWhole(projected)}</span>
         {projOverPct !== null ? (
           <span className="ml-1.5 rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-medium text-red-700 dark:bg-red-900/40 dark:text-red-200">
-            {projOverPct}%
+            proj {projOverPct}%
           </span>
         ) : null}
       </>
@@ -1024,7 +1025,7 @@ function CcBulletRowView({
   })()
 
   return (
-    <div className="grid grid-cols-[7rem_minmax(0,1fr)_14rem] items-center gap-3">
+    <div className="grid grid-cols-[7rem_minmax(0,1fr)_10rem] items-center gap-3">
       <div
         className={cn(
           'text-xs font-medium truncate',
