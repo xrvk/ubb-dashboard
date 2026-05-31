@@ -667,7 +667,7 @@ export function BudgetPlanner() {
                             target="_blank"
                             rel="noopener noreferrer"
                             onClick={openExternal(budgetEditUrl(credentials.base, credentials.ent, enterpriseBudget.id))}
-                            className="inline-flex items-center gap-1 rounded border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-200 px-1.5 py-0.5 hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors"
+                            className="inline-flex items-center gap-1 rounded border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-200 px-1.5 py-0.5 text-[11px] font-medium hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors"
                           >
                             CC exclusion on
                             <ArrowSquareOut size={10} weight="bold" className="opacity-70" />
