@@ -934,7 +934,6 @@ function RolledUpAllocationView({
   // shrinks below it, making the inverted relationship obvious.
   const denom = Math.max(entBudget, ccBudgetTotal)
   const entWidthPct = (entBudget / denom) * 100
-  const ccWidthPct = (ccBudgetTotal / denom) * 100
 
   return (
     <div className="space-y-3">
@@ -956,10 +955,9 @@ function RolledUpAllocationView({
       </div>
 
       {/* Two-bar layout: enterprise cap on top, CC allocations below,
-          both on the same scale (= max of the two). The shorter bar
-          gets a faint hatched ghost trail so the shared scale is
-          visible and a 45%-filled bar reads as "45% of the larger
-          commitment" rather than "half empty". */}
+          both on the same scale (= max of the two). When CC totals
+          exceed the enterprise cap the CC bar is visibly longer than
+          the ent bar, which is the whole point. */}
       <div className="space-y-2">
         <AllocBarRow
           label="Enterprise cap"
@@ -971,12 +969,6 @@ function RolledUpAllocationView({
             className="bg-indigo-500"
             title={`Enterprise cap · ${formatCurrency(entBudget)}`}
           />
-          {entWidthPct < 100 ? (
-            <GhostTail
-              widthPct={100 - entWidthPct}
-              title={`Beyond enterprise cap · CC allocations extend ${formatCurrency(ccBudgetTotal - entBudget)} past this point`}
-            />
-          ) : null}
         </AllocBarRow>
 
         <AllocBarRow
@@ -1001,23 +993,7 @@ function RolledUpAllocationView({
           ) : null}
         </AllocBarRow>
       </div>
-
-      <div className="text-[11px] text-neutral-500">
-        Bars share a 0 to {formatCurrency(denom)} scale (
-        {overAlloc ? 'CC allocations' : 'enterprise cap'} = full width).
-      </div>
     </div>
-  )
-}
-
-function GhostTail({ widthPct, title }: { widthPct: number; title: string }) {
-  if (widthPct <= 0) return null
-  return (
-    <div
-      className="h-full bg-[repeating-linear-gradient(45deg,_#e5e7eb_0_4px,_transparent_4px_8px)] dark:bg-[repeating-linear-gradient(45deg,_#262626_0_4px,_transparent_4px_8px)]"
-      style={{ width: `${widthPct}%` }}
-      title={title}
-    />
   )
 }
 

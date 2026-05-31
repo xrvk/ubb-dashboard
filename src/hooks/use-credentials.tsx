@@ -30,7 +30,6 @@ import {
   generateDemoUsageByCostCenter,
   generateDemoUsageSummary,
   readDemoCountFromUrl,
-  readDemoEntCapFromUrl,
   readDemoExcludeCcFromUrl,
   readDemoPoolPctFromUrl,
   scaleDemoConsumptionTo,
@@ -238,10 +237,7 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
         setSeats(demoSeats)
         setCostCenters(generateDemoCostCenters(demoCount))
         setUniversalUlb(universal)
-        setEnterpriseBudget(generateDemoEnterpriseBudget({
-          excludeCostCenterUsage: readDemoExcludeCcFromUrl(),
-          budgetAmount: readDemoEntCapFromUrl() ?? undefined,
-        }))
+        setEnterpriseBudget(generateDemoEnterpriseBudget({ excludeCostCenterUsage: readDemoExcludeCcFromUrl() }))
         setCostCenterBudgetsByName(generateDemoCostCenterBudgets())
         setUsageSummary(
           generateDemoUsageSummary(demoBudgets, {

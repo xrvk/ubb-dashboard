@@ -116,23 +116,6 @@ export function readDemoExcludeCcFromUrl(): boolean {
 }
 
 /**
- * Override the demo enterprise budget amount via `?entcap=N` (whole
- * dollars). Useful for showing both the within-cap and over-allocated
- * states of the rolled-up budget allocation view (default demo CCs
- * total $20k, so `?entcap=30000` makes commitments fit, `?entcap=9000`
- * keeps the default over-allocated story).
- */
-export function readDemoEntCapFromUrl(): number | null {
-  if (typeof window === 'undefined') return null
-  const params = new URLSearchParams(window.location.search)
-  const v = params.get('entcap')
-  if (v === null) return null
-  const n = Number(v)
-  if (!Number.isFinite(n) || n < 0) return null
-  return Math.round(n)
-}
-
-/**
  * Demo "as of" date for projections. When set via `?asof=YYYY-MM-DD`,
  * projection helpers treat that date as today so the projected trail
  * is visible even when the real calendar date is the last day of the
@@ -217,10 +200,10 @@ export function generateDemoCostCenters(count: number): CostCenter[] {
   ]
 }
 
-export function generateDemoEnterpriseBudget(opts?: { excludeCostCenterUsage?: boolean; budgetAmount?: number }): EnterpriseBudget {
+export function generateDemoEnterpriseBudget(opts?: { excludeCostCenterUsage?: boolean }): EnterpriseBudget {
   return {
     id: 'demo-ent',
-    budgetAmount: opts?.budgetAmount ?? 9000,
+    budgetAmount: 9000,
     excludeCostCenterUsage: opts?.excludeCostCenterUsage ?? false,
     preventFurtherUsage: true,
     willAlert: true,
