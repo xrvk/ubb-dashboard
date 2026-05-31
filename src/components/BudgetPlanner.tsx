@@ -85,9 +85,16 @@ export function BudgetPlanner() {
     name: string
     budgetId: string | null
     apiAmount: number
+    preventFurtherUsage: boolean
+    seatCount: number
     affectsCopilot: boolean
   }
   const rows: Row[] = useMemo(() => {
+    const seatsByCcId = new Map<string, number>()
+    for (const r of loginToCostCenter.values()) {
+      if (!r) continue
+      seatsByCcId.set(r.cc.id, (seatsByCcId.get(r.cc.id) ?? 0) + 1)
+    }
     const named = costCenters.filter(cc => cc.name.trim().length > 0)
     return named
       .map(cc => {
@@ -98,6 +105,8 @@ export function BudgetPlanner() {
           name: cc.name,
           budgetId: b?.id ?? null,
           apiAmount: b?.budgetAmount ?? 0,
+          preventFurtherUsage: b?.preventFurtherUsage ?? false,
+          seatCount: seatsByCcId.get(cc.id) ?? 0,
           affectsCopilot: ccIdsAffectingCopilot.has(cc.id),
         }
       })
@@ -331,7 +340,9 @@ export function BudgetPlanner() {
                 <thead className="bg-neutral-100/60 dark:bg-neutral-900/60">
                   <tr className="text-left text-[10px] uppercase tracking-wide text-neutral-500">
                     <th className="px-3 py-1.5 font-medium">Cost center</th>
+                    <th className="px-3 py-1.5 font-medium text-right">Seats</th>
                     <th className="px-3 py-1.5 font-medium text-right w-44">Budget ($)</th>
+                    <th className="px-3 py-1.5 font-medium">Enforcement</th>
                     <th className="px-3 py-1.5 font-medium w-8"></th>
                   </tr>
                 </thead>
@@ -353,6 +364,9 @@ export function BudgetPlanner() {
                             <span className="ml-2 text-[10px] uppercase tracking-wide text-neutral-500">no Copilot seats</span>
                           )}
                         </td>
+                        <td className="px-3 py-1.5 text-right font-mono text-neutral-600 dark:text-neutral-400">
+                          {row.seatCount.toLocaleString()}
+                        </td>
                         <td className="px-3 py-1.5">
                           {row.budgetId ? (
                             <div className="flex items-center justify-end gap-1.5">
@@ -373,6 +387,17 @@ export function BudgetPlanner() {
                             </div>
                           ) : (
                             <div className="text-right text-neutral-500 italic">No CC budget</div>
+                          )}
+                        </td>
+                        <td className="px-3 py-1.5 text-xs">
+                          {row.budgetId ? (
+                            row.preventFurtherUsage ? (
+                              <span className="text-emerald-700 dark:text-emerald-400">Hard cap</span>
+                            ) : (
+                              <span className="text-amber-700 dark:text-amber-400">Soft cap</span>
+                            )
+                          ) : (
+                            <span className="text-neutral-500">—</span>
                           )}
                         </td>
                         <td className="px-2 py-1.5">

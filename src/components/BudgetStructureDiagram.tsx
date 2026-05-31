@@ -1,12 +1,10 @@
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import {
   Buildings,
   Stack,
   ShieldCheck,
   Warning,
   TreeStructure,
-  CaretDown,
-  CaretUp,
 } from '@phosphor-icons/react'
 import { useCredentials } from '@/hooks/use-credentials'
 import { formatCurrency, cn } from '@/lib/utils'
@@ -30,7 +28,6 @@ export function BudgetStructureDiagram() {
     costCenters,
     loginToCostCenter,
   } = useCredentials()
-  const [showAllCCs, setShowAllCCs] = useState(false)
 
   // Count Copilot-affecting seats per CC (a CC "affects Copilot" if any seat
   // resolves to it — directly or via the user's licensing org).
@@ -296,95 +293,8 @@ export function BudgetStructureDiagram() {
           </div>
         )}
 
-        {/* ───────────────── Full cost-center list ───────────────── */}
-        {data.segments.length > 0 && (() => {
-          const affecting = data.segments.filter(s => s.affectsCopilot)
-          const notAffecting = data.segments.filter(s => !s.affectsCopilot)
-          const visible = showAllCCs ? data.segments : affecting
-          const sorted = [...visible].sort((a, b) => {
-            // Budgeted first, then by seat count desc, then by name.
-            if (a.uncapped !== b.uncapped) return a.uncapped ? 1 : -1
-            if (a.budget !== b.budget) return b.budget - a.budget
-            if (a.seatCount !== b.seatCount) return b.seatCount - a.seatCount
-            return a.name.localeCompare(b.name)
-          })
-
-          return (
-            <div className="space-y-2 pt-1">
-              <div className="flex items-center justify-between text-xs text-neutral-600 dark:text-neutral-400">
-                <div className="flex items-center gap-1.5 font-medium">
-                  <Stack size={12} weight="duotone" />
-                  {showAllCCs
-                    ? `All ${data.segments.length} cost center${data.segments.length === 1 ? '' : 's'}`
-                    : `${affecting.length} cost center${affecting.length === 1 ? '' : 's'} affecting Copilot`}
-                </div>
-                {notAffecting.length > 0 ? (
-                  <button
-                    type="button"
-                    onClick={() => setShowAllCCs(v => !v)}
-                    className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-normal opacity-75 hover:opacity-100 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/60"
-                    aria-expanded={showAllCCs}
-                  >
-                    {showAllCCs
-                      ? `Hide ${notAffecting.length} not affecting Copilot`
-                      : `Show ${notAffecting.length} not affecting Copilot`}
-                    {showAllCCs ? <CaretUp size={11} weight="bold" /> : <CaretDown size={11} weight="bold" />}
-                  </button>
-                ) : null}
-              </div>
-              {sorted.length === 0 ? (
-                <div className="text-xs text-neutral-500 italic">
-                  No cost centers currently route Copilot seats.
-                </div>
-              ) : (
-                <div className="overflow-hidden rounded-md border border-neutral-200 dark:border-neutral-800">
-                  <table className="w-full text-xs">
-                    <thead className="bg-neutral-100/60 dark:bg-neutral-900/60">
-                      <tr className="text-left text-[10px] uppercase tracking-wide text-neutral-500">
-                        <th className="px-3 py-1.5 font-medium">Cost center</th>
-                        <th className="px-3 py-1.5 font-medium text-right">Budget</th>
-                        <th className="px-3 py-1.5 font-medium text-right">Copilot seats</th>
-                        <th className="px-3 py-1.5 font-medium">Enforcement</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {sorted.map(seg => (
-                        <tr
-                          key={seg.id}
-                          className={cn(
-                            'border-t border-neutral-200 dark:border-neutral-800',
-                            !seg.affectsCopilot && 'opacity-60',
-                          )}
-                        >
-                          <td className="px-3 py-1.5 font-medium">{seg.name}</td>
-                          <td className="px-3 py-1.5 text-right font-mono">
-                            {seg.uncapped ? (
-                              <span className="text-neutral-500">—</span>
-                            ) : (
-                              formatCurrency(seg.budget)
-                            )}
-                          </td>
-                          <td className="px-3 py-1.5 text-right font-mono">
-                            {seg.seatCount.toLocaleString()}
-                          </td>
-                          <td className="px-3 py-1.5">
-                            {seg.uncapped ? (
-                              <span className="text-neutral-500">No CC budget</span>
-                            ) : seg.preventFurtherUsage ? (
-                              <span className="text-emerald-700 dark:text-emerald-400">Hard cap</span>
-                            ) : (
-                              <span className="text-amber-700 dark:text-amber-400">Soft cap</span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          )
-        })()}
+        {/* Cost-center list is rendered (editable) by BudgetPlanner immediately
+            below this diagram — kept consolidated to avoid duplication. */}
 
         {/* Enforcement annotation */}
         {tier === 'blind' ? (
