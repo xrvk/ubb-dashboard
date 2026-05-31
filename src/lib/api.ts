@@ -451,6 +451,30 @@ export async function fetchAllAiCreditsBudgets(
   }
 }
 
+/** Update an existing enterprise-scope ai_credits budget's amount. */
+export async function patchEnterpriseBudget(
+  apiFetch: ApiFetch,
+  budgetId: string,
+  budgetAmount: number,
+): Promise<void> {
+  await apiFetch(`/budgets/${budgetId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ budget_amount: budgetAmount }),
+  })
+}
+
+/** Update an existing cost-center-scope ai_credits budget's amount. */
+export async function patchCostCenterBudget(
+  apiFetch: ApiFetch,
+  budgetId: string,
+  budgetAmount: number,
+): Promise<void> {
+  await apiFetch(`/budgets/${budgetId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ budget_amount: budgetAmount }),
+  })
+}
+
 // --- Copilot seats (used as the source of truth for "add ULB" autocomplete) ---
 
 export interface CopilotSeat {

@@ -5,18 +5,25 @@ import { useTheme } from 'next-themes'
 import { useCredentials } from '@/hooks/use-credentials'
 import { ImportPanel } from '@/components/ImportPanel'
 import { IndividualUlbPage } from '@/components/IndividualUlbPage'
+import { OverviewPage } from '@/components/OverviewPage'
 import { UniversalUlbPage } from '@/components/UniversalUlbPage'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import type { BulkApplySnapshot } from '@/lib/snapshot'
 
-type Tab = 'individual' | 'universal'
+type Tab = 'overview' | 'individual' | 'universal'
+
+const TAB_LABELS: Record<Tab, string> = {
+  overview: 'Overview',
+  individual: 'Individual ULBs',
+  universal: 'Universal ULB',
+}
 
 export function App() {
   const { credentials } = useCredentials()
   const { resolvedTheme, setTheme } = useTheme()
 
-  const [tab, setTab] = useState<Tab>('individual')
+  const [tab, setTab] = useState<Tab>('overview')
   const [creating, setCreating] = useState(false)
   // Snapshot is owned by IndividualUlbPage but surfaced here so the header
   // can render the Revert button regardless of which tab is active.
@@ -53,7 +60,7 @@ export function App() {
         <div className="sticky top-0 z-10 border-b border-neutral-200 dark:border-neutral-800 bg-white/95 dark:bg-neutral-950/95 backdrop-blur supports-[backdrop-filter]:bg-white/80 dark:supports-[backdrop-filter]:bg-neutral-950/80">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 py-2 flex items-center gap-3">
             <div className="flex flex-1 sm:flex-initial gap-1 p-1 rounded-md bg-neutral-100 dark:bg-neutral-800">
-              {(['individual', 'universal'] as const).map(t => (
+              {(['overview', 'universal', 'individual'] as const).map(t => (
                 <button
                   key={t}
                   onClick={() => setTab(t)}
@@ -64,7 +71,7 @@ export function App() {
                       : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100',
                   )}
                 >
-                  {t === 'individual' ? 'Individual ULBs' : 'Universal ULB'}
+                  {TAB_LABELS[t]}
                 </button>
               ))}
             </div>
@@ -89,7 +96,9 @@ export function App() {
         <ImportPanel />
 
         {credentials ? (
-          tab === 'individual' ? (
+          tab === 'overview' ? (
+            <OverviewPage />
+          ) : tab === 'individual' ? (
             <IndividualUlbPage
               creating={creating}
               onCreatingChange={setCreating}

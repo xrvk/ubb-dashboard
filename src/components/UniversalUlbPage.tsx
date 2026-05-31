@@ -33,7 +33,6 @@ import {
 import { EditUniversalUlbDialog } from '@/components/EditUniversalUlbDialog'
 import { UsageCsvImport } from '@/components/UsageCsvImport'
 import { ConsumptionCurve } from '@/components/ConsumptionCurve'
-import { ConstraintsBanner } from '@/components/ConstraintsBanner'
 
 // 100 AICs = $1.00 in GitHub billing (1 AIC = $0.01).
 const AICS_PER_USD = 100
@@ -402,7 +401,6 @@ export function UniversalUlbPage() {
 
   return (
     <div className="grid gap-6">
-      <ConstraintsBanner />
       {/* Header tiles */}
       <div className="grid gap-3 grid-cols-1 md:grid-cols-3">
         <Card>
