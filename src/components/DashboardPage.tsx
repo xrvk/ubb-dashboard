@@ -883,12 +883,10 @@ function CcBulletRowView({ row }: { row: CcBulletRow }) {
   const hasBudget = budget !== null && budget > 0
   const mtdPct = hasBudget ? Math.min(100, (mtd / budget!) * 100) : 100
   const projPct = hasBudget ? Math.min(100, (projected / budget!) * 100) : 100
-  const projOverPct = hasBudget && projected > budget!
-    ? Math.round((projected / budget!) * 100)
-    : null
-
-  const overBudget = hasBudget && projected > budget!
-  const nearBudget = hasBudget && projected > budget! * 0.8 && !overBudget
+  // At budget (>= 100%) counts as "over" for color/badge — the cap is hit.
+  // 80%+ counts as "near".
+  const overBudget = hasBudget && projected >= budget!
+  const nearBudget = hasBudget && projected >= budget! * 0.8 && !overBudget
   const fillColor = overBudget
     ? 'bg-red-500'
     : nearBudget
@@ -913,47 +911,68 @@ function CcBulletRowView({ row }: { row: CcBulletRow }) {
       )
     }
     return (
-      <>
-        <span className="text-neutral-700 dark:text-neutral-200">
-          {formatCurrencyWhole(mtd)} / {formatCurrencyWhole(budget!)}
-        </span>
-        {projOverPct !== null ? (
-          <span className="ml-1.5 rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-medium text-red-700 dark:bg-red-900/40 dark:text-red-200">
-            proj {projOverPct}%
-          </span>
-        ) : null}
-      </>
+      <span className="text-neutral-700 dark:text-neutral-200">
+        {formatCurrencyWhole(mtd)} / {formatCurrencyWhole(budget!)}
+      </span>
     )
   })()
 
+  // Right-edge badge sits next to the bar so the rightmost dollar column
+  // stays the same width across every row. Over-budget rows get a red
+  // "proj NNN%" badge; near-budget rows get a soft amber "proj NN%" hint.
+  const projDisplayPct = hasBudget && projected > 0
+    ? Math.round((projected / budget!) * 100)
+    : null
+  const badge = (() => {
+    if (!measured || !hasBudget || projDisplayPct === null) return null
+    if (overBudget) {
+      return (
+        <span className="rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-medium text-red-700 dark:bg-red-900/40 dark:text-red-200 tabular-nums">
+          {projDisplayPct}%
+        </span>
+      )
+    }
+    if (nearBudget) {
+      return (
+        <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-200 tabular-nums">
+          {projDisplayPct}%
+        </span>
+      )
+    }
+    return null
+  })()
+
   return (
-    <div className="grid grid-cols-[7rem_minmax(0,1fr)_10rem] items-center gap-3">
+    <div className="grid grid-cols-[7rem_minmax(0,1fr)_7rem] items-center gap-3">
       <div
         className="text-xs font-medium truncate text-neutral-700 dark:text-neutral-300"
         title={name}
       >
         {name}
       </div>
-      <div
-        className={cn(
-          'relative h-3 rounded-sm overflow-hidden',
-          uncappedBar
-            ? 'bg-neutral-50 dark:bg-neutral-800/30 border border-dashed border-neutral-200 dark:border-neutral-700'
-            : 'bg-neutral-100 dark:bg-neutral-800/70',
-        )}
-      >
+      <div className="flex items-center gap-2 min-w-0">
         <div
-          className={cn('absolute inset-y-0 left-0', trailColor)}
-          style={{ width: `${projPct}%` }}
-          title={`Projected ${formatCurrency(projected)}`}
-        />
-        <div
-          className={cn('absolute inset-y-0 left-0', fillColor)}
-          style={{ width: `${mtdPct}%` }}
-          title={`MTD ${formatCurrency(mtd)}`}
-        />
+          className={cn(
+            'relative h-3 rounded-sm overflow-hidden flex-1',
+            uncappedBar
+              ? 'bg-neutral-50 dark:bg-neutral-800/30 border border-dashed border-neutral-200 dark:border-neutral-700'
+              : 'bg-neutral-100 dark:bg-neutral-800/70',
+          )}
+        >
+          <div
+            className={cn('absolute inset-y-0 left-0', trailColor)}
+            style={{ width: `${projPct}%` }}
+            title={`Projected ${formatCurrency(projected)}`}
+          />
+          <div
+            className={cn('absolute inset-y-0 left-0', fillColor)}
+            style={{ width: `${mtdPct}%` }}
+            title={`MTD ${formatCurrency(mtd)}`}
+          />
+        </div>
+        {badge}
       </div>
-      <div className="text-[11px] tabular-nums text-right whitespace-nowrap flex items-center justify-end gap-0 overflow-hidden">
+      <div className="text-[11px] tabular-nums text-right whitespace-nowrap">
         {numericLabel}
       </div>
     </div>
