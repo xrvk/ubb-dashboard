@@ -795,7 +795,26 @@ function CostCenterStatusCard({
           MTD comes from individual ULBs in each CC — universal-ULB users aren't reported per CC.
         </p>
       </CardHeader>
-      <CardContent className="space-y-3">
+      <CardContent className="space-y-4">
+        {/* Bullet chart — one row per CC + unassigned. Each row normalized
+            to its own scale max so the budget vs ceiling vs projected
+            relationship is visible at a glance. */}
+        <CostCenterBulletList
+          rows={pool.costCenters.map(cc => {
+            const data = perCc.get(cc.costCenterId)
+            return {
+              key: cc.costCenterId,
+              name: cc.name,
+              budget: cc.budgetAmount,
+              ceiling: cc.ulbCeiling,
+              mtd: data?.ulbMtd ?? 0,
+              projected: data?.ulbProjected ?? 0,
+              measured: (data?.seatsWithUlb ?? 0) > 0,
+            }
+          })}
+          unassignedDraw={pool.unassignedTotal}
+        />
+
         <div className="rounded-md border border-neutral-200 dark:border-neutral-800 overflow-x-auto">
           <table className="w-full text-xs">
             <thead className="bg-neutral-50 dark:bg-neutral-900/40 text-neutral-500">
@@ -886,6 +905,146 @@ function CostCenterStatusCard({
         ) : null}
       </CardContent>
     </Card>
+  )
+}
+
+type CcBulletRow = {
+  key: string
+  name: string
+  budget: number | null
+  ceiling: number
+  mtd: number
+  projected: number
+  measured: boolean
+}
+
+/**
+ * Bullet chart for cost centers. Per row: MTD as a solid bar, projected
+ * as a lighter trailing segment, tick marks at the budget cap and the
+ * ULB ceiling. Each row normalizes to its own scale (max of budget,
+ * ceiling, projected) so the relationships are legible without a global
+ * x-axis. The unassigned row is appended when there's effective draw from
+ * seats not routed to any CC — it shows draw only (no budget/ceiling).
+ */
+function CostCenterBulletList({
+  rows,
+  unassignedDraw,
+}: {
+  rows: CcBulletRow[]
+  unassignedDraw: number
+}) {
+  return (
+    <div className="rounded-md border border-neutral-200 dark:border-neutral-800 p-3 space-y-2.5">
+      <div className="flex items-center gap-3 text-[10px] text-neutral-500">
+        <LegendDot color="bg-emerald-500" label="MTD" />
+        <LegendDot color="bg-emerald-300 dark:bg-emerald-500/40" label="Projected" />
+        <span className="inline-flex items-center gap-1">
+          <span className="inline-block w-0.5 h-3 bg-neutral-900 dark:bg-neutral-200" />
+          Budget cap
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <span className="inline-block w-0.5 h-3 bg-amber-500" />
+          ULB ceiling
+        </span>
+      </div>
+      {rows.map(row => (
+        <CcBulletRowView key={row.key} row={row} />
+      ))}
+      {unassignedDraw > 0 ? (
+        <div className="grid grid-cols-[8rem_minmax(0,1fr)_auto] items-center gap-3 pt-1 border-t border-neutral-100 dark:border-neutral-800/60">
+          <div className="text-xs text-neutral-500 italic truncate" title="Seats not routed to any cost center">
+            Unassigned
+          </div>
+          <div className="text-[11px] text-neutral-500">
+            {formatCurrency(unassignedDraw)} effective draw · no CC budget
+          </div>
+          <div className="text-[11px] text-neutral-500 tabular-nums text-right">—</div>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function CcBulletRowView({ row }: { row: CcBulletRow }) {
+  const { name, budget, ceiling, mtd, projected, measured } = row
+  // Scale: largest value the row needs to represent. Always >0 so we don't divide by 0.
+  const scaleMax = Math.max(budget ?? 0, ceiling, projected, mtd, 1)
+  const mtdPct = (mtd / scaleMax) * 100
+  const projPct = (projected / scaleMax) * 100
+  const budgetPct = budget !== null ? Math.min(100, (budget / scaleMax) * 100) : null
+  const ceilingPct = Math.min(100, (ceiling / scaleMax) * 100)
+
+  const overBudget = budget !== null && projected > budget
+  const nearBudget = budget !== null && projected > budget * 0.8 && !overBudget
+  const fillColor = overBudget
+    ? 'bg-red-500'
+    : nearBudget
+      ? 'bg-amber-500'
+      : 'bg-emerald-500'
+  const trailColor = overBudget
+    ? 'bg-red-300 dark:bg-red-500/40'
+    : nearBudget
+      ? 'bg-amber-300 dark:bg-amber-500/40'
+      : 'bg-emerald-300 dark:bg-emerald-500/40'
+
+  const numericLabel = (() => {
+    if (!measured) {
+      return (
+        <span className="text-neutral-400">
+          — · ceiling {formatCurrency(ceiling)}
+          {budget !== null ? ` · budget ${formatCurrency(budget)}` : ''}
+        </span>
+      )
+    }
+    const left = budget !== null
+      ? `${formatCurrency(mtd)} / ${formatCurrency(budget)}`
+      : `${formatCurrency(mtd)} spend · uncapped`
+    return (
+      <>
+        <span className="text-neutral-700 dark:text-neutral-200">{left}</span>
+        <span className="text-neutral-500"> · proj {formatCurrency(projected)}</span>
+        <span className="text-neutral-500"> · ceiling {formatCurrency(ceiling)}</span>
+      </>
+    )
+  })()
+
+  return (
+    <div className="grid grid-cols-[8rem_minmax(0,1fr)_auto] items-center gap-3">
+      <div className="text-xs font-medium text-neutral-700 dark:text-neutral-300 truncate" title={name}>
+        {name}
+      </div>
+      <div className="relative h-3 rounded-sm bg-neutral-100 dark:bg-neutral-800/70 overflow-hidden">
+        {/* Projected trail (lighter, behind MTD) */}
+        <div
+          className={cn('absolute inset-y-0 left-0', trailColor)}
+          style={{ width: `${Math.min(100, projPct)}%` }}
+          title={`Projected ${formatCurrency(projected)}`}
+        />
+        {/* MTD solid fill on top */}
+        <div
+          className={cn('absolute inset-y-0 left-0', fillColor)}
+          style={{ width: `${Math.min(100, mtdPct)}%` }}
+          title={`MTD ${formatCurrency(mtd)}`}
+        />
+        {/* Budget tick (dark vertical line) */}
+        {budgetPct !== null ? (
+          <div
+            className="absolute inset-y-0 w-0.5 bg-neutral-900 dark:bg-neutral-200"
+            style={{ left: `calc(${budgetPct}% - 1px)` }}
+            title={`Budget ${formatCurrency(budget!)}`}
+          />
+        ) : null}
+        {/* ULB ceiling tick (amber vertical line) */}
+        {ceiling > 0 ? (
+          <div
+            className="absolute inset-y-0 w-0.5 bg-amber-500"
+            style={{ left: `calc(${ceilingPct}% - 1px)` }}
+            title={`ULB ceiling ${formatCurrency(ceiling)}`}
+          />
+        ) : null}
+      </div>
+      <div className="text-[11px] tabular-nums text-right whitespace-nowrap">{numericLabel}</div>
+    </div>
   )
 }
 
