@@ -23,6 +23,12 @@ export interface UsageRow {
   repository: string
   workflow_path: string
   cost_center_name: string
+  /** Present only in the Premium Request Usage Report export. */
+  aic_quantity?: number
+  /** Present only in the Premium Request Usage Report export. */
+  aic_gross_amount?: number
+  /** Present only in the Premium Request Usage Report export. */
+  model?: string
 }
 
 /**
@@ -36,6 +42,8 @@ const NUMERIC_COLUMNS = new Set([
   'gross_amount',
   'discount_amount',
   'net_amount',
+  'aic_quantity',
+  'aic_gross_amount',
 ])
 
 function parseCsvLine(line: string): string[] {
@@ -107,11 +115,29 @@ export interface UserAicAggregate {
 }
 
 const AIC_SKUS = new Set(['copilot_ai_credit', 'coding_agent_ai_credit'])
+const PREMIUM_REQUEST_SKUS = new Set(['copilot_premium_request'])
 
+/**
+ * Aggregate AIC consumption per user from either:
+ *  - the **Billing Usage Report** (one row per AIC SKU, AIC value in `quantity`), or
+ *  - the **Premium Request Usage Report** (one row per request, AIC value in
+ *    `aic_quantity` and USD in `aic_gross_amount`).
+ *
+ * Both formats are common GitHub Copilot CSV exports — pick whichever the
+ * admin can pull. Coding-agent attribution is only available in the billing
+ * format (no equivalent SKU surfaces in the premium-request export).
+ */
 export function aggregateAicByUser(rows: UsageRow[]): UserAicAggregate[] {
   const acc = new Map<string, UserAicAggregate>()
   for (const r of rows) {
-    if (!AIC_SKUS.has(r.sku)) continue
+    const isBillingAic = AIC_SKUS.has(r.sku)
+    const isPremiumRequest = PREMIUM_REQUEST_SKUS.has(r.sku)
+    if (!isBillingAic && !isPremiumRequest) continue
+
+    const aicQty = isBillingAic ? r.quantity : (r.aic_quantity ?? 0)
+    const aicGross = isBillingAic ? r.gross_amount : (r.aic_gross_amount ?? 0)
+    if (aicQty === 0 && aicGross === 0) continue
+
     const user = r.username?.trim()
     if (!user) continue
     const cur = acc.get(user) ?? {
@@ -121,9 +147,9 @@ export function aggregateAicByUser(rows: UsageRow[]): UserAicAggregate[] {
       lastUsedDate: null,
       codingAgentAic: 0,
     }
-    cur.aicConsumed += r.quantity
-    cur.grossAmount += r.gross_amount
-    if (r.sku === 'coding_agent_ai_credit') cur.codingAgentAic += r.quantity
+    cur.aicConsumed += aicQty
+    cur.grossAmount += aicGross
+    if (r.sku === 'coding_agent_ai_credit') cur.codingAgentAic += aicQty
     if (!cur.lastUsedDate || r.date > cur.lastUsedDate) cur.lastUsedDate = r.date
     acc.set(user, cur)
   }
