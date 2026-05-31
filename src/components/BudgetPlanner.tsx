@@ -13,6 +13,7 @@ import {
   Lock,
   LockOpen,
   Plus,
+  Users,
 } from '@phosphor-icons/react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -34,6 +35,8 @@ import {
   patchCostCenterBudget,
   createCostCenterBudget,
   budgetEditUrl,
+  costCenterUrl,
+  enterpriseSeatsUrl,
 } from '@/lib/api'
 import { runBatch } from '@/lib/batch'
 
@@ -210,6 +213,42 @@ function AlertsLink({
         </a>
       </TooltipTrigger>
       <TooltipContent>{tooltip}</TooltipContent>
+    </Tooltip>
+  )
+}
+
+/**
+ * Clickable seat count → deep-link to the GHEC page where membership lives.
+ * For a cost center: the CC detail page. For the enterprise row: the people
+ * page. Behaves as a static span when no link is available (e.g. demo mode
+ * with no credentials).
+ */
+function SeatsLink({ seats, href }: { seats: number; href: string | null }) {
+  const label = seats.toLocaleString()
+  if (!href) {
+    return (
+      <span className="inline-flex items-center gap-1 font-mono text-neutral-600 dark:text-neutral-400">
+        <Users size={11} />
+        {label}
+      </span>
+    )
+  }
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <a
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={openExternal(href)}
+          className="inline-flex items-center gap-1 font-mono text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100 hover:underline"
+        >
+          <Users size={11} />
+          {label}
+          <ArrowSquareOut size={9} />
+        </a>
+      </TooltipTrigger>
+      <TooltipContent>View members on github.com</TooltipContent>
     </Tooltip>
   )
 }
@@ -607,66 +646,72 @@ export function BudgetPlanner() {
               <div
                 id="bp-ent"
                 data-bp-target="ent"
-                className="rounded-md border border-neutral-200 dark:border-neutral-800 p-3 grid gap-2 scroll-mt-24"
+                className="rounded-md border border-neutral-200 dark:border-neutral-800 px-3 py-2.5 grid items-center gap-3 scroll-mt-24"
+                style={{ gridTemplateColumns: 'minmax(0,1fr) 5.5rem auto' }}
               >
-                <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-center">
-                  <div>
-                    <div className="text-xs text-neutral-500 dark:text-neutral-400">
-                      Currently {formatCurrency(enterpriseBudget.budgetAmount)}
-                      {enterpriseBudget.excludeCostCenterUsage ? ' · Cost center exclusion on' : ''}
-                    </div>
+                <div>
+                  <div className="text-xs text-neutral-500 dark:text-neutral-400">
+                    Currently {formatCurrency(enterpriseBudget.budgetAmount)}
+                    {enterpriseBudget.excludeCostCenterUsage ? ' · Cost center exclusion on' : ''}
                   </div>
-                  <div className="flex items-center gap-1.5 flex-wrap justify-end">
-                    <RequiredChip
-                      current={Number(drafts.get('ent') ?? enterpriseBudget.budgetAmount) || 0}
-                      required={requiredMins.enterprise}
-                      tip={
-                        constraintResult.mode === 'umbrella'
-                          ? 'Minimum to avoid capping: cost center budgets plus limits for users outside them.'
-                          : 'Minimum to avoid capping: limits for users not in any budgeted cost center.'
-                      }
+                  <div className="mt-1 flex items-center gap-2 flex-wrap text-xs">
+                    <CapToggle
+                      value={prevents.get('ent') ?? enterpriseBudget.preventFurtherUsage}
+                      apiValue={enterpriseBudget.preventFurtherUsage}
+                      onChange={next => setPrevent('ent', next)}
                     />
-                    <span className="text-sm text-neutral-500">$</span>
-                    <Input
-                      type="number"
-                      min={0}
-                      step="1"
-                      inputMode="numeric"
-                      value={drafts.get('ent') ?? String(enterpriseBudget.budgetAmount)}
-                      onChange={e => setDraft('ent', e.target.value)}
-                      className={cn(
-                        'w-36 text-right font-mono',
-                        inputState('ent', enterpriseBudget.budgetAmount) === 'dirty' && 'border-amber-500 dark:border-amber-400',
-                        isInvalid('ent', enterpriseBudget.budgetAmount) && inputState('ent', enterpriseBudget.budgetAmount) === 'invalid' && 'border-red-500 dark:border-red-400',
-                      )}
-                    />
-                    {drafts.get('ent') !== undefined && (
-                      <button
-                        type="button"
-                        onClick={() => resetField('ent')}
-                        className="text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"
-                        title="Reset to saved value"
-                        aria-label="Reset enterprise budget"
-                      >
-                        <ArrowCounterClockwise size={14} />
-                      </button>
-                    )}
+                    {credentials ? (
+                      <AlertsLink
+                        href={budgetEditUrl(credentials.base, credentials.ent, enterpriseBudget.id)}
+                        willAlert={enterpriseBudget.willAlert}
+                        alertRecipients={enterpriseBudget.alertRecipients}
+                      />
+                    ) : null}
                   </div>
                 </div>
-                <div className="flex items-center gap-2 flex-wrap text-xs">
-                  <span className="text-neutral-500 dark:text-neutral-400">Enforcement:</span>
-                  <CapToggle
-                    value={prevents.get('ent') ?? enterpriseBudget.preventFurtherUsage}
-                    apiValue={enterpriseBudget.preventFurtherUsage}
-                    onChange={next => setPrevent('ent', next)}
+                <div className="text-right text-xs">
+                  <SeatsLink
+                    seats={seats.length}
+                    href={credentials ? enterpriseSeatsUrl(credentials.base, credentials.ent) : null}
                   />
-                  {credentials ? (
-                    <AlertsLink
-                      href={budgetEditUrl(credentials.base, credentials.ent, enterpriseBudget.id)}
-                      willAlert={enterpriseBudget.willAlert}
-                      alertRecipients={enterpriseBudget.alertRecipients}
-                    />
-                  ) : null}
+                </div>
+                <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                  <RequiredChip
+                    current={Number(drafts.get('ent') ?? enterpriseBudget.budgetAmount) || 0}
+                    required={requiredMins.enterprise}
+                    tip={
+                      constraintResult.mode === 'umbrella'
+                        ? 'Minimum to avoid capping: cost center budgets plus limits for users outside them.'
+                        : 'Minimum to avoid capping: limits for users not in any budgeted cost center.'
+                    }
+                  />
+                  <span className="text-sm text-neutral-500">$</span>
+                  <Input
+                    type="number"
+                    min={0}
+                    step="1"
+                    inputMode="numeric"
+                    value={drafts.get('ent') ?? String(enterpriseBudget.budgetAmount)}
+                    onChange={e => setDraft('ent', e.target.value)}
+                    className={cn(
+                      'w-36 text-right font-mono',
+                      inputState('ent', enterpriseBudget.budgetAmount) === 'dirty' && 'border-amber-500 dark:border-amber-400',
+                      isInvalid('ent', enterpriseBudget.budgetAmount) && inputState('ent', enterpriseBudget.budgetAmount) === 'invalid' && 'border-red-500 dark:border-red-400',
+                    )}
+                  />
+                  {drafts.get('ent') !== undefined ? (
+                    <button
+                      type="button"
+                      onClick={() => resetField('ent')}
+                      className="text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"
+                      title="Reset to saved value"
+                      aria-label="Reset enterprise budget"
+                    >
+                      <ArrowCounterClockwise size={14} />
+                    </button>
+                  ) : (
+                    <span className="w-[14px]" aria-hidden />
+                  )}
                 </div>
               </div>
             )}
@@ -761,9 +806,6 @@ export function BudgetPlanner() {
                         <th className="px-3 py-1.5 font-medium">Cost center</th>
                         <th className="px-3 py-1.5 font-medium text-right">Seats</th>
                         <th className="px-3 py-1.5 font-medium text-right">Budget ($)</th>
-                        <th className="px-3 py-1.5 font-medium">Enforcement</th>
-                        <th className="px-3 py-1.5 font-medium">Alerts</th>
-                        <th className="px-3 py-1.5 font-medium w-8"></th>
                       </tr>
                     </thead>
                     <tbody>
@@ -773,30 +815,55 @@ export function BudgetPlanner() {
                         const isCreating = creating.has(row.key)
                         const editable = !!row.budgetId || isCreating
                         const preventVal = prevents.get(row.key) ?? (row.budgetId ? row.preventFurtherUsage : true)
+                        const showResetBtn = !isCreating && row.budgetId && (draftVal !== undefined || prevents.has(row.key))
                         return (
                           <tr
                             key={row.key}
                             id={`bp-cc-${row.ccId}`}
                             data-bp-target={`cc-${row.ccId}`}
                             className={cn(
-                              'border-t border-neutral-200 dark:border-neutral-800 scroll-mt-24',
+                              'border-t border-neutral-200 dark:border-neutral-800 align-top scroll-mt-24',
                               !row.affectsCopilot && 'opacity-60',
                               isCreating && 'bg-amber-500/5',
                             )}
                           >
-                            <td className="px-3 py-1.5 font-medium">
-                              {row.name}
-                              {!row.affectsCopilot && (
-                                <span className="ml-2 text-[10px] uppercase tracking-wide text-neutral-500">no Copilot seats</span>
-                              )}
-                              {isCreating && (
-                                <span className="ml-2 text-[10px] uppercase tracking-wide text-amber-700 dark:text-amber-300">new budget</span>
-                              )}
+                            <td className="px-3 py-2">
+                              <div className="font-medium">
+                                {row.name}
+                                {!row.affectsCopilot && (
+                                  <span className="ml-2 text-[10px] uppercase tracking-wide text-neutral-500">no Copilot seats</span>
+                                )}
+                                {isCreating && (
+                                  <span className="ml-2 text-[10px] uppercase tracking-wide text-amber-700 dark:text-amber-300">new budget</span>
+                                )}
+                              </div>
+                              <div className="mt-1 flex items-center gap-2 flex-wrap text-xs">
+                                {editable ? (
+                                  <CapToggle
+                                    value={preventVal}
+                                    apiValue={row.budgetId ? row.preventFurtherUsage : null}
+                                    onChange={next => setPrevent(row.key, next)}
+                                  />
+                                ) : null}
+                                {row.budgetId && credentials ? (
+                                  <AlertsLink
+                                    href={budgetEditUrl(credentials.base, credentials.ent, row.budgetId)}
+                                    willAlert={row.willAlert}
+                                    alertRecipients={row.alertRecipients}
+                                  />
+                                ) : null}
+                                {!editable && !row.budgetId ? (
+                                  <span className="text-[11px] text-neutral-500">No budget set</span>
+                                ) : null}
+                              </div>
                             </td>
-                            <td className="px-3 py-1.5 text-right font-mono text-neutral-600 dark:text-neutral-400">
-                              {row.seatCount.toLocaleString()}
+                            <td className="px-3 py-2 text-right">
+                              <SeatsLink
+                                seats={row.seatCount}
+                                href={credentials ? costCenterUrl(credentials.base, credentials.ent, row.ccId) : null}
+                              />
                             </td>
-                            <td className="px-3 py-1.5">
+                            <td className="px-3 py-2">
                               {editable ? (
                                 <div className="flex items-center justify-end gap-1.5 flex-wrap">
                                   <RequiredChip
@@ -814,12 +881,35 @@ export function BudgetPlanner() {
                                     value={draftVal ?? String(row.apiAmount)}
                                     onChange={e => setDraft(row.key, e.target.value)}
                                     className={cn(
-                                      'h-7 w-28 text-right font-mono px-2',
+                                      'w-36 text-right font-mono',
                                       state === 'dirty' && 'border-amber-500 dark:border-amber-400',
                                       state === 'invalid' && 'border-red-500 dark:border-red-400',
                                       isCreating && 'border-amber-500 dark:border-amber-400',
                                     )}
                                   />
+                                  {isCreating ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => cancelCreating(row.key)}
+                                      className="text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"
+                                      title="Cancel new budget"
+                                      aria-label={`Cancel ${row.name} budget`}
+                                    >
+                                      <ArrowCounterClockwise size={14} />
+                                    </button>
+                                  ) : showResetBtn ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => resetField(row.key)}
+                                      className="text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"
+                                      title="Reset to saved value"
+                                      aria-label={`Reset ${row.name}`}
+                                    >
+                                      <ArrowCounterClockwise size={14} />
+                                    </button>
+                                  ) : (
+                                    <span className="w-[14px]" aria-hidden />
+                                  )}
                                 </div>
                               ) : (
                                 <div className="flex items-center justify-end gap-2">
@@ -844,53 +934,9 @@ export function BudgetPlanner() {
                                     <Plus size={10} weight="bold" />
                                     Set budget
                                   </button>
+                                  <span className="w-[14px]" aria-hidden />
                                 </div>
                               )}
-                            </td>
-                            <td className="px-3 py-1.5 text-xs">
-                              {editable ? (
-                                <CapToggle
-                                  value={preventVal}
-                                  apiValue={row.budgetId ? row.preventFurtherUsage : null}
-                                  onChange={next => setPrevent(row.key, next)}
-                                />
-                              ) : (
-                                <span className="text-neutral-500">—</span>
-                              )}
-                            </td>
-                            <td className="px-3 py-1.5 text-xs">
-                              {row.budgetId && credentials ? (
-                                <AlertsLink
-                                  href={budgetEditUrl(credentials.base, credentials.ent, row.budgetId)}
-                                  willAlert={row.willAlert}
-                                  alertRecipients={row.alertRecipients}
-                                />
-                              ) : (
-                                <span className="text-neutral-500">—</span>
-                              )}
-                            </td>
-                            <td className="px-2 py-1.5">
-                              {isCreating ? (
-                                <button
-                                  type="button"
-                                  onClick={() => cancelCreating(row.key)}
-                                  className="text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"
-                                  title="Cancel new budget"
-                                  aria-label={`Cancel ${row.name} budget`}
-                                >
-                                  <ArrowCounterClockwise size={12} />
-                                </button>
-                              ) : row.budgetId && (draftVal !== undefined || prevents.has(row.key)) ? (
-                                <button
-                                  type="button"
-                                  onClick={() => resetField(row.key)}
-                                  className="text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"
-                                  title="Reset to saved value"
-                                  aria-label={`Reset ${row.name}`}
-                                >
-                                  <ArrowCounterClockwise size={12} />
-                                </button>
-                              ) : null}
                             </td>
                           </tr>
                         )
@@ -923,10 +969,15 @@ export function BudgetPlanner() {
                                   · {uncappedCount} uncapped
                                 </span>
                               )}
+                              {uncappedCount > 0 && uncappedFloor > 0 ? (
+                                <span className="ml-1.5 text-neutral-500">
+                                  · Includes {formatCurrency(uncappedFloor)} floor from uncapped cost centers
+                                </span>
+                              ) : null}
                             </td>
                             <td className="px-3 py-1.5" />
                             <td className="px-3 py-1.5 text-right font-mono">
-                              <div className="flex items-center justify-end gap-1.5">
+                              <div className="flex items-center justify-end gap-1.5 pr-[18px]">
                                 {uncappedCount > 0 ? (
                                   <span className="text-neutral-500">at least</span>
                                 ) : null}
@@ -934,11 +985,6 @@ export function BudgetPlanner() {
                                   {formatCurrency(cappedTotal + uncappedFloor)}
                                 </span>
                               </div>
-                            </td>
-                            <td colSpan={3} className="px-3 py-1.5 text-neutral-500">
-                              {uncappedCount > 0 && uncappedFloor > 0
-                                ? `Includes ${formatCurrency(uncappedFloor)} floor from uncapped cost centers`
-                                : null}
                             </td>
                           </tr>
                         </tfoot>

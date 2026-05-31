@@ -83,18 +83,29 @@ export function readDemoCountFromUrl(): number | null {
 
 /**
  * Demo seats: a superset of the demo budget users so the "Add ULB" autocomplete
- * can suggest users who don't yet have an individual cap.
+ * can suggest users who don't yet have an individual cap. The org assignment
+ * mirrors the CC layout in generateDemoCostCenters so seats line up cleanly
+ * with the User and Org based CC resources.
  */
 export function generateDemoSeats(count: number) {
-  // Mirror the same naming scheme used by generateDemoBudgets, but pad with
-  // extra users (50% more) so there are valid candidates without budgets.
-  const orgs = ['platform-eng', 'data-platform', 'devx', 'security', 'mobile-apps', 'web', 'gaming-studio']
-  const total = Math.ceil(count * 1.5)
+  const totalSeats = Math.ceil(count * 1.5)
+  // Match the split used by generateDemoCostCenters: platform-eng (User-based,
+  // override-bearing), then data-platform / devx / security (Org-based).
+  const peSize = Math.min(Math.round(totalSeats * 0.44), totalSeats)
+  const dpSize = Math.min(Math.round(totalSeats * 0.36), totalSeats - peSize)
+  const dxSize = Math.min(Math.round(totalSeats * 0.13), totalSeats - peSize - dpSize)
+  // security gets the remainder so every seat lands somewhere
   const out: Array<{ login: string; orgLogin: string | null; lastActivityAt: string | null; planType: string | null }> = []
-  for (let i = 0; i < total; i += 1) {
+  for (let i = 0; i < totalSeats; i += 1) {
+    const idx = i + 1
+    let orgLogin: string
+    if (i < peSize) orgLogin = 'platform-eng'
+    else if (i < peSize + dpSize) orgLogin = 'data-platform'
+    else if (i < peSize + dpSize + dxSize) orgLogin = 'devx'
+    else orgLogin = 'security'
     out.push({
-      login: `demo-user-${String(i + 1).padStart(4, '0')}`,
-      orgLogin: orgs[i % orgs.length],
+      login: `demo-user-${String(idx).padStart(4, '0')}`,
+      orgLogin,
       lastActivityAt: null,
       planType: 'business',
     })
@@ -110,39 +121,31 @@ export function generateDemoSeats(count: number) {
  *   2. cc_vs_enterprise — the sum of all four CC budgets exceeds the
  *      enterprise envelope.
  *
- * All seats are assigned to a CC so the unassignedLeftover check passes
- * trivially (it would otherwise piggyback on the cc_vs_enterprise breach
- * and surface as a third banner item).
+ * The CCs are split deliberately across both resource kinds so the UI shows
+ * seat counts resolving from both bases (User and Org are not mutually
+ * exclusive in production data):
+ *   - platform-eng: User resources (the override-bearing user range so
+ *     per-user effective ULBs overrun the CC cap).
+ *   - data-platform / devx / security: Org resources (seats whose orgLogin
+ *     matches resolve via the org path).
  *
- * Membership is keyed off the same `demo-user-NNNN` login scheme used by
- * generateDemoSeats so loginToCostCenter resolves cleanly.
+ * All seats land in exactly one CC so the unassignedLeftover check stays
+ * vacuous and doesn't surface as a third banner item.
  */
 export function generateDemoCostCenters(count: number): CostCenter[] {
   const totalSeats = Math.ceil(count * 1.5)
-  // Split the entire seat pool across four CCs — no leftover users.
-  // platform-eng is intentionally largest and biased toward the override-bearing
-  // user range (1..count) so its effective ULB sum overshoots its budget.
   const peSize = Math.min(Math.round(totalSeats * 0.44), totalSeats)
-  const dpSize = Math.min(Math.round(totalSeats * 0.36), totalSeats - peSize)
-  const dxSize = Math.min(Math.round(totalSeats * 0.13), totalSeats - peSize - dpSize)
-  const secSize = Math.max(0, totalSeats - peSize - dpSize - dxSize)
-  const range = (start: number, n: number) =>
-    Array.from({ length: n }, (_, i) => ({
-      type: 'User' as const,
-      name: `demo-user-${String(start + i).padStart(4, '0')}`,
-    }))
 
-  let cursor = 1
-  const platformEng = range(cursor, peSize); cursor += peSize
-  const dataPlatform = range(cursor, dpSize); cursor += dpSize
-  const devx = range(cursor, dxSize); cursor += dxSize
-  const security = range(cursor, secSize)
+  const platformEngUsers = Array.from({ length: peSize }, (_, i) => ({
+    type: 'User' as const,
+    name: `demo-user-${String(i + 1).padStart(4, '0')}`,
+  }))
 
   return [
-    { id: 'demo-cc-pe', name: 'platform-eng', state: 'active', resources: platformEng },
-    { id: 'demo-cc-dp', name: 'data-platform', state: 'active', resources: dataPlatform },
-    { id: 'demo-cc-dx', name: 'devx', state: 'active', resources: devx },
-    { id: 'demo-cc-sec', name: 'security', state: 'active', resources: security },
+    { id: 'demo-cc-pe', name: 'platform-eng', state: 'active', resources: platformEngUsers },
+    { id: 'demo-cc-dp', name: 'data-platform', state: 'active', resources: [{ type: 'Org', name: 'data-platform' }] },
+    { id: 'demo-cc-dx', name: 'devx', state: 'active', resources: [{ type: 'Org', name: 'devx' }] },
+    { id: 'demo-cc-sec', name: 'security', state: 'active', resources: [{ type: 'Org', name: 'security' }] },
   ]
 }
 

@@ -553,6 +553,16 @@ export function costCentersUrl(apiBase: string, ent: string): string {
   return `${apiBaseToWebBase(apiBase)}/enterprises/${ent}/billing/cost_centers`
 }
 
+/** GHEC single cost-center page — drill into a specific CC's resources & members. */
+export function costCenterUrl(apiBase: string, ent: string, ccId: string): string {
+  return `${apiBaseToWebBase(apiBase)}/enterprises/${ent}/billing/cost_centers/${ccId}`
+}
+
+/** GHEC enterprise members / Copilot seats page. */
+export function enterpriseSeatsUrl(apiBase: string, ent: string): string {
+  return `${apiBaseToWebBase(apiBase)}/enterprises/${ent}/people`
+}
+
 // --- Copilot seats (used as the source of truth for "add ULB" autocomplete) ---
 
 export interface CopilotSeat {
