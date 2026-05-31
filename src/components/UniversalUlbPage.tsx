@@ -699,6 +699,12 @@ export function UniversalUlbPage() {
             Existing ULBs for these users would be overwritten.
           </DialogDescription>
 
+          <div className="rounded-md border border-amber-300 dark:border-amber-700/60 bg-amber-50 dark:bg-amber-950/30 px-3 py-2 text-xs text-amber-900 dark:text-amber-200 mb-3">
+            Heads up: this total only reflects individual ULBs. It does not account
+            for other budgets (enterprise-level, cost centers, etc.) that may also
+            apply to these users.
+          </div>
+
           <div className="rounded-md border border-neutral-200 dark:border-neutral-800 p-3 text-xs grid gap-1.5 sm:grid-cols-2 mb-3">
             <div>
               <div className="text-neutral-500 dark:text-neutral-400">Total monthly cap</div>
