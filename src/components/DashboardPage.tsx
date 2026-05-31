@@ -911,61 +911,54 @@ function CcBulletRowView({ row }: { row: CcBulletRow }) {
     )
   })()
 
-  // Right-edge badge sits next to the bar so the rightmost dollar column
-  // stays the same width across every row. Over-budget rows get a red
-  // "proj NNN%" badge; near-budget rows get a soft amber "proj NN%" hint.
+  // Right-edge badge sits in its own fixed-width column so every bar ends
+  // at the same x-position regardless of badge presence. Always rendered
+  // (green for safe rows) so the eye has a consistent landmark.
   const projDisplayPct = hasBudget && projected > 0
     ? Math.round((projected / budget!) * 100)
     : null
   const badge = (() => {
     if (!measured || !hasBudget || projDisplayPct === null) return null
-    if (overBudget) {
-      return (
-        <span className="rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-medium text-red-700 dark:bg-red-900/40 dark:text-red-200 tabular-nums">
-          {projDisplayPct}%
-        </span>
-      )
-    }
-    if (nearBudget) {
-      return (
-        <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-200 tabular-nums">
-          {projDisplayPct}%
-        </span>
-      )
-    }
-    return null
+    const tone = overBudget
+      ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-200'
+      : nearBudget
+        ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200'
+        : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200'
+    return (
+      <span className={cn('rounded-full px-1.5 py-0.5 text-[10px] font-medium tabular-nums', tone)}>
+        {projDisplayPct}%
+      </span>
+    )
   })()
 
   return (
-    <div className="grid grid-cols-[7rem_minmax(0,1fr)_7rem] items-center gap-3">
+    <div className="grid grid-cols-[7rem_minmax(0,1fr)_2.75rem_6.25rem] items-center gap-x-2">
       <div
         className="text-xs font-medium truncate text-neutral-700 dark:text-neutral-300"
         title={name}
       >
         {name}
       </div>
-      <div className="flex items-center gap-2 min-w-0">
+      <div
+        className={cn(
+          'relative h-3 rounded-sm overflow-hidden',
+          uncappedBar
+            ? 'bg-neutral-50 dark:bg-neutral-800/30 border border-dashed border-neutral-200 dark:border-neutral-700'
+            : 'bg-neutral-100 dark:bg-neutral-800/70',
+        )}
+      >
         <div
-          className={cn(
-            'relative h-3 rounded-sm overflow-hidden flex-1',
-            uncappedBar
-              ? 'bg-neutral-50 dark:bg-neutral-800/30 border border-dashed border-neutral-200 dark:border-neutral-700'
-              : 'bg-neutral-100 dark:bg-neutral-800/70',
-          )}
-        >
-          <div
-            className={cn('absolute inset-y-0 left-0', trailColor)}
-            style={{ width: `${projPct}%` }}
-            title={`Projected ${formatCurrency(projected)}`}
-          />
-          <div
-            className={cn('absolute inset-y-0 left-0', fillColor)}
-            style={{ width: `${mtdPct}%` }}
-            title={`MTD ${formatCurrency(mtd)}`}
-          />
-        </div>
-        {badge}
+          className={cn('absolute inset-y-0 left-0', trailColor)}
+          style={{ width: `${projPct}%` }}
+          title={`Projected ${formatCurrency(projected)}`}
+        />
+        <div
+          className={cn('absolute inset-y-0 left-0', fillColor)}
+          style={{ width: `${mtdPct}%` }}
+          title={`MTD ${formatCurrency(mtd)}`}
+        />
       </div>
+      <div className="text-right">{badge}</div>
       <div className="text-[11px] tabular-nums text-right whitespace-nowrap">
         {numericLabel}
       </div>
