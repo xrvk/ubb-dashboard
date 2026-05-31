@@ -31,6 +31,7 @@ import {
   NAV_TO_INDIVIDUAL_EVENT,
   NAV_TO_UNIVERSAL_EVENT,
 } from '@/lib/navEvents'
+import { DebugBadge, type DebugInfo } from './DebugBadge'
 
 /**
  * Top-level Dashboard. Single-screen rollup of the enterprise's AI credit
@@ -171,6 +172,16 @@ export function DashboardPage() {
               : `Caps post-pool metered spend`
           }
           icon={<Buildings size={22} weight="duotone" className="text-neutral-400" />}
+          debug={{
+            source: 'enterprise-scope BundlePricing/ai_credits budget · budget_amount',
+            formula: 'pickEnterpriseBudget(allBudgets).budgetAmount',
+            inputs: {
+              'enterpriseBudget?.budgetAmount': entAmount === null ? 'null' : entAmount,
+              'enterpriseBudget?.excludeCostCenterUsage':
+                String(enterpriseBudget?.excludeCostCenterUsage ?? 'n/a'),
+            },
+            note: 'enterprise-scope budget does not report consumed_amount; this is the cap only.',
+          }}
         />
         <KpiTile
           label="Spent MTD"
@@ -181,6 +192,21 @@ export function DashboardPage() {
               : `Day ${forecast.daysElapsed} of ${forecast.daysInMonth} · ULB proxy`
           }
           icon={<CurrencyDollar size={22} weight="duotone" className="text-neutral-400" />}
+          debug={{
+            source: trackedForecast.hasActual
+              ? "/usage/summary · Σ usageItems[sku='copilot_ai_unit'].grossAmount"
+              : 'universalUlb.consumedAmount + Σ userBudgets[].consumedAmount',
+            formula: trackedForecast.hasActual
+              ? 'usage.aiCreditsGross'
+              : 'univMtd + indMtd  (no enterprise gross available)',
+            inputs: {
+              'usage.aiCreditsGross': usageSummary?.aiCreditsGross ?? 'null',
+              'universalUlb.consumedAmount': universalUlb?.consumedAmount ?? 0,
+              'Σ userBudgets.consumedAmount': forecast.spendMtd,
+              hasActual: String(trackedForecast.hasActual),
+            },
+            note: 'When hasActual=false, CC-routed seats without a ULB are invisible to this tile.',
+          }}
         />
         <KpiTile
           label="Forecast EoM"
@@ -194,6 +220,19 @@ export function DashboardPage() {
           }
           tone={forecastOverPool > 0 ? 'warn' : 'neutral'}
           icon={<TrendUp size={22} weight="duotone" className="text-neutral-400" />}
+          debug={{
+            source: 'projectMonthlyBudget(totalMtd, 0).projectedMonthTotal',
+            formula: 'mtd + (mtd / daysElapsed) × daysRemaining',
+            inputs: {
+              totalMtd: trackedForecast.totalMtd,
+              daysElapsed: forecast.daysElapsed,
+              daysInMonth: forecast.daysInMonth,
+              projectedMonthTotal: trackedForecast.totalProjected,
+              poolSize: poolSize ?? 'null',
+              forecastOverPool,
+            },
+            note: 'Linear extrapolation. lowConfidence < day 5 is computed but not surfaced here.',
+          }}
         />
         <KpiTile
           label="Pool remaining"
@@ -204,6 +243,20 @@ export function DashboardPage() {
               : `${formatPercent(1 - poolRemaining! / Math.max(1, poolSize))} of pool drawn`
           }
           icon={<Receipt size={22} weight="duotone" className="text-neutral-400" />}
+          debug={{
+            source: 'includedAiCredits(cb, ce).totalDollars − trackedForecast.totalMtd',
+            formula: 'max(0, poolSize − spentMtd)',
+            inputs: {
+              'CB seats': seatCost.business,
+              'CE seats': seatCost.enterprise,
+              'AICs/CB': credits.perBusiness,
+              'AICs/CE': credits.perEnterprise,
+              poolSize: poolSize ?? 'null',
+              totalMtd: trackedForecast.totalMtd,
+              poolRemaining: poolRemaining ?? 'null',
+              promoActive: String(credits.promoActive),
+            },
+          }}
         />
       </div>
       <ForecastBreakdownCard tracked={trackedForecast} entBudget={entAmount} />
@@ -251,18 +304,23 @@ function KpiTile({
   hint,
   icon,
   tone = 'neutral',
+  debug,
 }: {
   label: string
   value: string
   hint?: string
   icon?: React.ReactNode
   tone?: 'neutral' | 'warn'
+  debug?: DebugInfo
 }) {
   return (
     <Card>
       <CardContent className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="text-xs text-neutral-500 dark:text-neutral-400">{label}</div>
+          <div className="flex items-center gap-1.5 text-xs text-neutral-500 dark:text-neutral-400">
+            <span>{label}</span>
+            {debug ? <DebugBadge debug={debug} /> : null}
+          </div>
           <div
             className={cn(
               'text-2xl font-semibold mt-1',
@@ -332,6 +390,17 @@ function ForecastBreakdownCard({
                 ? `${pct(tracked.universal.projected, tracked.totalProjected)} of total`
                 : 'No universal ULB'
             }
+            debug={{
+              source: "multi_user_customer-scope BundlePricing/ai_credits budget · consumed_amount",
+              formula: 'projectMonthlyBudget(consumed_amount, 0).projectedMonthTotal',
+              inputs: {
+                'universal.mtd (consumed_amount)': tracked.universal.mtd,
+                'universal.projected': tracked.universal.projected,
+                'totalProjected': tracked.totalProjected,
+                'hasBudget': String(tracked.universal.hasBudget),
+              },
+              note: 'Universal ULB is one of only two scopes that report consumed_amount (the other is user-scope).',
+            }}
           />
           <BreakdownStat
             color={COLOR_INDIVIDUAL}
@@ -343,6 +412,15 @@ function ForecastBreakdownCard({
                 ? `${tracked.individual.count.toLocaleString()} users · ${pct(tracked.individual.projected, tracked.totalProjected)} of total`
                 : 'No individual ULBs'
             }
+            debug={{
+              source: 'user-scope BundlePricing/ai_credits budgets · Σ consumed_amount, projected per user',
+              formula: 'forecastSummary(userBudgets) → Σ projectMonthlyBudget(b.consumed_amount, 0)',
+              inputs: {
+                'spendMtd (Σ user consumed)': tracked.individual.mtd,
+                'projectedEom': tracked.individual.projected,
+                'user count': tracked.individual.count,
+              },
+            }}
           />
           {tracked.hasActual ? (
             <BreakdownStat
@@ -355,6 +433,18 @@ function ForecastBreakdownCard({
                   ? `${pct(ccRoutedProjected, tracked.totalProjected)} of total outside budget data`
                   : 'All spend attributed to a tracked scope'
               }
+              debug={{
+                source: 'residual: enterprise gross AIC − (universal + individual)',
+                formula: 'max(0, totalProjected − universal.projected − individual.projected)',
+                inputs: {
+                  totalProjected: tracked.totalProjected,
+                  'universal.projected': tracked.universal.projected,
+                  'individual.projected': tracked.individual.projected,
+                  ccRoutedProjected,
+                  ccRoutedMtd,
+                },
+                note: 'Mostly CC-routed spend. CC budgets do not report consumed_amount, so we back this out from the enterprise total.',
+              }}
             />
           ) : null}
           <div className="grid gap-1">
@@ -402,12 +492,14 @@ function BreakdownStat({
   mtd,
   projected,
   sub,
+  debug,
 }: {
   color: string
   label: string
   mtd: number
   projected: number
   sub: string
+  debug?: DebugInfo
 }) {
   return (
     <div className="grid gap-1">
@@ -416,7 +508,8 @@ function BreakdownStat({
           className="inline-block h-2 w-2 rounded-full"
           style={{ backgroundColor: color }}
         />
-        {label}
+        <span>{label}</span>
+        {debug ? <DebugBadge debug={debug} /> : null}
       </div>
       <div className="text-2xl font-semibold">{formatCurrency(projected)}</div>
       <div className="text-xs text-neutral-500">MTD {formatCurrency(mtd)}</div>
