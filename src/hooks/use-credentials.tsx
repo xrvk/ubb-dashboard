@@ -17,7 +17,7 @@ import {
   type CostCenterResolution,
   type Credentials,
   type EnterpriseBudget,
-  type UniversalUlb,
+  type UniversalUbb,
   type UserBudget,
 } from '@/lib/api'
 import {
@@ -26,7 +26,7 @@ import {
   generateDemoCostCenters,
   generateDemoEnterpriseBudget,
   generateDemoSeats,
-  generateDemoUniversalUlb,
+  generateDemoUniversalUbb,
   generateDemoUsageByCostCenter,
   generateDemoUsageSummary,
   readDemoCountFromUrl,
@@ -42,9 +42,9 @@ interface CredentialsContextValue {
   totalBudgetCount: number
   seats: CopilotSeat[]
   costCenters: CostCenter[]
-  /** Universal ULB (multi_user_customer scope) or null if not configured. */
-  universalUlb: UniversalUlb | null
-  setUniversalUlb: (u: UniversalUlb | null) => void
+  /** Universal UBB (multi_user_customer scope) or null if not configured. */
+  universalUbb: UniversalUbb | null
+  setUniversalUbb: (u: UniversalUbb | null) => void
   /** Enterprise-scope ai_credits budget or null if not configured. */
   enterpriseBudget: EnterpriseBudget | null
   /** Cost-center-scope ai_credits budgets, keyed by lowercased CC name. */
@@ -61,8 +61,8 @@ interface CredentialsContextValue {
    * `fetchCopilotUsageSummary({ costCenterId })` per CC in parallel. CCs
    * whose fetch failed are absent from the map (caller should treat as
    * unknown / show "—"). This is the authoritative per-CC MTD source —
-   * it covers individual ULB, universal ULB, and org-routed seats alike,
-   * unlike the user-budgets API which only reports individual-ULB users.
+   * it covers individual UBB, universal UBB, and org-routed seats alike,
+   * unlike the user-budgets API which only reports individual-UBB users.
    */
   usageByCostCenterId: ReadonlyMap<string, CopilotUsageSummary>
   /**
@@ -89,7 +89,7 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
   const [totalBudgetCount, setTotalBudgetCount] = useState(0)
   const [seats, setSeats] = useState<CopilotSeat[]>([])
   const [costCenters, setCostCenters] = useState<CostCenter[]>([])
-  const [universalUlb, setUniversalUlb] = useState<UniversalUlb | null>(null)
+  const [universalUbb, setUniversalUbb] = useState<UniversalUbb | null>(null)
   const [enterpriseBudget, setEnterpriseBudget] = useState<EnterpriseBudget | null>(null)
   const [costCenterBudgetsByName, setCostCenterBudgetsByName] = useState<ReadonlyMap<string, CostCenterBudget>>(
     new Map(),
@@ -115,7 +115,7 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
       const demoCount = readDemoCountFromUrl() ?? 0
       const demoBudgets = generateDemoBudgets(demoCount, Math.floor(Math.random() * 100_000))
       const demoSeats = generateDemoSeats(demoCount)
-      const universal = generateDemoUniversalUlb(demoBudgets)
+      const universal = generateDemoUniversalUbb(demoBudgets)
       const poolPct = readDemoPoolPctFromUrl()
       if (poolPct !== null) {
         const cost = seatCostBreakdown(demoSeats)
@@ -126,7 +126,7 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
       setTotalBudgetCount(demoBudgets.length)
       setSeats(demoSeats)
       setCostCenters(generateDemoCostCenters(demoCount))
-      setUniversalUlb(universal)
+      setUniversalUbb(universal)
       setEnterpriseBudget(generateDemoEnterpriseBudget())
       setCostCenterBudgetsByName(generateDemoCostCenterBudgets())
       setUsageSummary(
@@ -153,7 +153,7 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
       setTotalBudgetCount(allBudgets.totalBudgetCount)
       setSeats(seatList)
       setCostCenters(ccList)
-      setUniversalUlb(allBudgets.universal)
+      setUniversalUbb(allBudgets.universal)
       setEnterpriseBudget(allBudgets.enterprise)
       setCostCenterBudgetsByName(allBudgets.costCenterBudgetsByName)
       setUsageSummary(summary)
@@ -190,7 +190,7 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
       setTotalBudgetCount(allBudgets.totalBudgetCount)
       setSeats(seatList)
       setCostCenters(ccList)
-      setUniversalUlb(allBudgets.universal)
+      setUniversalUbb(allBudgets.universal)
       setEnterpriseBudget(allBudgets.enterprise)
       setCostCenterBudgetsByName(allBudgets.costCenterBudgetsByName)
       setUsageSummary(summary)
@@ -208,7 +208,7 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
     setTotalBudgetCount(0)
     setSeats([])
     setCostCenters([])
-    setUniversalUlb(null)
+    setUniversalUbb(null)
     setEnterpriseBudget(null)
     setCostCenterBudgetsByName(new Map())
     setUsageSummary(null)
@@ -228,7 +228,7 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
         setCredentials({ base: 'demo://', ent: `demo-${demoCount}`, token: 'demo' })
         const demoBudgets = generateDemoBudgets(demoCount)
         const demoSeats = generateDemoSeats(demoCount)
-        const universal = generateDemoUniversalUlb(demoBudgets)
+        const universal = generateDemoUniversalUbb(demoBudgets)
         const poolPct = readDemoPoolPctFromUrl()
         if (poolPct !== null) {
           const cost = seatCostBreakdown(demoSeats)
@@ -239,7 +239,7 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
         setTotalBudgetCount(demoBudgets.length)
         setSeats(demoSeats)
         setCostCenters(generateDemoCostCenters(demoCount))
-        setUniversalUlb(universal)
+        setUniversalUbb(universal)
         setEnterpriseBudget(generateDemoEnterpriseBudget({ excludeCostCenterUsage: readDemoExcludeCcFromUrl() }))
         setCostCenterBudgetsByName(generateDemoCostCenterBudgets())
         setUsageSummary(
@@ -336,8 +336,8 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
     seats,
     costCenters,
     loginToCostCenter,
-    universalUlb,
-    setUniversalUlb,
+    universalUbb,
+    setUniversalUbb,
     enterpriseBudget,
     costCenterBudgetsByName,
     usageSummary,

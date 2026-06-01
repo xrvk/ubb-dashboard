@@ -1,10 +1,10 @@
 blank_issues_enabled: false
 contact_links:
   - name: Security vulnerability
-    url: https://github.com/xrvk/ind-ulb-dashboard/security/advisories/new
+    url: https://github.com/xrvk/ubb-dashboard/security/advisories/new
     about: Please report security issues privately via GitHub Security Advisories, not as public issues.
   - name: Support / questions
-    url: https://github.com/xrvk/ind-ulb-dashboard/blob/main/SUPPORT.md
+    url: https://github.com/xrvk/ubb-dashboard/blob/main/SUPPORT.md
     about: This project is maintained on a best-effort basis. See SUPPORT.md for guidance.
   - name: Broader Copilot budget planning
     url: https://github.com/xrvk/copilot-budget-command-calculator

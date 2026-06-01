@@ -3,7 +3,7 @@
  *
  * Given a `BudgetConstraintsResult`, derive one-click proposals that bring a
  * failing check back to ok by adjusting the top side (raise a budget) or the
- * bottom side (lower the universal ULB to the max-safe value).
+ * bottom side (lower the universal UBB to the max-safe value).
  *
  * These helpers are pure and return `null` when no fix applies — either
  * because nothing is broken, or because the proposal would create a new breach.
@@ -17,7 +17,7 @@ export interface AutoFixProposal {
   /** The new dollar amount to set. */
   newValue: number
   /** Which knob the caller should turn. */
-  scope: 'enterprise' | 'cost_center' | 'universal_ulb'
+  scope: 'enterprise' | 'cost_center' | 'universal_ubb'
   /** For `cost_center`, the CC id (matches `PerCcCheck.costCenterId`). */
   targetId?: string
 }
@@ -31,15 +31,15 @@ function ceilCent(n: number): number {
   return Math.ceil(n * 100) / 100
 }
 
-/** Round down to the nearest cent so we don't propose a universal ULB that re-breaches. */
+/** Round down to the nearest cent so we don't propose a universal UBB that re-breaches. */
 function floorCent(n: number): number {
   return Math.floor(n * 100) / 100
 }
 
 /**
- * Propose a new enterprise budget that covers current ULB allocation.
- * - umbrella: ent must cover Σ CC budgets + Σ unassigned ULBs (whichever sum is larger).
- * - independent: ent only needs to cover Σ unassigned ULBs (CC budgets are separate).
+ * Propose a new enterprise budget that covers current UBB allocation.
+ * - umbrella: ent must cover Σ CC budgets + Σ unassigned UBBs (whichever sum is larger).
+ * - independent: ent only needs to cover Σ unassigned UBBs (CC budgets are separate).
  * Returns `null` when there is no enterprise budget to PATCH, or when nothing is broken.
  */
 export function proposeRaiseEnt(result: BudgetConstraintsResult): AutoFixProposal | null {
@@ -52,12 +52,12 @@ export function proposeRaiseEnt(result: BudgetConstraintsResult): AutoFixProposa
   // Required minimum to satisfy all ent-side checks.
   let required: number
   if (mode === 'umbrella') {
-    // unassignedLeftover.actual is the Σ ULBs of unassigned users.
+    // unassignedLeftover.actual is the Σ UBBs of unassigned users.
     // ccVsEnterprise.actual is Σ CC budgets.
     // Together they must fit under the ent budget.
     required = (ccVsEnt?.actual ?? 0) + (leftover?.actual ?? 0)
   } else {
-    // independent: only unassigned ULBs hit the ent budget.
+    // independent: only unassigned UBBs hit the ent budget.
     required = leftover?.actual ?? 0
   }
 
@@ -80,7 +80,7 @@ export function proposeRaiseEnt(result: BudgetConstraintsResult): AutoFixProposa
 }
 
 /**
- * Propose a new per-CC budget that covers its members' current ULBs.
+ * Propose a new per-CC budget that covers its members' current UBBs.
  * Returns `null` when the CC check is ok or when the CC isn't tracked.
  */
 export function proposeRaiseCc(
@@ -100,32 +100,32 @@ export function proposeRaiseCc(
 }
 
 /**
- * Propose lowering the universal ULB to the max-safe value when the current
- * universal is over it. Returns `null` when there's no universal ULB, when
+ * Propose lowering the universal UBB to the max-safe value when the current
+ * universal is over it. Returns `null` when there's no universal UBB, when
  * the safe max is `Infinity` (nothing binds), or when we're already under it.
  *
- * Caller passes the current universal ULB amount (since the engine result
+ * Caller passes the current universal UBB amount (since the engine result
  * doesn't echo it back).
  */
-export function proposeLowerUniversalUlb(
+export function proposeLowerUniversalUbb(
   result: BudgetConstraintsResult,
-  currentUniversalUlb: number | null,
+  currentUniversalUbb: number | null,
 ): AutoFixProposal | null {
-  if (currentUniversalUlb == null) return null
-  if (!Number.isFinite(result.maxSafeUniversalUlb)) return null
-  const safe = floorCent(result.maxSafeUniversalUlb)
-  if (currentUniversalUlb <= safe) return null
+  if (currentUniversalUbb == null) return null
+  if (!Number.isFinite(result.maxSafeUniversalUbb)) return null
+  const safe = floorCent(result.maxSafeUniversalUbb)
+  if (currentUniversalUbb <= safe) return null
   // Suppress the proposal when the safe value would be $0 (or negative). At
-  // that point "lower the universal ULB" effectively means "turn it off" —
+  // that point "lower the universal UBB" effectively means "turn it off" —
   // which isn't a real fix, it just shifts the problem onto whatever still
   // needs an envelope (the enterprise budget or per-CC budgets). The caller
   // should surface a different action (raise enterprise, set per-CC budgets)
   // in that case.
   if (safe <= 0) return null
   return {
-    label: `Lower universal ULB to ${fmt(safe)}`,
+    label: `Lower universal UBB to ${fmt(safe)}`,
     newValue: safe,
-    scope: 'universal_ulb',
+    scope: 'universal_ubb',
   }
 }
 

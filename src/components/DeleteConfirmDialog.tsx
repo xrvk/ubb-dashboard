@@ -19,9 +19,9 @@ export function DeleteConfirmDialog({ budget, open, onOpenChange, onConfirm }: P
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
-        <DialogTitle>Delete individual ULB?</DialogTitle>
+        <DialogTitle>Delete individual UBB?</DialogTitle>
         <DialogDescription>
-          The budget for <strong>{budget.user}</strong> will be deleted. They will fall back to the universal ULB
+          The budget for <strong>{budget.user}</strong> will be deleted. They will fall back to the universal UBB
           (or no cap if one is not set).
         </DialogDescription>
         {error ? <p className="text-sm text-red-600 dark:text-red-400 mb-3">{error}</p> : null}

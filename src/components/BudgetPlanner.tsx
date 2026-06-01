@@ -81,7 +81,7 @@ type PendingChange =
 
 /**
  * Small chip rendered next to a budget input that shows the minimum dollar
- * amount required to cover current ULB allocation. Helps the user satisfy the
+ * amount required to cover current UBB allocation. Helps the user satisfy the
  * constraint without bouncing to another tab to read it.
  *
  * Color: neutral when the current value already covers requirement, amber when
@@ -257,7 +257,7 @@ function SeatsLink({ seats, href }: { seats: number; href: string | null }) {
  * Editable mirror of the enterprise + cost-center ai_credits budgets, with a
  * single "Apply changes" action that PATCHes the diffs in a rate-limited batch.
  * Mirrors CCC's BudgetPlanner pattern but reuses our card/button/input idiom
- * from UniversalUlbPage.
+ * from UniversalUbbPage.
  */
 export function BudgetPlanner() {
   const {
@@ -267,7 +267,7 @@ export function BudgetPlanner() {
     loginToCostCenter,
     budgets,
     seats,
-    universalUlb,
+    universalUbb,
     apiFetch,
     credentials,
     refresh,
@@ -303,11 +303,11 @@ export function BudgetPlanner() {
   const [applyError, setApplyError] = useState<string | null>(null)
   const [lastAppliedAt, setLastAppliedAt] = useState<number | null>(null)
 
-  // Required minimums — what each envelope would need to be to cover current ULBs.
+  // Required minimums — what each envelope would need to be to cover current UBBs.
   const constraintResult = useBudgetConstraints()
   const requiredMins = useMemo(() => computeRequiredMinimums(constraintResult), [constraintResult])
 
-  // Per-CC floor: sum of effective ULBs of all Copilot seats in that CC.
+  // Per-CC floor: sum of effective UBBs of all Copilot seats in that CC.
   // For uncapped CCs this is the minimum spend that members will commit
   // (assuming they each consume their full cap). Used to render
   // "at least $X" hints + a column footer total.
@@ -316,7 +316,7 @@ export function BudgetPlanner() {
     for (const b of budgets) {
       if (b.user) individualByLogin.set(b.user.toLowerCase(), b.budgetAmount)
     }
-    const universal = universalUlb?.budgetAmount ?? 0
+    const universal = universalUbb?.budgetAmount ?? 0
     const sums = new Map<string, number>()
     for (const seat of seats) {
       const login = seat.login.toLowerCase()
@@ -326,7 +326,7 @@ export function BudgetPlanner() {
       sums.set(r.cc.id, (sums.get(r.cc.id) ?? 0) + eff)
     }
     return sums
-  }, [budgets, seats, loginToCostCenter, universalUlb])
+  }, [budgets, seats, loginToCostCenter, universalUbb])
 
   // Which cost centers actually route Copilot today?
   const ccIdsAffectingCopilot = useMemo(() => {
@@ -746,7 +746,7 @@ export function BudgetPlanner() {
                 Cost centers
               </h2>
               <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
-                Group-level budgets for subsets of users. Each must cover its members' ULBs.
+                Group-level budgets for subsets of users. Each must cover its members' UBBs.
               </p>
             </div>
 
@@ -940,7 +940,7 @@ export function BudgetPlanner() {
                                         </span>
                                       </TooltipTrigger>
                                       <TooltipContent>
-                                        ULB ceiling: {row.seatCount.toLocaleString()} Copilot seat{row.seatCount === 1 ? '' : 's'} × their effective ULBs. Max this cost center could draw from the enterprise pool.
+                                        UBB ceiling: {row.seatCount.toLocaleString()} Copilot seat{row.seatCount === 1 ? '' : 's'} × their effective UBBs. Max this cost center could draw from the enterprise pool.
                                       </TooltipContent>
                                     </Tooltip>
                                   ) : null}
@@ -998,7 +998,7 @@ export function BudgetPlanner() {
                               )}
                               {uncappedCount > 0 && uncappedFloor > 0 ? (
                                 <span className="ml-1.5 text-neutral-500">
-                                  · Includes {formatCurrency(uncappedFloor)} ULB ceiling from uncapped cost centers
+                                  · Includes {formatCurrency(uncappedFloor)} UBB ceiling from uncapped cost centers
                                 </span>
                               ) : null}
                             </td>

@@ -1,7 +1,7 @@
 /**
  * localStorage cache for ingested usage-report aggregates.
  *
- * Key shape: `ulb:report:${enterprise}:${YYYY-MM}`. We only store the
+ * Key shape: `ubb:report:${enterprise}:${YYYY-MM}`. We only store the
  * aggregated per-user rows (not the raw CSV) so the payload stays small
  * even for big enterprises.
  */
@@ -19,7 +19,7 @@ export interface CachedReport {
   rows: UserAicAggregate[]
 }
 
-const PREFIX = 'ulb:report:'
+const PREFIX = 'ubb:report:'
 
 function key(enterprise: string, monthKey: string): string {
   return `${PREFIX}${enterprise}:${monthKey}`
@@ -41,7 +41,7 @@ export function saveCachedReport(report: CachedReport): void {
   try {
     localStorage.setItem(key(report.enterprise, report.monthKey), JSON.stringify(report))
   } catch (e) {
-    console.warn('[ind-ulb-dashboard] Failed to cache report:', e)
+    console.warn('[ubb-dashboard] Failed to cache report:', e)
   }
 }
 
@@ -82,7 +82,7 @@ export function loadAllCachedReports(enterprise: string): CachedReport[] {
 /**
  * Per-user aggregate across multiple monthly aggregations: returns the MAX
  * single-month consumption per user. Used as the sizing input for the
- * universal ULB so that seasonal spikes drive the cap, not the average.
+ * universal UBB so that seasonal spikes drive the cap, not the average.
  */
 export function aggregateMaxMonth(
   monthlyRows: UserAicAggregate[][],

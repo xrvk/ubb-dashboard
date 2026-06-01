@@ -9,7 +9,7 @@ interface Props {
 /**
  * Sticky contextual banner shown beneath the tab bar on the Budget model
  * page after the user deep-links from a constraint action (e.g. "Lower
- * cost-center budgets by $X"). Mirrors IndividualUlbTaskBanner so cross-tab
+ * cost-center budgets by $X"). Mirrors IndividualUbbTaskBanner so cross-tab
  * fix actions feel consistent. Stays put until the user dismisses it
  * (no auto-timeout) since the corrective edit may take a moment.
  */
