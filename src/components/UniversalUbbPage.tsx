@@ -6,10 +6,10 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useCredentials } from '@/hooks/use-credentials'
 import {
-  createUniversalULB,
+  createUniversalUBB,
   createUserBudget as apiCreateUserBudget,
-  fetchUniversalULB,
-  patchUniversalULB,
+  fetchUniversalUBB,
+  patchUniversalUBB,
 } from '@/lib/api'
 import { formatCurrency } from '@/lib/utils'
 import {
@@ -30,7 +30,7 @@ import {
   DialogDescription,
   DialogClose,
 } from '@/components/ui/dialog'
-import { EditUniversalUlbDialog } from '@/components/EditUniversalUlbDialog'
+import { EditUniversalUbbDialog } from '@/components/EditUniversalUbbDialog'
 import { UsageCsvImport } from '@/components/UsageCsvImport'
 import { ConsumptionCurve } from '@/components/ConsumptionCurve'
 
@@ -47,23 +47,23 @@ const MODE_LABELS: Record<ThresholdMode, string> = {
 }
 
 /**
- * Universal-ULB planner.
+ * Universal-UBB planner.
  *
  * Three-step workflow:
  *   1. Ingest one or more monthly usage-report CSVs (UsageCsvImport).
- *   2. Drag the ConsumptionCurve threshold + ULB lines to pick a cap and
- *      classify outliers ("power users") that need individual ULBs.
- *   3. Apply the chosen universal ULB and optionally batch-create per-outlier
- *      individual ULBs (suggested at user.maxAICs × 1.10).
+ *   2. Drag the ConsumptionCurve threshold + UBB lines to pick a cap and
+ *      classify outliers ("power users") that need individual UBBs.
+ *   3. Apply the chosen universal UBB and optionally batch-create per-outlier
+ *      individual UBBs (suggested at user.maxAICs × 1.10).
  */
-export function UniversalUlbPage() {
+export function UniversalUbbPage() {
   const {
     credentials,
     apiFetch,
     budgets,
     seats,
-    universalUlb,
-    setUniversalUlb,
+    universalUbb,
+    setUniversalUbb,
     loginToCostCenter,
   } = useCredentials()
 
@@ -75,13 +75,13 @@ export function UniversalUlbPage() {
   // tag no longer matches and the override naturally falls away. Lets us
   // reset overrides without a setState-in-effect.
   const [customThresholdEntry, setCustomThresholdEntry] = useState<{ sig: string; value: number } | null>(null)
-  const [ulbOverrideEntry, setUlbOverrideEntry] = useState<{ sig: string; value: number } | null>(null)
+  const [ubbOverrideEntry, setUbbOverrideEntry] = useState<{ sig: string; value: number } | null>(null)
   /** Logins the admin has explicitly checked. None are selected by default. */
   const [selectedOutlierLogins, setSelectedOutlierLogins] = useState<Set<string>>(new Set())
-  /** Per-outlier ULB override in dollars. Logins in this map are treated as
+  /** Per-outlier UBB override in dollars. Logins in this map are treated as
    * "manually configured" — they're excluded from the select-all toggle and
    * their value is used directly instead of the suggested formula. */
-  const [editedOutlierUlbsEntry, setEditedOutlierUlbsEntry] = useState<
+  const [editedOutlierUbbsEntry, setEditedOutlierUbbsEntry] = useState<
     { sig: string; map: Record<string, number> } | null
   >(null)
   const [applying, setApplying] = useState(false)
@@ -89,7 +89,7 @@ export function UniversalUlbPage() {
   const [outlierPage, setOutlierPage] = useState(0)
   const [confirmCreateOpen, setConfirmCreateOpen] = useState(false)
   /** Growth buffer (%) applied on top of each outlier's max-month spend
-   *  when computing their suggested individual ULB. */
+   *  when computing their suggested individual UBB. */
   const [outlierBufferPct, setOutlierBufferPct] = useState<number>(DEFAULT_OUTLIER_BUFFER_PCT)
   /** Cost-center filter for the outliers table.
    *  null = all, '' = unassigned (no CC), otherwise CC id. */
@@ -105,9 +105,9 @@ export function UniversalUlbPage() {
     [credentials, cacheBust],
   )
 
-  // Users already covered by an individual ULB are excluded from sizing —
-  // we're sizing the cap for users who fall under the universal ULB.
-  const indUlbLogins = useMemo(
+  // Users already covered by an individual UBB are excluded from sizing —
+  // we're sizing the cap for users who fall under the universal UBB.
+  const indUbbLogins = useMemo(
     () => new Set(budgets.map(b => b.user.toLowerCase())),
     [budgets],
   )
@@ -117,30 +117,30 @@ export function UniversalUlbPage() {
     if (cachedMonths.length === 0) return []
     const merged = aggregateMaxMonth(cachedMonths.map(c => c.rows))
     return merged
-      .filter(u => !indUlbLogins.has(u.username.toLowerCase()))
+      .filter(u => !indUbbLogins.has(u.username.toLowerCase()))
       .map(toCsvUserUsage)
-  }, [cachedMonths, indUlbLogins])
+  }, [cachedMonths, indUbbLogins])
 
   // Dataset signature — invalidates overrides when the input data changes.
   const datasetSig = `${credentials?.ent ?? ''}:${csvUsers.length}`
   const customPct =
     customThresholdEntry?.sig === datasetSig ? customThresholdEntry.value : null
-  const ulbOverrideAICs =
-    ulbOverrideEntry?.sig === datasetSig ? ulbOverrideEntry.value : null
-  const editedOutlierUlbs = useMemo(
+  const ubbOverrideAICs =
+    ubbOverrideEntry?.sig === datasetSig ? ubbOverrideEntry.value : null
+  const editedOutlierUbbs = useMemo(
     () =>
-      editedOutlierUlbsEntry?.sig === datasetSig
-        ? editedOutlierUlbsEntry.map
+      editedOutlierUbbsEntry?.sig === datasetSig
+        ? editedOutlierUbbsEntry.map
         : ({} as Record<string, number>),
-    [editedOutlierUlbsEntry, datasetSig],
+    [editedOutlierUbbsEntry, datasetSig],
   )
   const editedOutlierLogins = useMemo(
-    () => new Set(Object.keys(editedOutlierUlbs)),
-    [editedOutlierUlbs],
+    () => new Set(Object.keys(editedOutlierUbbs)),
+    [editedOutlierUbbs],
   )
 
-  const setEditedOutlierUlb = (login: string, amount: number | null) => {
-    setEditedOutlierUlbsEntry(prev => {
+  const setEditedOutlierUbb = (login: string, amount: number | null) => {
+    setEditedOutlierUbbsEntry(prev => {
       const base = prev?.sig === datasetSig ? { ...prev.map } : {}
       if (amount === null) delete base[login]
       else base[login] = amount
@@ -154,29 +154,29 @@ export function UniversalUlbPage() {
     [csvUsers, thresholdMode, customPct],
   )
 
-  // ULB to display on the chart, in AICs.
+  // UBB to display on the chart, in AICs.
   // Priority: explicit drag override → suggested P95 from the current threshold.
-  // The currently saved universal ULB is shown separately in the header tile;
+  // The currently saved universal UBB is shown separately in the header tile;
   // we deliberately don't anchor the chart line to it so clicking to move the
   // threshold always re-snaps the line to the fresh P95.
-  const ulbAICs = ulbOverrideAICs !== null ? ulbOverrideAICs : threshold.suggestedULB
-  const ulbIsOverridden = ulbOverrideAICs !== null
+  const ubbAICs = ubbOverrideAICs !== null ? ubbOverrideAICs : threshold.suggestedUBB
+  const ubbIsOverridden = ubbOverrideAICs !== null
 
-  // Coverage: how many regular users fit under the chosen ULB?
+  // Coverage: how many regular users fit under the chosen UBB?
   const coverage = useMemo(() => {
     if (threshold.regularUsers.length === 0) return { covered: 0, total: 0, pct: 0 }
-    const covered = threshold.regularUsers.filter(u => u.totalAICs <= ulbAICs).length
+    const covered = threshold.regularUsers.filter(u => u.totalAICs <= ubbAICs).length
     return {
       covered,
       total: threshold.regularUsers.length,
       pct: covered / threshold.regularUsers.length,
     }
-  }, [threshold.regularUsers, ulbAICs])
+  }, [threshold.regularUsers, ubbAICs])
 
-  // Eligible seats = seats not currently on an individual ULB.
+  // Eligible seats = seats not currently on an individual UBB.
   const eligibleSeatCount = useMemo(
-    () => seats.filter(s => !indUlbLogins.has(s.login.toLowerCase())).length,
-    [seats, indUlbLogins],
+    () => seats.filter(s => !indUbbLogins.has(s.login.toLowerCase())).length,
+    [seats, indUbbLogins],
   )
 
   // Selected outliers, derived: intersection of the admin's explicit picks
@@ -188,27 +188,27 @@ export function UniversalUlbPage() {
 
   const handleEditCap = async (newAmount: number) => {
     if (credentials?.base === 'demo://') {
-      toast.info(`Demo mode: would set universal ULB to $${newAmount}`)
+      toast.info(`Demo mode: would set universal UBB to $${newAmount}`)
       return
     }
     if (!apiFetch) return
-    if (universalUlb) {
-      await patchUniversalULB(apiFetch, universalUlb.id, newAmount)
+    if (universalUbb) {
+      await patchUniversalUBB(apiFetch, universalUbb.id, newAmount)
     } else {
-      await createUniversalULB(apiFetch, newAmount)
+      await createUniversalUBB(apiFetch, newAmount)
     }
-    const fresh = await fetchUniversalULB(apiFetch)
-    setUniversalUlb(fresh)
-    toast.success(`Universal ULB set to ${formatCurrency(newAmount)}`)
+    const fresh = await fetchUniversalUBB(apiFetch)
+    setUniversalUbb(fresh)
+    toast.success(`Universal UBB set to ${formatCurrency(newAmount)}`)
   }
 
-  /** Convert the chart's ULB (AICs) → USD and write to the enterprise. */
-  const handleApplyUniversalULB = async () => {
-    const newUsd = Math.max(1, Math.ceil(ulbAICs / AICS_PER_USD))
+  /** Convert the chart's UBB (AICs) → USD and write to the enterprise. */
+  const handleApplyUniversalUBB = async () => {
+    const newUsd = Math.max(1, Math.ceil(ubbAICs / AICS_PER_USD))
     setApplying(true)
     try {
       await handleEditCap(newUsd)
-      setUlbOverrideEntry(null)
+      setUbbOverrideEntry(null)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : String(err))
     } finally {
@@ -216,9 +216,9 @@ export function UniversalUlbPage() {
     }
   }
 
-  /** Create individual ULBs for selected outliers at ceil(maxAICs/100 × 1.10),
+  /** Create individual UBBs for selected outliers at ceil(maxAICs/100 × 1.10),
    * or at the admin's edited amount if they've customized the row. */
-  const handleCreateOutlierUlbs = async () => {
+  const handleCreateOutlierUbbs = async () => {
     if (!apiFetch) return
     const targets = outlierTargets
     if (targets.length === 0) {
@@ -226,7 +226,7 @@ export function UniversalUlbPage() {
       return
     }
     if (credentials?.base === 'demo://') {
-      toast.info(`Demo mode: would create ${targets.length} individual ULBs.`)
+      toast.info(`Demo mode: would create ${targets.length} individual UBBs.`)
       return
     }
     setBatchProgress({ done: 0, total: targets.length })
@@ -246,8 +246,8 @@ export function UniversalUlbPage() {
       )
       const failed = results.filter(r => !r.ok).length
       const ok = results.length - failed
-      if (failed === 0) toast.success(`Created ${ok.toLocaleString()} individual ULBs.`)
-      else if (ok === 0) toast.error(`Failed to create ${failed.toLocaleString()} ULBs.`)
+      if (failed === 0) toast.success(`Created ${ok.toLocaleString()} individual UBBs.`)
+      else if (ok === 0) toast.error(`Failed to create ${failed.toLocaleString()} UBBs.`)
       else toast.warning(`Created ${ok.toLocaleString()}, failed ${failed.toLocaleString()}.`)
     } finally {
       setBatchProgress(null)
@@ -264,7 +264,7 @@ export function UniversalUlbPage() {
     .filter(u => selectedOutliers.has(u.login))
     .map(u => {
       const baseMaxMonthDollars = u.totalAICs / AICS_PER_USD
-      const edited = editedOutlierUlbs[u.login]
+      const edited = editedOutlierUbbs[u.login]
       const base = edited ?? baseMaxMonthDollars
       const amount = Math.max(1, Math.ceil(base * bufferMultiplier))
       return {
@@ -316,17 +316,17 @@ export function UniversalUlbPage() {
   }
 
   // Excel-style edit: if the row is part of a multi-row selection, an edit to
-  // this row's ULB fans out to every selected row. Single-row edits still use
+  // this row's UBB fans out to every selected row. Single-row edits still use
   // the "matches suggested → clear override" shortcut; multi-row edits always
   // write an explicit override because each row has its own suggested value.
-  const setRowUlb = (login: string, amount: number | null, suggested: number) => {
+  const setRowUbb = (login: string, amount: number | null, suggested: number) => {
     const multi = selectedOutliers.size >= 2 && selectedOutliers.has(login)
     if (!multi) {
-      if (amount !== null && amount === suggested) setEditedOutlierUlb(login, null)
-      else setEditedOutlierUlb(login, amount)
+      if (amount !== null && amount === suggested) setEditedOutlierUbb(login, null)
+      else setEditedOutlierUbb(login, amount)
       return
     }
-    setEditedOutlierUlbsEntry(prev => {
+    setEditedOutlierUbbsEntry(prev => {
       const base = prev?.sig === datasetSig ? { ...prev.map } : {}
       if (amount === null) {
         for (const l of selectedOutliers) delete base[l]
@@ -397,24 +397,24 @@ export function UniversalUlbPage() {
   }
 
   const hasData = csvUsers.length > 0
-  const ulbDeltaUsd = Math.ceil(ulbAICs / AICS_PER_USD)
+  const ubbDeltaUsd = Math.ceil(ubbAICs / AICS_PER_USD)
 
   return (
     <div className="grid gap-6 min-h-[calc(100vh-7rem)]">
       {/* Header tiles */}
       <div className="grid gap-3 grid-cols-1 md:grid-cols-3">
         <Card>
-          <CardContent className="flex items-start justify-between gap-3" id="uulb-cap" data-bp-target="uulb">
+          <CardContent className="flex items-start justify-between gap-3" id="uubb-cap" data-bp-target="uubb">
             <div>
-              <div className="text-xs text-neutral-500 dark:text-neutral-400">Universal ULB cap</div>
+              <div className="text-xs text-neutral-500 dark:text-neutral-400">Universal UBB cap</div>
               <div className="text-2xl font-semibold mt-1">
-                {universalUlb ? formatCurrency(universalUlb.budgetAmount) : (
+                {universalUbb ? formatCurrency(universalUbb.budgetAmount) : (
                   <span className="text-neutral-400">not set</span>
                 )}
               </div>
               <Button size="sm" variant="outline" className="mt-2" onClick={() => setEditing(true)}>
                 <PencilSimple size={14} weight="duotone" />
-                {universalUlb ? 'Edit cap' : 'Set cap'}
+                {universalUbb ? 'Edit cap' : 'Set cap'}
               </Button>
             </div>
             <Coins size={22} weight="duotone" className="text-neutral-400" />
@@ -435,10 +435,10 @@ export function UniversalUlbPage() {
         <Card>
           <CardContent className="flex items-start justify-between gap-3">
             <div>
-              <div className="text-xs text-neutral-500 dark:text-neutral-400">Universal-ULB coverage</div>
+              <div className="text-xs text-neutral-500 dark:text-neutral-400">Universal-UBB coverage</div>
               <div className="text-2xl font-semibold mt-1">{eligibleSeatCount.toLocaleString()}</div>
               <div className="text-xs text-neutral-500 mt-1">
-                seats not on an individual ULB
+                seats not on an individual UBB
               </div>
             </div>
             <Users size={22} weight="duotone" className="text-neutral-400" />
@@ -467,15 +467,15 @@ export function UniversalUlbPage() {
         </CardContent>
       </Card>
 
-      {/* Step 2: pick threshold + ULB */}
+      {/* Step 2: pick threshold + UBB */}
       <Card>
         <CardContent className="grid gap-3">
           <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <h2 className="text-sm font-semibold">Step 2 · Choose your universal ULB</h2>
+              <h2 className="text-sm font-semibold">Step 2 · Choose your universal UBB</h2>
               <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
                 Click the chart to mark where regular users end and outliers begin, then drag the
-                dashed ULB line to set the cap.
+                dashed UBB line to set the cap.
               </p>
             </div>
             {hasData ? (
@@ -488,8 +488,8 @@ export function UniversalUlbPage() {
                     onClick={() => {
                       setThresholdMode(mode)
                       if (mode !== 'custom') setCustomThresholdEntry(null)
-                      // Snap ULB back to P95 for the new regular cohort.
-                      setUlbOverrideEntry(null)
+                      // Snap UBB back to P95 for the new regular cohort.
+                      setUbbOverrideEntry(null)
                     }}
                   >
                     {MODE_LABELS[mode]}
@@ -525,12 +525,12 @@ export function UniversalUlbPage() {
             sortedUsers={[...csvUsers].sort((a, b) => b.totalAICs - a.totalAICs)}
             thresholdAICs={threshold.thresholdAICs}
             powerUserCount={threshold.powerUsers.length}
-            ulbAICs={ulbAICs}
-            ulbIsOverridden={ulbIsOverridden}
-            onUlbChange={
+            ubbAICs={ubbAICs}
+            ubbIsOverridden={ubbIsOverridden}
+            onUbbChange={
               hasData
                 ? aics =>
-                    setUlbOverrideEntry(
+                    setUbbOverrideEntry(
                       aics === null ? null : { sig: datasetSig, value: aics },
                     )
                 : undefined
@@ -550,9 +550,9 @@ export function UniversalUlbPage() {
                     )
                     setThresholdMode('custom')
                     setCustomThresholdEntry({ sig: datasetSig, value: pct })
-                    // Snap ULB back to the recomputed P95 of regulars by
+                    // Snap UBB back to the recomputed P95 of regulars by
                     // clearing any manual y override.
-                    setUlbOverrideEntry(null)
+                    setUbbOverrideEntry(null)
                   }
                 : undefined
             }
@@ -561,17 +561,17 @@ export function UniversalUlbPage() {
           {hasData ? (
             <div className="rounded-md border border-neutral-200 dark:border-neutral-800 p-3 text-xs grid gap-1.5 sm:grid-cols-3">
               <div>
-                <div className="text-neutral-500 dark:text-neutral-400">Suggested ULB (P95 of regulars)</div>
+                <div className="text-neutral-500 dark:text-neutral-400">Suggested UBB (P95 of regulars)</div>
                 <div className="font-semibold text-sm">
-                  ${Math.ceil(threshold.suggestedULB / AICS_PER_USD).toLocaleString()}
-                  <span className="text-neutral-500 font-normal"> · ~{threshold.suggestedULB.toLocaleString()} AICs</span>
+                  ${Math.ceil(threshold.suggestedUBB / AICS_PER_USD).toLocaleString()}
+                  <span className="text-neutral-500 font-normal"> · ~{threshold.suggestedUBB.toLocaleString()} AICs</span>
                 </div>
               </div>
               <div>
-                <div className="text-neutral-500 dark:text-neutral-400">Chart ULB</div>
+                <div className="text-neutral-500 dark:text-neutral-400">Chart UBB</div>
                 <div className="font-semibold text-sm">
-                  ${ulbDeltaUsd.toLocaleString()}
-                  <span className="text-neutral-500 font-normal"> · ~{Math.round(ulbAICs).toLocaleString()} AICs</span>
+                  ${ubbDeltaUsd.toLocaleString()}
+                  <span className="text-neutral-500 font-normal"> · ~{Math.round(ubbAICs).toLocaleString()} AICs</span>
                 </div>
               </div>
               <div>
@@ -586,11 +586,11 @@ export function UniversalUlbPage() {
 
           <div className="flex flex-wrap gap-2 justify-end">
             <Button
-              onClick={handleApplyUniversalULB}
-              disabled={!hasData || applying || ulbAICs <= 0}
+              onClick={handleApplyUniversalUBB}
+              disabled={!hasData || applying || ubbAICs <= 0}
               title={!hasData ? 'Upload a CSV first' : undefined}
             >
-              {applying ? 'Applying…' : `Apply universal ULB ($${ulbDeltaUsd})`}
+              {applying ? 'Applying…' : `Apply universal UBB ($${ubbDeltaUsd})`}
             </Button>
           </div>
         </CardContent>
@@ -605,7 +605,7 @@ export function UniversalUlbPage() {
                 Step 3 · Outliers ({threshold.powerUsers.length.toLocaleString()})
               </h2>
               <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
-                Suggested individual ULB = max-month $. Edit rows below; a growth buffer is added when you apply.
+                Suggested individual UBB = max-month $. Edit rows below; a growth buffer is added when you apply.
               </p>
             </div>
             {threshold.powerUsers.length > 0 && (
@@ -613,7 +613,7 @@ export function UniversalUlbPage() {
                 onClick={() => setConfirmCreateOpen(true)}
                 disabled={selectedOutliers.size === 0 || batchProgress !== null}
               >
-                {batchProgress ? 'Creating…' : `Apply ind ULB (${selectedOutliers.size.toLocaleString()})`}
+                {batchProgress ? 'Creating…' : `Apply ind UBB (${selectedOutliers.size.toLocaleString()})`}
               </Button>
             )}
           </div>
@@ -711,7 +711,7 @@ export function UniversalUlbPage() {
                           <th className="px-3 py-2 font-medium">Cost center</th>
                           <th className="px-3 py-2 text-right font-medium">Max-month AICs</th>
                           <th className="px-3 py-2 text-right font-medium">Gross $</th>
-                          <th className="px-3 py-2 text-right font-medium">Suggested ULB</th>
+                          <th className="px-3 py-2 text-right font-medium">Suggested UBB</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -721,7 +721,7 @@ export function UniversalUlbPage() {
                             Math.ceil(u.totalAICs / AICS_PER_USD),
                           )
                           const isEdited = editedOutlierLogins.has(u.login)
-                          const value = isEdited ? editedOutlierUlbs[u.login] : suggested
+                          const value = isEdited ? editedOutlierUbbs[u.login] : suggested
                           const inMultiEdit =
                             selectedOutliers.size >= 2 && selectedOutliers.has(u.login)
                           return (
@@ -769,14 +769,14 @@ export function UniversalUlbPage() {
                                     onChange={e => {
                                       const raw = e.target.value
                                       if (raw === '') {
-                                        setRowUlb(u.login, null, suggested)
+                                        setRowUbb(u.login, null, suggested)
                                         return
                                       }
                                       const n = Math.max(1, Math.round(Number(raw)))
                                       if (!Number.isFinite(n)) return
-                                      setRowUlb(u.login, n, suggested)
+                                      setRowUbb(u.login, n, suggested)
                                     }}
-                                    aria-label={`ULB for ${u.login}`}
+                                    aria-label={`UBB for ${u.login}`}
                                     title={
                                       inMultiEdit
                                         ? `Editing will apply to all ${selectedOutliers.size.toLocaleString()} selected rows`
@@ -795,7 +795,7 @@ export function UniversalUlbPage() {
                                   {isEdited ? (
                                     <button
                                       type="button"
-                                      onClick={() => setRowUlb(u.login, null, suggested)}
+                                      onClick={() => setRowUbb(u.login, null, suggested)}
                                       title={
                                         inMultiEdit
                                           ? `Reset ${selectedOutliers.size.toLocaleString()} selected to suggested`
@@ -854,8 +854,8 @@ export function UniversalUlbPage() {
         </CardContent>
       </Card>
 
-      <EditUniversalUlbDialog
-        universalUlb={universalUlb}
+      <EditUniversalUbbDialog
+        universalUbb={universalUbb}
         open={editing}
         onOpenChange={setEditing}
         onSubmit={handleEditCap}
@@ -863,14 +863,14 @@ export function UniversalUlbPage() {
 
       <Dialog open={confirmCreateOpen} onOpenChange={setConfirmCreateOpen}>
         <DialogContent>
-          <DialogTitle>Create {outlierTargets.length.toLocaleString()} individual ULB{outlierTargets.length === 1 ? '' : 's'}?</DialogTitle>
+          <DialogTitle>Create {outlierTargets.length.toLocaleString()} individual UBB{outlierTargets.length === 1 ? '' : 's'}?</DialogTitle>
           <DialogDescription>
-            This will create or update an individual ULB for each selected user.
-            Existing ULBs for these users would be overwritten.
+            This will create or update an individual UBB for each selected user.
+            Existing UBBs for these users would be overwritten.
           </DialogDescription>
 
           <div className="rounded-md border border-amber-300 dark:border-amber-700/60 bg-amber-50 dark:bg-amber-950/30 px-3 py-2 text-xs text-amber-900 dark:text-amber-200 mb-3">
-            Heads up: this total only reflects individual ULBs. It does not account
+            Heads up: this total only reflects individual UBBs. It does not account
             for other budgets (enterprise or cost centers) that may also apply to
             these users.
           </div>
@@ -927,7 +927,7 @@ export function UniversalUlbPage() {
               <thead className="bg-neutral-50 dark:bg-neutral-900/50 text-left sticky top-0">
                 <tr>
                   <th className="px-3 py-1.5 font-medium">User</th>
-                  <th className="px-3 py-1.5 text-right font-medium">ULB</th>
+                  <th className="px-3 py-1.5 text-right font-medium">UBB</th>
                 </tr>
               </thead>
               <tbody>
@@ -957,12 +957,12 @@ export function UniversalUlbPage() {
               disabled={batchProgress !== null || outlierTargets.length === 0}
               onClick={async () => {
                 setConfirmCreateOpen(false)
-                await handleCreateOutlierUlbs()
+                await handleCreateOutlierUbbs()
               }}
             >
               {batchProgress
                 ? 'Creating…'
-                : `Create ${outlierTargets.length.toLocaleString()} ULBs · $${outlierTotalDollars.toLocaleString()}/mo`}
+                : `Create ${outlierTargets.length.toLocaleString()} UBBs · $${outlierTotalDollars.toLocaleString()}/mo`}
             </Button>
           </div>
         </DialogContent>

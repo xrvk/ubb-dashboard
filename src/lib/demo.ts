@@ -3,7 +3,7 @@ import type {
   CostCenter,
   CostCenterBudget,
   EnterpriseBudget,
-  UniversalUlb,
+  UniversalUbb,
   UserBudget,
 } from './api'
 
@@ -100,7 +100,7 @@ export function readDemoCountFromUrl(): number | null {
 /**
  * Optional `?pool=N` query param (0-100) — target % drawn from the shared
  * AI credit pool for the demo. When set, demo individual-budget and
- * universal-ULB consumed amounts are scaled so total ULB consumption
+ * universal-UBB consumed amounts are scaled so total UBB consumption
  * matches `N%` of the seat-derived pool value, and `aiCreditsNet` is
  * forced to 0 (no metered overflow yet) when `N` is below 100.
  */
@@ -161,7 +161,7 @@ export function getEffectiveDemoAsof(): Date | null {
 }
 
 /**
- * Demo seats: a superset of the demo budget users so the "Add ULB" autocomplete
+ * Demo seats: a superset of the demo budget users so the "Add UBB" autocomplete
  * can suggest users who don't yet have an individual cap. The org assignment
  * mirrors the CC layout in generateDemoCostCenters so seats line up cleanly
  * with the User and Org based CC resources.
@@ -196,7 +196,7 @@ export function generateDemoSeats(count: number) {
  * Build a deterministic set of cost centers that, combined with the demo
  * budgets above, trip exactly two common constraint failures in the banner:
  *
- *   1. per_cc — platform-eng's members' effective ULBs exceed its CC budget.
+ *   1. per_cc — platform-eng's members' effective UBBs exceed its CC budget.
  *   2. cc_vs_enterprise — the sum of all four CC budgets exceeds the
  *      enterprise envelope.
  *
@@ -204,7 +204,7 @@ export function generateDemoSeats(count: number) {
  * seat counts resolving from both bases (User and Org are not mutually
  * exclusive in production data):
  *   - platform-eng: User resources (the override-bearing user range so
- *     per-user effective ULBs overrun the CC cap).
+ *     per-user effective UBBs overrun the CC cap).
  *   - data-platform / devx / security: Org resources (seats whose orgLogin
  *     matches resolve via the org path).
  *
@@ -239,15 +239,15 @@ export function generateDemoEnterpriseBudget(opts?: { excludeCostCenterUsage?: b
   }
 }
 
-export function generateDemoUniversalUlb(budgets?: UserBudget[]): UniversalUlb {
+export function generateDemoUniversalUbb(budgets?: UserBudget[]): UniversalUbb {
   // Mirror the universal share assumed by generateDemoUsageSummary (18% of
   // individual consumption). Without this, the Forecast Breakdown card
-  // shows Universal ULB at $0 in default demo mode, which contradicts the
+  // shows Universal UBB at $0 in default demo mode, which contradicts the
   // pool drawdown the usage summary reports.
   const indivConsumed = (budgets ?? []).reduce((s, b) => s + b.consumedAmount, 0)
   const consumed = Math.round(indivConsumed * 0.18 * 100) / 100
   return {
-    id: 'demo-uulb',
+    id: 'demo-uubb',
     budgetAmount: 50,
     consumedAmount: consumed,
     preventFurtherUsage: true,
@@ -257,7 +257,7 @@ export function generateDemoUniversalUlb(budgets?: UserBudget[]): UniversalUlb {
 }
 
 /**
- * Scale the consumed amounts on demo budgets + universal ULB so that their
+ * Scale the consumed amounts on demo budgets + universal UBB so that their
  * sum matches `targetDollars`. Mutates inputs in place. Used when the demo
  * is told (via `?pool=N`) to show a partially-drawn pool.
  *
@@ -270,7 +270,7 @@ export function generateDemoUniversalUlb(budgets?: UserBudget[]): UniversalUlb {
 export function scaleDemoConsumptionTo(
   targetDollars: number,
   budgets: UserBudget[],
-  universal: UniversalUlb,
+  universal: UniversalUbb,
 ) {
   if (targetDollars <= 0) {
     universal.consumedAmount = 0
@@ -301,7 +301,7 @@ export function scaleDemoConsumptionTo(
  * Every CC carries a budget so the unassignedLeftover check stays vacuous.
  * Numbers sit in the realistic $3k–$8k per-CC band but their sum ($20k) is
  * deliberately above the $9k enterprise cap — that's the cc_vs_enterprise
- * breach. platform-eng's $5k cap is intentionally below the effective ULB
+ * breach. platform-eng's $5k cap is intentionally below the effective UBB
  * sum of its ~100 override-bearing members, which trips per_cc on it alone.
  */
 export function generateDemoCostCenterBudgets(): Map<string, CostCenterBudget> {

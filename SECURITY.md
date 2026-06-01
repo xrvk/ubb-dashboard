@@ -2,7 +2,7 @@
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability in this project, please **do not** open a public issue. Instead, report it privately via [GitHub Security Advisories](https://github.com/xrvk/ind-ulb-dashboard/security/advisories/new) so it can be triaged and fixed before disclosure.
+If you discover a security vulnerability in this project, please **do not** open a public issue. Instead, report it privately via [GitHub Security Advisories](https://github.com/xrvk/ubb-dashboard/security/advisories/new) so it can be triaged and fixed before disclosure.
 
 ## Scope
 

@@ -1,13 +1,13 @@
 /**
- * Consumption Curve — SVG line graph with draggable threshold + ULB lines.
+ * Consumption Curve — SVG line graph with draggable threshold + UBB lines.
  *
  * Vendored from acme/copilot-budget-command-calculator
  * (src/components/ConsumptionAnalysisPanel.tsx → ConsumptionCurve sub-component).
  *
  * Simplifications from the upstream:
- *   - Primary unit is AICs (not USD). The ULB line is expressed in AICs.
- *   - The "Power user ULB" line is optional (pass `powerUlbAICs={undefined}`
- *     to hide). Our universal-ULB sizing only needs one ULB line.
+ *   - Primary unit is AICs (not USD). The UBB line is expressed in AICs.
+ *   - The "Power user UBB" line is optional (pass `powerUbbAICs={undefined}`
+ *     to hide). Our universal-UBB sizing only needs one UBB line.
  *   - No enterprise-budget / pool-overrun warning (CCC-specific math).
  *   - Theme classes translated from CCC's semantic tokens (primary/warning/
  *     muted-foreground) to this project's raw Tailwind palette.
@@ -31,14 +31,14 @@ interface ConsumptionCurveProps {
   sortedUsers: CsvUserUsage[]
   thresholdAICs: number
   powerUserCount: number
-  /** Universal ULB in AICs (the cap the admin is sizing). */
-  ulbAICs: number
-  /** Optional: power-user ULB in AICs. Hidden when undefined. */
-  powerUlbAICs?: number
-  ulbIsOverridden?: boolean
-  powerUlbIsOverridden?: boolean
-  onUlbChange?: (newAICs: number | null) => void
-  onPowerUlbChange?: (newAICs: number | null) => void
+  /** Universal UBB in AICs (the cap the admin is sizing). */
+  ubbAICs: number
+  /** Optional: power-user UBB in AICs. Hidden when undefined. */
+  powerUbbAICs?: number
+  ubbIsOverridden?: boolean
+  powerUbbIsOverridden?: boolean
+  onUbbChange?: (newAICs: number | null) => void
+  onPowerUbbChange?: (newAICs: number | null) => void
   onSetCutoff?: (aics: number) => void
 }
 
@@ -46,16 +46,16 @@ export function ConsumptionCurve({
   sortedUsers,
   thresholdAICs,
   powerUserCount,
-  ulbAICs,
-  powerUlbAICs,
-  ulbIsOverridden,
-  powerUlbIsOverridden,
-  onUlbChange,
-  onPowerUlbChange,
+  ubbAICs,
+  powerUbbAICs,
+  ubbIsOverridden,
+  powerUbbIsOverridden,
+  onUbbChange,
+  onPowerUbbChange,
   onSetCutoff,
 }: ConsumptionCurveProps) {
   const [hoverIndex, setHoverIndex] = useState<number | null>(null)
-  const [dragging, setDragging] = useState<'ulb' | 'power' | 'threshold' | null>(null)
+  const [dragging, setDragging] = useState<'ubb' | 'power' | 'threshold' | null>(null)
   const [autoZoom, setAutoZoom] = useState(false)
   const svgRef = useRef<SVGSVGElement>(null)
 
@@ -73,7 +73,7 @@ export function ConsumptionCurve({
   // top-consumer AICs) to occupy ~25% of the chart width. We find that
   // "knee" cohort then keep ~4x as many users in total, so the flat tail
   // fills the left 75% and the curve fills the right 25%. Stable while the
-  // user drags ULB because the anchor is top-consumer AICs, not ULB.
+  // user drags UBB because the anchor is top-consumer AICs, not UBB.
   const trimmedSorted = useMemo(() => {
     if (!autoZoom || totalN === 0) return sortedUsers
     const topAICs = sortedUsers[0].totalAICs
@@ -149,13 +149,13 @@ export function ConsumptionCurve({
         ? VB_W - PAD_R
         : PAD_L
 
-  const ulbY = ulbAICs > 0 && ulbAICs <= maxAICs ? yForAICs(ulbAICs) : null
-  const powerUlbY =
-    powerUlbAICs !== undefined && powerUlbAICs > 0 && powerUlbAICs <= maxAICs
-      ? yForAICs(powerUlbAICs)
+  const ubbY = ubbAICs > 0 && ubbAICs <= maxAICs ? yForAICs(ubbAICs) : null
+  const powerUbbY =
+    powerUbbAICs !== undefined && powerUbbAICs > 0 && powerUbbAICs <= maxAICs
+      ? yForAICs(powerUbbAICs)
       : null
   const labelsOverlap =
-    ulbY !== null && powerUlbY !== null && Math.abs(powerUlbY - ulbY) < 14
+    ubbY !== null && powerUbbY !== null && Math.abs(powerUbbY - ubbY) < 14
 
   const indexFromClientX = useCallback(
     (clientX: number): number | null => {
@@ -183,19 +183,19 @@ export function ConsumptionCurve({
   )
 
   const handleLinePointerDown = useCallback(
-    (line: 'ulb' | 'power' | 'threshold', e: React.PointerEvent<SVGGElement>) => {
+    (line: 'ubb' | 'power' | 'threshold', e: React.PointerEvent<SVGGElement>) => {
       e.stopPropagation()
-      if (line === 'ulb' && !onUlbChange) return
-      if (line === 'power' && !onPowerUlbChange) return
+      if (line === 'ubb' && !onUbbChange) return
+      if (line === 'power' && !onPowerUbbChange) return
       if (line === 'threshold' && !onSetCutoff) return
       e.currentTarget.setPointerCapture(e.pointerId)
       setDragging(line)
     },
-    [onUlbChange, onPowerUlbChange, onSetCutoff],
+    [onUbbChange, onPowerUbbChange, onSetCutoff],
   )
 
   const handleLinePointerMove = useCallback(
-    (line: 'ulb' | 'power' | 'threshold', e: React.PointerEvent<SVGGElement>) => {
+    (line: 'ubb' | 'power' | 'threshold', e: React.PointerEvent<SVGGElement>) => {
       if (dragging !== line) return
       e.stopPropagation()
       if (line === 'threshold' && onSetCutoff) {
@@ -203,14 +203,14 @@ export function ConsumptionCurve({
         if (idx !== null) onSetCutoff(Math.round(displayUsers[idx].totalAICs))
         return
       }
-      if (line === 'ulb' && onUlbChange) onUlbChange(aicsFromClientY(e.clientY))
-      if (line === 'power' && onPowerUlbChange) onPowerUlbChange(aicsFromClientY(e.clientY))
+      if (line === 'ubb' && onUbbChange) onUbbChange(aicsFromClientY(e.clientY))
+      if (line === 'power' && onPowerUbbChange) onPowerUbbChange(aicsFromClientY(e.clientY))
     },
-    [dragging, aicsFromClientY, onUlbChange, onPowerUlbChange, onSetCutoff, indexFromClientX, displayUsers],
+    [dragging, aicsFromClientY, onUbbChange, onPowerUbbChange, onSetCutoff, indexFromClientX, displayUsers],
   )
 
   const handleLinePointerUp = useCallback(
-    (_line: 'ulb' | 'power' | 'threshold', e: React.PointerEvent<SVGGElement>) => {
+    (_line: 'ubb' | 'power' | 'threshold', e: React.PointerEvent<SVGGElement>) => {
       e.stopPropagation()
       if (e.currentTarget.hasPointerCapture(e.pointerId)) {
         e.currentTarget.releasePointerCapture(e.pointerId)
@@ -291,14 +291,14 @@ export function ConsumptionCurve({
             className="text-neutral-700 dark:text-neutral-300"
           />
 
-          {/* ULB reference line (draggable) */}
-          {ulbY !== null && (
+          {/* UBB reference line (draggable) */}
+          {ubbY !== null && (
             <g
-              style={{ cursor: onUlbChange ? 'ns-resize' : 'default' }}
-              onPointerDown={e => handleLinePointerDown('ulb', e)}
-              onPointerMove={e => handleLinePointerMove('ulb', e)}
-              onPointerUp={e => handleLinePointerUp('ulb', e)}
-              onPointerCancel={e => handleLinePointerUp('ulb', e)}
+              style={{ cursor: onUbbChange ? 'ns-resize' : 'default' }}
+              onPointerDown={e => handleLinePointerDown('ubb', e)}
+              onPointerMove={e => handleLinePointerMove('ubb', e)}
+              onPointerUp={e => handleLinePointerUp('ubb', e)}
+              onPointerCancel={e => handleLinePointerUp('ubb', e)}
               onMouseMove={e => {
                 e.stopPropagation()
                 setHoverIndex(null)
@@ -306,40 +306,40 @@ export function ConsumptionCurve({
               onMouseEnter={() => setHoverIndex(null)}
               onClick={e => e.stopPropagation()}
             >
-              <line x1={PAD_L} x2={VB_W - PAD_R} y1={ulbY} y2={ulbY} stroke="transparent" strokeWidth={12} />
+              <line x1={PAD_L} x2={VB_W - PAD_R} y1={ubbY} y2={ubbY} stroke="transparent" strokeWidth={12} />
               <line
                 x1={PAD_L}
                 x2={VB_W - PAD_R}
-                y1={ulbY}
-                y2={ulbY}
+                y1={ubbY}
+                y2={ubbY}
                 stroke="currentColor"
-                strokeWidth={dragging === 'ulb' ? 2 : 1}
+                strokeWidth={dragging === 'ubb' ? 2 : 1}
                 strokeDasharray="4,3"
                 className="text-amber-800 dark:text-amber-300"
               />
-              {onUlbChange && (
+              {onUbbChange && (
                 <circle
                   cx={VB_W - PAD_R}
-                  cy={ulbY}
-                  r={dragging === 'ulb' ? 5 : 3.5}
+                  cy={ubbY}
+                  r={dragging === 'ubb' ? 5 : 3.5}
                   className="fill-amber-800 dark:fill-amber-300"
                 />
               )}
               <text
                 x={VB_W - PAD_R - 12}
-                y={ulbY - 3}
+                y={ubbY - 3}
                 textAnchor="end"
                 className="fill-amber-900 dark:fill-amber-200 text-[10px] font-medium pointer-events-none"
               >
-                Universal ULB {formatUsd(ulbAICs)}{ulbIsOverridden ? ' (custom)' : ''}
+                Universal UBB {formatUsd(ubbAICs)}{ubbIsOverridden ? ' (custom)' : ''}
               </text>
             </g>
           )}
 
-          {/* Power ULB line (draggable, optional) */}
-          {powerUlbY !== null && powerUlbAICs !== undefined && (
+          {/* Power UBB line (draggable, optional) */}
+          {powerUbbY !== null && powerUbbAICs !== undefined && (
             <g
-              style={{ cursor: onPowerUlbChange ? 'ns-resize' : 'default' }}
+              style={{ cursor: onPowerUbbChange ? 'ns-resize' : 'default' }}
               onPointerDown={e => handleLinePointerDown('power', e)}
               onPointerMove={e => handleLinePointerMove('power', e)}
               onPointerUp={e => handleLinePointerUp('power', e)}
@@ -351,32 +351,32 @@ export function ConsumptionCurve({
               onMouseEnter={() => setHoverIndex(null)}
               onClick={e => e.stopPropagation()}
             >
-              <line x1={PAD_L} x2={VB_W - PAD_R} y1={powerUlbY} y2={powerUlbY} stroke="transparent" strokeWidth={12} />
+              <line x1={PAD_L} x2={VB_W - PAD_R} y1={powerUbbY} y2={powerUbbY} stroke="transparent" strokeWidth={12} />
               <line
                 x1={PAD_L}
                 x2={VB_W - PAD_R}
-                y1={powerUlbY}
-                y2={powerUlbY}
+                y1={powerUbbY}
+                y2={powerUbbY}
                 stroke="currentColor"
                 strokeWidth={dragging === 'power' ? 2 : 1}
                 strokeDasharray="4,3"
                 className="text-orange-700 dark:text-orange-400"
               />
-              {onPowerUlbChange && (
+              {onPowerUbbChange && (
                 <circle
                   cx={VB_W - PAD_R}
-                  cy={powerUlbY}
+                  cy={powerUbbY}
                   r={dragging === 'power' ? 5 : 3.5}
                   className="fill-orange-700 dark:fill-orange-400"
                 />
               )}
               <text
                 x={VB_W - PAD_R - 12}
-                y={labelsOverlap ? powerUlbY + 11 : powerUlbY - 3}
+                y={labelsOverlap ? powerUbbY + 11 : powerUbbY - 3}
                 textAnchor="end"
                 className="fill-orange-800 dark:fill-orange-300 text-[10px] font-medium pointer-events-none"
               >
-                Power ULB {formatUsd(powerUlbAICs)}{powerUlbIsOverridden ? ' (custom)' : ''}
+                Power UBB {formatUsd(powerUbbAICs)}{powerUbbIsOverridden ? ' (custom)' : ''}
               </text>
             </g>
           )}
@@ -478,11 +478,11 @@ export function ConsumptionCurve({
         <div className="rounded-md bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800 px-3 py-2">
           <div className="flex items-center gap-1.5 text-amber-800 dark:text-amber-300 font-semibold">
             <span className="w-2.5 h-2.5 rounded-sm bg-amber-600 dark:bg-amber-400" />
-            Regular users · ULB {formatUsd(ulbAICs)}{ulbIsOverridden ? ' (custom)' : ''}
+            Regular users · UBB {formatUsd(ubbAICs)}{ubbIsOverridden ? ' (custom)' : ''}
           </div>
           <p className="text-neutral-600 dark:text-neutral-400 mt-0.5">
             {totalN - powerUserCount} {totalN - powerUserCount === 1 ? 'user' : 'users'} below threshold
-            {onUlbChange && (
+            {onUbbChange && (
               <span className="block text-[10px] italic mt-0.5">Drag the amber line to adjust.</span>
             )}
           </p>
@@ -490,7 +490,7 @@ export function ConsumptionCurve({
         <div className="rounded-md bg-orange-50 dark:bg-orange-950/30 border border-orange-300 dark:border-orange-800 px-3 py-2">
           <div className="flex items-center gap-1.5 text-orange-800 dark:text-orange-300 font-semibold">
             <span className="w-2.5 h-2.5 rounded-sm bg-orange-500 dark:bg-orange-400" />
-            Outliers · need individual ULB
+            Outliers · need individual UBB
           </div>
           <p className="text-neutral-600 dark:text-neutral-400 mt-0.5">
             {powerUserCount} {powerUserCount === 1 ? 'user' : 'users'} at or above {formatUsd(thresholdAICs)}
@@ -514,7 +514,7 @@ export function ConsumptionCurve({
         ) : (
           <span>
             Hover the curve to inspect a user. Drag the vertical line to split regular vs outliers,
-            then drag the dashed line to set the ULB.
+            then drag the dashed line to set the UBB.
           </span>
         )}
       </div>

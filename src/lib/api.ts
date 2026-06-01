@@ -158,7 +158,7 @@ interface BudgetsResponse {
   total_count?: number
 }
 /**
- * Predicate for "this is a budget that our ULB constraint math should consider."
+ * Predicate for "this is a budget that our UBB constraint math should consider."
  *
  * We intentionally only match `BundlePricing / ai_credits`. The enterprise can
  * also have parallel `SkuPricing / copilot_ai_credit` budgets — that's a
@@ -213,7 +213,7 @@ async function paginateAllBudgets(
   }
   if (page > PAGE_SAFETY_LIMIT) {
     console.warn(
-      `[ind-ulb-dashboard] Pagination safety limit hit at ${PAGE_SAFETY_LIMIT} pages; ` +
+      `[ubb-dashboard] Pagination safety limit hit at ${PAGE_SAFETY_LIMIT} pages; ` +
         `loaded ${all.length} budgets but total_count was ${totalCount ?? 'unknown'}.`,
     )
   }
@@ -286,14 +286,14 @@ export async function deleteUserBudget(apiFetch: ApiFetch, budgetId: string): Pr
   await apiFetch(`/budgets/${budgetId}`, { method: 'DELETE' })
 }
 
-// --- Universal ULB (multi_user_customer scope) ---
+// --- Universal UBB (multi_user_customer scope) ---
 
 /**
- * The "universal ULB" is the single `multi_user_customer`-scope `ai_credits`
+ * The "universal UBB" is the single `multi_user_customer`-scope `ai_credits`
  * budget that caps every enterprise user not covered by a more specific budget
  * (cost center or individual). Enterprises have at most one of these.
  */
-export interface UniversalUlb {
+export interface UniversalUbb {
   id: string
   budgetAmount: number
   consumedAmount: number
@@ -302,7 +302,7 @@ export interface UniversalUlb {
   alertRecipients: string[]
 }
 
-function toUniversalUlb(b: RawBudget): UniversalUlb {
+function toUniversalUbb(b: RawBudget): UniversalUbb {
   return {
     id: b.id,
     budgetAmount: b.budget_amount,
@@ -314,17 +314,17 @@ function toUniversalUlb(b: RawBudget): UniversalUlb {
 }
 
 /**
- * Fetch the enterprise's universal ULB (multi_user_customer scope, ai_credits SKU).
+ * Fetch the enterprise's universal UBB (multi_user_customer scope, ai_credits SKU).
  * Returns null if one isn't configured.
  */
-export async function fetchUniversalULB(apiFetch: ApiFetch): Promise<UniversalUlb | null> {
+export async function fetchUniversalUBB(apiFetch: ApiFetch): Promise<UniversalUbb | null> {
   const { budgets } = await paginateAllBudgets(apiFetch)
   const hit = budgets.find(b => b.budget_scope === 'multi_user_customer' && isCopilotBudget(b))
-  return hit ? toUniversalUlb(hit) : null
+  return hit ? toUniversalUbb(hit) : null
 }
 
-/** Update the universal ULB's cap. Hard stop is always enforced. */
-export async function patchUniversalULB(
+/** Update the universal UBB's cap. Hard stop is always enforced. */
+export async function patchUniversalUBB(
   apiFetch: ApiFetch,
   budgetId: string,
   budgetAmount: number,
@@ -338,8 +338,8 @@ export async function patchUniversalULB(
   })
 }
 
-/** Create the universal ULB (only used if one doesn't exist yet). */
-export async function createUniversalULB(
+/** Create the universal UBB (only used if one doesn't exist yet). */
+export async function createUniversalUBB(
   apiFetch: ApiFetch,
   budgetAmount: number,
 ): Promise<void> {
@@ -399,7 +399,7 @@ function pickEnterpriseBudget(budgets: RawBudget[]): EnterpriseBudget | null {
   if (matches.length === 0) return null
   if (matches.length > 1) {
     console.warn(
-      `[ind-ulb-dashboard] Multiple enterprise-scope ai_credits budgets found (${matches.length}); using the first.`,
+      `[ubb-dashboard] Multiple enterprise-scope ai_credits budgets found (${matches.length}); using the first.`,
     )
   }
   return toEnterpriseBudget(matches[0])
@@ -448,7 +448,7 @@ function buildCostCenterBudgetMap(budgets: RawBudget[]): Map<string, CostCenterB
     const key = b.budget_entity_name.toLowerCase()
     if (map.has(key)) {
       console.warn(
-        `[ind-ulb-dashboard] Multiple cost-center budgets target name "${b.budget_entity_name}"; using the first.`,
+        `[ubb-dashboard] Multiple cost-center budgets target name "${b.budget_entity_name}"; using the first.`,
       )
       continue
     }
@@ -467,7 +467,7 @@ function buildCostCenterBudgetMap(budgets: RawBudget[]): Map<string, CostCenterB
  */
 export interface AiCreditsBudgets {
   enterprise: EnterpriseBudget | null
-  universal: UniversalUlb | null
+  universal: UniversalUbb | null
   costCenterBudgetsByName: Map<string, CostCenterBudget>
   userBudgets: UserBudget[]
   totalBudgetCount: number
@@ -481,7 +481,7 @@ export async function fetchAllAiCreditsBudgets(
   const universalRaw = budgets.find(b => b.budget_scope === 'multi_user_customer' && isCopilotBudget(b))
   return {
     enterprise: pickEnterpriseBudget(budgets),
-    universal: universalRaw ? toUniversalUlb(universalRaw) : null,
+    universal: universalRaw ? toUniversalUbb(universalRaw) : null,
     costCenterBudgetsByName: buildCostCenterBudgetMap(budgets),
     userBudgets: budgets.filter(b => b.budget_scope === 'user' && isCopilotBudget(b)).map(toUserBudget),
     totalBudgetCount: totalCount,
@@ -693,7 +693,7 @@ export function enterpriseSeatsUrl(apiBase: string, ent: string): string {
   return `${apiBaseToWebBase(apiBase)}/enterprises/${ent}/people`
 }
 
-// --- Copilot seats (used as the source of truth for "add ULB" autocomplete) ---
+// --- Copilot seats (used as the source of truth for "add UBB" autocomplete) ---
 
 export interface CopilotSeat {
   login: string
@@ -800,7 +800,7 @@ export async function fetchCostCenters(apiFetch: ApiFetch): Promise<CostCenter[]
   }
   if (page > PAGE_SAFETY_LIMIT) {
     console.warn(
-      `[ind-ulb-dashboard] Cost-center pagination safety limit hit at ${PAGE_SAFETY_LIMIT} pages; loaded ${all.length}.`,
+      `[ubb-dashboard] Cost-center pagination safety limit hit at ${PAGE_SAFETY_LIMIT} pages; loaded ${all.length}.`,
     )
   }
   return all.filter(cc => cc.state === 'active')
@@ -863,7 +863,7 @@ export function buildCostCenterIndex(
     .map(([org, ccs]) => ({ org, costCenterNames: ccs.map(c => c.name) }))
   for (const c of orgBudgetedCollisions) {
     console.warn(
-      `[ind-ulb-dashboard] Org "${c.org}" is in multiple ai-credits-budgeted cost centers (${c.costCenterNames.join(', ')}); using the first by CC id.`,
+      `[ubb-dashboard] Org "${c.org}" is in multiple ai-credits-budgeted cost centers (${c.costCenterNames.join(', ')}); using the first by CC id.`,
     )
   }
   return { userToCC, orgToCC, orgBudgetedCollisions }
@@ -895,7 +895,7 @@ export function resolveCostCenter(
 
 /**
  * Fetch every Copilot seat in the enterprise. Used to power the username
- * autocomplete in the "Add ULB" dialog so admins don't have to remember
+ * autocomplete in the "Add UBB" dialog so admins don't have to remember
  * GitHub handles.
  */
 export async function fetchAllCopilotSeats(apiFetch: ApiFetch): Promise<CopilotSeat[]> {

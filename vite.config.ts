@@ -4,7 +4,7 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
-  base: '/ind-ulb-dashboard/',
+  base: '/ubb-dashboard/',
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
