@@ -29,6 +29,7 @@ import {
   generateDemoUniversalUbb,
   generateDemoUsageByCostCenter,
   generateDemoUsageSummary,
+  readDemoCcCountFromUrl,
   readDemoCountFromUrl,
   readDemoExcludeCcFromUrl,
   readDemoPoolPctFromUrl,
@@ -181,7 +182,8 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
     if (credentials?.base === 'demo://') {
       const demoCount = readDemoCountFromUrl() ?? 0
       const demoBudgets = generateDemoBudgets(demoCount, Math.floor(Math.random() * 100_000))
-      const demoSeats = generateDemoSeats(demoCount)
+      const demoCcCount = readDemoCcCountFromUrl() ?? undefined
+      const demoSeats = generateDemoSeats(demoCount, demoCcCount)
       const universal = generateDemoUniversalUbb(demoBudgets)
       const poolPct = readDemoPoolPctFromUrl()
       if (poolPct !== null) {
@@ -192,10 +194,11 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
       setBudgets(demoBudgets)
       setTotalBudgetCount(demoBudgets.length)
       setSeats(demoSeats)
-      setCostCenters(generateDemoCostCenters(demoCount))
+      const demoCcs = generateDemoCostCenters(demoCount, demoCcCount)
+      setCostCenters(demoCcs)
       setUniversalUbb(universal)
       setEnterpriseBudget(generateDemoEnterpriseBudget())
-      setCostCenterBudgetsByName(generateDemoCostCenterBudgets())
+      setCostCenterBudgetsByName(generateDemoCostCenterBudgets(demoCcs))
       setUsageSummary(
         generateDemoUsageSummary(demoBudgets, {
           poolExhausted: poolPct === null ? true : poolPct >= 100,
@@ -314,7 +317,8 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
       void Promise.resolve().then(() => {
         setCredentials({ base: 'demo://', ent: `demo-${demoCount}`, token: 'demo' })
         const demoBudgets = generateDemoBudgets(demoCount)
-        const demoSeats = generateDemoSeats(demoCount)
+        const demoCcCount = readDemoCcCountFromUrl() ?? undefined
+        const demoSeats = generateDemoSeats(demoCount, demoCcCount)
         const universal = generateDemoUniversalUbb(demoBudgets)
         const poolPct = readDemoPoolPctFromUrl()
         if (poolPct !== null) {
@@ -325,10 +329,11 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
         setBudgets(demoBudgets)
         setTotalBudgetCount(demoBudgets.length)
         setSeats(demoSeats)
-        setCostCenters(generateDemoCostCenters(demoCount))
+        const demoCcs = generateDemoCostCenters(demoCount, demoCcCount)
+        setCostCenters(demoCcs)
         setUniversalUbb(universal)
         setEnterpriseBudget(generateDemoEnterpriseBudget({ excludeCostCenterUsage: readDemoExcludeCcFromUrl() }))
-        setCostCenterBudgetsByName(generateDemoCostCenterBudgets())
+        setCostCenterBudgetsByName(generateDemoCostCenterBudgets(demoCcs))
         setUsageSummary(
           generateDemoUsageSummary(demoBudgets, {
             poolExhausted: poolPct === null ? true : poolPct >= 100,
