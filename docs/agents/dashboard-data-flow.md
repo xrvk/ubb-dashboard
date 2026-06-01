@@ -57,8 +57,9 @@ import `DebugBadge` + `DebugInfo` and pass a `debug` prop.
 
 ## How to verify a change
 
-1. Run the probe against a representative enterprise (the team's
-   `tbb-staffship` and `octodemo` test envs cover sparse + dense data).
+1. Run the probe against a representative enterprise — ideally one with
+   sparse data and one with dense data, so seat-count and cost-center
+   pagination paths both get exercised.
 2. Open the dashboard with `?debug=1` against the same env.
 3. Tile-by-tile, confirm probe output matches the UI.
 4. If a divergence appears, the formula in `DashboardPage.tsx` is out

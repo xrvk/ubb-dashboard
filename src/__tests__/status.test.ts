@@ -98,9 +98,9 @@ describe('forecastSummary', () => {
 
 describe('parseEnterpriseUrl', () => {
   it('parses GHE.com URLs and adds api. subdomain', () => {
-    expect(parseEnterpriseUrl('https://tbb-staffship.ghe.com/enterprises/tbb-staffship')).toEqual({
-      base: 'https://api.tbb-staffship.ghe.com',
-      ent: 'tbb-staffship',
+    expect(parseEnterpriseUrl('https://acme.ghe.com/enterprises/acme')).toEqual({
+      base: 'https://api.acme.ghe.com',
+      ent: 'acme',
     })
   })
   it('parses github.com URLs', () => {
