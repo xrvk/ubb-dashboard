@@ -12,7 +12,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 
 /**
  * Sepia-tinted adaptation of the Budget Structure diagram from
- * https://github.com/acme/copilot-budget-command-calculator
+ * https://github.com/xrvk/copilot-budget-command-calculator
  * (src/components/BudgetStructureDiagram.tsx). Shows how the enterprise
  * budget and per-cost-center budgets relate, depending on whether the
  * enterprise has `exclude_cost_center_usage` ON (independent mode) or OFF

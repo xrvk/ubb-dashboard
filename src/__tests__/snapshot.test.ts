@@ -10,7 +10,7 @@ import {
   type BulkApplySnapshot,
 } from '@/lib/snapshot'
 
-const ent = 'acme-staging'
+const ent = 'acme'
 
 function makeSnap(overrides: Partial<BulkApplySnapshot> = {}): BulkApplySnapshot {
   return {

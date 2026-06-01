@@ -150,8 +150,9 @@ describe('fetchCostCenters', () => {
   })
 
   it('stops after one page when the server ignores pagination and returns >PER_PAGE', async () => {
-    // Repros the acme bug where omitting state=active makes the API
-    // return the full set on every page request, ignoring page/per_page.
+    // Repros the bug seen on at least one test enterprise where omitting
+    // state=active makes the API return the full set on every page request,
+    // ignoring page/per_page.
     const fetchMock: ApiFetch = vi.fn(async () => ({
       costCenters: Array.from({ length: 155 }, (_, i) => fakeCC(`cc${i}`, `n${i}`)),
     }))
@@ -170,7 +171,7 @@ describe('createApiFetch host allowlist', () => {
 
   it('accepts ghe.com tenants', () => {
     expect(() =>
-      createApiFetch({ base: 'https://api.your-host.example.com', ent: 'x', token: 't' }),
+      createApiFetch({ base: 'https://api.acme.ghe.com', ent: 'x', token: 't' }),
     ).not.toThrow()
   })
 

@@ -94,7 +94,7 @@ export function createApiFetch(creds: Credentials): ApiFetch {
 }
 
 /**
- * Parse an enterprise URL like `https://your-host.example.com/enterprises/your-slug`
+ * Parse an enterprise URL like `https://acme.ghe.com/enterprises/acme`
  * into `{ base, ent }`. Also accepts `https://github.com/enterprises/foo`.
  */
 export function parseEnterpriseUrl(url: string): { base: string; ent: string } | null {
@@ -778,9 +778,10 @@ export async function fetchCostCenters(apiFetch: ApiFetch): Promise<CostCenter[]
   let page = 1
   while (page <= PAGE_SAFETY_LIMIT) {
     // Note: we intentionally omit `state=active` from the query — the GitHub
-    // billing API hangs (observed >75s timeout on acme) when that filter is
-    // applied to enterprises with many cost centers. Instead we fetch all
-    // states and filter to `active` client-side below.
+    // billing API has been observed to hang (>75s timeout on at least one
+    // enterprise) when that filter is applied to enterprises with many cost
+    // centers. Instead we fetch all states and filter to `active` client-side
+    // below.
     const data = (await apiFetch(
       `enterprise:/settings/billing/cost-centers?per_page=${PER_PAGE}&page=${page}`,
     )) as CostCentersResponse | CostCenter[]
@@ -792,9 +793,9 @@ export async function fetchCostCenters(apiFetch: ApiFetch): Promise<CostCenter[]
     // Two stop conditions:
     //   1. list.length < PER_PAGE: normal end-of-pagination.
     //   2. list.length > PER_PAGE: the server is ignoring our pagination
-    //      params and returning the full set every call (observed on acme
-    //      when `state=active` is omitted — see comment above). Treat the
-    //      first response as authoritative.
+    //      params and returning the full set every call (observed on at least
+    //      one enterprise when `state=active` is omitted — see comment above).
+    //      Treat the first response as authoritative.
     if (list.length !== PER_PAGE) break
     page += 1
   }
