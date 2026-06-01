@@ -1,7 +1,7 @@
 /**
  * Consumption Curve — SVG line graph with draggable threshold + ULB lines.
  *
- * Vendored from octodemo/copilot-budget-command-calculator
+ * Vendored from xrvk/copilot-budget-command-calculator
  * (src/components/ConsumptionAnalysisPanel.tsx → ConsumptionCurve sub-component).
  *
  * Simplifications from the upstream:

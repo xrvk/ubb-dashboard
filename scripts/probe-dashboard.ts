@@ -8,7 +8,7 @@
  *
  * Usage:
  *   npx tsx scripts/probe-dashboard.ts                          # uses .env.local
- *   npx tsx scripts/probe-dashboard.ts --env ../.env.octodemo.local
+ *   npx tsx scripts/probe-dashboard.ts --env ../.env.acme.local
  *   npx tsx scripts/probe-dashboard.ts --env <path> --json out.json
  *
  * Reads VITE_DEV_ENTERPRISE_URL + VITE_DEV_PAT from the env file.

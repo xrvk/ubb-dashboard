@@ -5,7 +5,7 @@
  * Used to size the universal ULB and identify outliers ("power users") that
  * should be put on individual ULBs instead.
  *
- * Vendored from octodemo/copilot-budget-command-calculator
+ * Vendored from xrvk/copilot-budget-command-calculator
  * (src/lib/consumptionAnalysis.ts). Adaptations:
  *   - `CsvUserUsage` lives in this file; `totalMonthlyQuota` is optional
  *     because the usage-reports CSV does not include seat-quota data.
