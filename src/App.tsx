@@ -18,7 +18,6 @@ import { CopyErrorLogButton } from '@/components/CopyErrorLogButton'
 import { Button } from '@/components/ui/button'
 import { cn, openExternal } from '@/lib/utils'
 import { describeError, isAborted } from '@/lib/errors'
-import { logDebug } from '@/lib/debugLog'
 import { EMPTY_FILTERS, type TableFilters } from '@/components/BudgetsTable'
 import {
   NAV_TO_BUDGET_MODEL_EVENT,
@@ -107,18 +106,28 @@ export function App() {
   // Global error sinks. Without these, fire-and-forget promises (e.g. the
   // per-CC usage fetch fan-out) that throw outside of any try/catch
   // disappear silently — the user sees nothing, and we get no log entry to
-  // diagnose later.
+  // diagnose later. We filter benign browser noise so we don't toast on
+  // ResizeObserver loop warnings or cross-origin "Script error." that
+  // browser extensions trigger.
   useEffect(() => {
+    const isBenignErrorEvent = (e: ErrorEvent): boolean => {
+      // Fired by browsers when layout work spans frames — harmless.
+      if (typeof e.message === 'string' && e.message.includes('ResizeObserver loop')) return true
+      // Cross-origin scripts (browser extensions) surface as opaque "Script error."
+      if (e.error == null && e.message === 'Script error.') return true
+      return false
+    }
     const onError = (e: ErrorEvent) => {
       if (isAborted(e.error)) return
+      if (isBenignErrorEvent(e)) return
+      // describeError logs to the debug buffer as a side effect, so we don't
+      // call logDebug ourselves — doing so would duplicate every entry.
       const desc = describeError(e.error ?? e.message, 'window.onerror')
-      logDebug('error', 'window.onerror', desc.title, { message: desc.body, filename: e.filename, lineno: e.lineno })
       toast.error(desc.title, { description: desc.body })
     }
     const onRejection = (e: PromiseRejectionEvent) => {
       if (isAborted(e.reason)) return
       const desc = describeError(e.reason, 'unhandledrejection')
-      logDebug('error', 'unhandledrejection', desc.title, { message: desc.body })
       toast.error(desc.title, { description: desc.body })
     }
     window.addEventListener('error', onError)

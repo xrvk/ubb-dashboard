@@ -24,6 +24,41 @@ export interface BulkApplySnapshot {
 const STORAGE_KEY = 'ubb-dashboard:last-bulk-apply'
 const SNAPSHOT_TTL_MS = 60 * 24 * 60 * 60 * 1000 // 60 days
 
+export type SnapshotSaveResult =
+  | { ok: true }
+  | { ok: false; reason: 'storage_unavailable' | 'quota_exceeded' | 'unknown'; error?: unknown }
+
+function isQuotaError(e: unknown): boolean {
+  if (typeof DOMException !== 'undefined' && e instanceof DOMException) {
+    if (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED') return true
+    // WebKit historically uses these numeric codes.
+    if (e.code === 22 || e.code === 1014) return true
+  }
+  // Some environments throw a plain Error with the same name.
+  return e instanceof Error && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED')
+}
+
+export function saveSnapshot(snapshot: BulkApplySnapshot): SnapshotSaveResult {
+  if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
+    return { ok: false, reason: 'storage_unavailable' }
+  }
+  // Attempt the real write directly. We previously did a probe (set/remove
+  // of `__t__`) before this, but a full localStorage will throw on the
+  // probe just as readily as on the real save, and the probe path
+  // misclassifies the failure as `storage_unavailable` instead of
+  // `quota_exceeded`. Trying the real save first lets us classify
+  // accurately.
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot))
+    return { ok: true }
+  } catch (e) {
+    if (isQuotaError(e)) return { ok: false, reason: 'quota_exceeded', error: e }
+    // SecurityError (private mode in some browsers), DOMException
+    // disabled-storage, etc.
+    return { ok: false, reason: 'storage_unavailable', error: e }
+  }
+}
+
 function isStorageAvailable(): boolean {
   try {
     if (typeof window === 'undefined') return false
@@ -33,25 +68,6 @@ function isStorageAvailable(): boolean {
     return true
   } catch {
     return false
-  }
-}
-
-export type SnapshotSaveResult =
-  | { ok: true }
-  | { ok: false; reason: 'storage_unavailable' | 'quota_exceeded' | 'unknown'; error?: unknown }
-
-export function saveSnapshot(snapshot: BulkApplySnapshot): SnapshotSaveResult {
-  if (!isStorageAvailable()) {
-    return { ok: false, reason: 'storage_unavailable' }
-  }
-  try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot))
-    return { ok: true }
-  } catch (e) {
-    const isQuota =
-      e instanceof DOMException &&
-      (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED')
-    return { ok: false, reason: isQuota ? 'quota_exceeded' : 'unknown', error: e }
   }
 }
 

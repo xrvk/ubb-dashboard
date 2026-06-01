@@ -29,6 +29,10 @@ export interface FailedItem<T> {
   outcome: BatchOutcome<T>
   /** Display label (typically the username). */
   label: string
+  /** Pre-resolved status string (e.g. "429", "network"). */
+  status: string
+  /** Pre-resolved human-readable failure reason. */
+  reason: string
 }
 
 interface Props<T> {
@@ -86,7 +90,20 @@ export function FailedItemsDialog<T>({
   csvFilename = 'ubb-failed-items',
 }: Props<T>) {
   const failed = useMemo<FailedItem<T>[]>(
-    () => outcomes.filter(o => !o.ok).map(o => ({ outcome: o, label: getLabel(o.item) })),
+    () =>
+      outcomes
+        .filter(o => !o.ok)
+        .map(o => ({
+          outcome: o,
+          label: getLabel(o.item),
+          // Resolve status + reason ONCE per outcome so we don't re-invoke
+          // describeError on every render. describeError has a side effect
+          // of writing to the debug ring buffer, so rendering N rows would
+          // otherwise log N entries per re-render and crowd out real
+          // diagnostics.
+          status: statusOf(o.error),
+          reason: reasonOf(o.error),
+        })),
     [outcomes, getLabel],
   )
 
@@ -96,7 +113,7 @@ export function FailedItemsDialog<T>({
     const stamp = new Date().toISOString().replace(/[:.]/g, '-')
     const rows: string[][] = [
       ['user', 'status', 'reason'],
-      ...failed.map(f => [f.label, statusOf(f.outcome.error), reasonOf(f.outcome.error)]),
+      ...failed.map(f => [f.label, f.status, f.reason]),
     ]
     downloadCsv(rows, `${csvFilename}-${stamp}.csv`)
     toast.success(`Exported ${failed.length} failed item${failed.length === 1 ? '' : 's'}.`)
@@ -134,9 +151,9 @@ export function FailedItemsDialog<T>({
               {failed.map((f, i) => (
                 <tr key={i} className="border-t border-neutral-200 dark:border-neutral-800">
                   <td className="px-3 py-2 font-mono text-xs">{f.label}</td>
-                  <td className="px-3 py-2 text-xs">{statusOf(f.outcome.error)}</td>
+                  <td className="px-3 py-2 text-xs">{f.status}</td>
                   <td className="px-3 py-2 text-xs text-neutral-600 dark:text-neutral-400">
-                    {reasonOf(f.outcome.error)}
+                    {f.reason}
                   </td>
                 </tr>
               ))}

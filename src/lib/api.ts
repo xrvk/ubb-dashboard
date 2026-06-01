@@ -182,6 +182,12 @@ export function createApiFetch(creds: Credentials): ApiFetch {
         lastErr = err
         if (isAborted(err)) throw err
         if (!isRetryable(err) || attempt >= maxRetries) throw err
+        // Budget guards the *total* elapsed wallclock, including request
+        // execution time — not just the sleep delays. A slow flaky request
+        // (e.g. 25s 5xx) followed by even a small backoff could otherwise
+        // sail past the cap.
+        const elapsed = Date.now() - startedAt
+        if (elapsed >= totalBudgetMs) throw err
         // For 429, honor Retry-After if it fits in our remaining budget.
         let waitMs: number
         if (err instanceof ApiError && err.kind === 'rate_limit') {
@@ -191,7 +197,6 @@ export function createApiFetch(creds: Credentials): ApiFetch {
           waitMs = Math.min(maxDelayMs, baseDelayMs * 2 ** attempt)
         }
         waitMs += jitter(Math.min(500, waitMs))
-        const elapsed = Date.now() - startedAt
         if (elapsed + waitMs > totalBudgetMs) throw err
         await delayWithAbort(waitMs, init?.signal ?? undefined)
         attempt += 1

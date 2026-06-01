@@ -86,6 +86,13 @@ export function IndividualUbbPage({
   const [bulkUnblock, setBulkUnblock] = useState<UserBudget[] | null>(null)
   const [bulkFailures, setBulkFailures] = useState<BatchOutcome<BulkUpdate>[] | null>(null)
   const [revertFailures, setRevertFailures] = useState<BatchOutcome<RevertEntry>[] | null>(null)
+  /**
+   * AbortController for an in-flight "retry failures" run. Hoisted so the
+   * dialog's close handler can abort the request — otherwise the retry
+   * keeps running invisibly and the late `refresh()` would yank data
+   * underneath whatever the user navigated to next.
+   */
+  const retryCtrlRef = useRef<AbortController | null>(null)
   const [, setSnapshot] = useState<BulkApplySnapshot | null>(null)
   const [filters, setFilters] = useState<TableFilters>(EMPTY_FILTERS)
   const tableRef = useRef<HTMLDivElement | null>(null)
@@ -296,13 +303,23 @@ export function IndividualUbbPage({
   const handleRetryBulkFailures = async (failedOutcomes: BatchOutcome<BulkUpdate>[]) => {
     const subset = failedOutcomes.map(o => o.item)
     if (subset.length === 0) return
+    // Abort any prior retry that's somehow still in flight.
+    retryCtrlRef.current?.abort()
     const ctrl = new AbortController()
+    retryCtrlRef.current = ctrl
     const t = toast.loading(`Retrying ${subset.length.toLocaleString()} failures…`)
-    const results = await runBulkApply(subset, {
-      signal: ctrl.signal,
-      onProgress: () => {},
-    })
-    toast.dismiss(t)
+    let results: BatchOutcome<BulkUpdate>[]
+    try {
+      results = await runBulkApply(subset, {
+        signal: ctrl.signal,
+        onProgress: () => {},
+      })
+    } finally {
+      toast.dismiss(t)
+      if (retryCtrlRef.current === ctrl) retryCtrlRef.current = null
+    }
+    // If the user closed the dialog mid-retry, don't surface any results.
+    if (ctrl.signal.aborted) return
     const stillFailed = results.filter(r => !r.ok)
     if (stillFailed.length === 0) {
       toast.success(`Retried ${subset.length.toLocaleString()} updates successfully`)
@@ -509,7 +526,15 @@ export function IndividualUbbPage({
       />
       <FailedItemsDialog
         open={bulkFailures !== null}
-        onOpenChange={open => !open && setBulkFailures(null)}
+        onOpenChange={open => {
+          if (!open) {
+            // Abort any in-flight retry so it stops issuing API calls and
+            // doesn't trigger a late refresh.
+            retryCtrlRef.current?.abort()
+            retryCtrlRef.current = null
+            setBulkFailures(null)
+          }
+        }}
         title="Bulk update — failed items"
         outcomes={bulkFailures ?? []}
         getLabel={u => u.user}

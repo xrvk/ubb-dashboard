@@ -60,8 +60,7 @@ describe('snapshot storage', () => {
 
   it('saveSnapshot returns {ok:false, reason:"quota_exceeded"} when storage throws QuotaExceededError', () => {
     const orig = Storage.prototype.setItem
-    Storage.prototype.setItem = function (key: string, value: string) {
-      if (key === '__t__') return orig.call(this, key, value)
+    Storage.prototype.setItem = function () {
       throw new DOMException('quota', 'QuotaExceededError')
     }
     try {

@@ -96,4 +96,35 @@ describe('runBatch', () => {
     })
     expect(states[states.length - 1]).toBe(3)
   })
+
+  it('counts each item exactly once in `completed` even after retries (regression)', async () => {
+    // Regression: when processOne recursed on retry, the outer frame's
+    // `finally` ran again and double-counted. Each item that retried once
+    // ended up with `completed += 2`, so the progress UI showed values
+    // greater than `total`.
+    let attempts = 0
+    const worker = vi.fn(async () => {
+      attempts += 1
+      // First two attempts fail with 429, third succeeds.
+      if (attempts <= 2) throw new ApiError(429, 'slow down')
+    })
+    const states: Array<{ completed: number; inFlight: number; succeeded: number }> = []
+    const results = await runBatch([1], worker, {
+      concurrency: 1,
+      perTaskDelayMs: 0,
+      defaultRetryAfterMs: 1,
+      maxRetriesOn429: 5,
+      onProgress: s => states.push({ completed: s.completed, inFlight: s.inFlight, succeeded: s.succeeded }),
+    })
+    expect(results[0].ok).toBe(true)
+    expect(worker).toHaveBeenCalledTimes(3)
+    const final = states[states.length - 1]
+    expect(final.completed).toBe(1)
+    expect(final.succeeded).toBe(1)
+    expect(final.inFlight).toBe(0)
+    // No intermediate progress event should report completed > total.
+    expect(states.every(s => s.completed <= 1)).toBe(true)
+    // And inFlight should never exceed concurrency.
+    expect(states.every(s => s.inFlight <= 1)).toBe(true)
+  })
 })

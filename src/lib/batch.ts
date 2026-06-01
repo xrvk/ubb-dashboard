@@ -148,55 +148,65 @@ export async function runBatch<T>(
   )
 
   async function processOne(task: RetryableTask<T>, index: number) {
+    state.inFlight += 1
+    emit()
     try {
-      state.inFlight += 1
-      emit()
-      await worker(task.item)
-      results[index] = { ok: true, item: task.item }
-      state.succeeded += 1
-    } catch (err) {
-      const kind = classifyTransient(err)
-      if (kind === 'aborted') {
-        results[index] = { ok: false, item: task.item, error: err }
-        state.failed += 1
-        throw err
-      }
-      if (kind === 'rate_limit' && task.attempts429 < maxRetriesOn429) {
-        task.attempts429 += 1
-        state.retrying += 1
-        state.inFlight -= 1
-        emit()
-        const waitMs = parseRetryAfter(err, defaultRetryAfterMs)
+      // Iterative retry: a single `processOne` invocation handles all attempts
+      // for one item, so the `finally` block runs exactly once per item.
+      // Recursion here would double-count `completed` because each recursive
+      // frame would run its own `finally`.
+      while (true) {
         try {
-          await sleep(waitMs, opts.signal)
-        } finally {
-          state.retrying -= 1
+          await worker(task.item)
+          results[index] = { ok: true, item: task.item }
+          state.succeeded += 1
+          return
+        } catch (err) {
+          const kind = classifyTransient(err)
+          if (kind === 'aborted') {
+            results[index] = { ok: false, item: task.item, error: err }
+            state.failed += 1
+            throw err
+          }
+          if (kind === 'rate_limit' && task.attempts429 < maxRetriesOn429) {
+            task.attempts429 += 1
+            state.retrying += 1
+            state.inFlight -= 1
+            emit()
+            const waitMs = parseRetryAfter(err, defaultRetryAfterMs)
+            try {
+              await sleep(waitMs, opts.signal)
+            } finally {
+              state.retrying -= 1
+              state.inFlight += 1
+              emit()
+            }
+            continue
+          }
+          if (kind === 'transient' && task.attemptsTransient < maxRetriesOnTransient) {
+            task.attemptsTransient += 1
+            state.retrying += 1
+            state.inFlight -= 1
+            emit()
+            const backoff = Math.min(
+              transientMaxDelayMs,
+              transientBaseDelayMs * 2 ** (task.attemptsTransient - 1),
+            )
+            const waitMs = backoff + jitter(backoff)
+            try {
+              await sleep(waitMs, opts.signal)
+            } finally {
+              state.retrying -= 1
+              state.inFlight += 1
+              emit()
+            }
+            continue
+          }
+          results[index] = { ok: false, item: task.item, error: err }
+          state.failed += 1
+          return
         }
-        state.inFlight += 1
-        emit()
-        return processOne(task, index)
       }
-      if (kind === 'transient' && task.attemptsTransient < maxRetriesOnTransient) {
-        task.attemptsTransient += 1
-        state.retrying += 1
-        state.inFlight -= 1
-        emit()
-        const backoff = Math.min(
-          transientMaxDelayMs,
-          transientBaseDelayMs * 2 ** (task.attemptsTransient - 1),
-        )
-        const waitMs = backoff + jitter(backoff)
-        try {
-          await sleep(waitMs, opts.signal)
-        } finally {
-          state.retrying -= 1
-        }
-        state.inFlight += 1
-        emit()
-        return processOne(task, index)
-      }
-      results[index] = { ok: false, item: task.item, error: err }
-      state.failed += 1
     } finally {
       state.inFlight = Math.max(0, state.inFlight - 1)
       state.completed += 1

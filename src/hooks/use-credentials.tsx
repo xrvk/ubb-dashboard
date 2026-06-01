@@ -153,9 +153,20 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
   const [loadProgress, setLoadProgress] = useState<{ loaded: number; total: number | undefined } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [partialLoadWarnings, setPartialLoadWarnings] = useState<PartialLoadWarning[]>([])
+  // Features the user has explicitly dismissed. Persists across `refresh()`
+  // so a permanent condition (e.g. missing scope) doesn't keep re-surfacing
+  // the same banner after every reload. Cleared on `connect`/`disconnect`
+  // when the underlying credentials change.
+  const dismissedFeaturesRef = useRef<Set<PartialLoadFeature>>(new Set())
 
   const dismissPartialLoadWarning = useCallback((feature: PartialLoadFeature) => {
+    dismissedFeaturesRef.current.add(feature)
     setPartialLoadWarnings(prev => prev.filter(w => w.feature !== feature))
+  }, [])
+
+  /** Filter out warnings the user has already dismissed this session. */
+  const applyWarnings = useCallback((warnings: PartialLoadWarning[]) => {
+    setPartialLoadWarnings(warnings.filter(w => !dismissedFeaturesRef.current.has(w.feature)))
   }, [])
 
   const apiFetch = useMemo(
@@ -216,7 +227,7 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
       setEnterpriseBudget(allBudgets.enterprise)
       setCostCenterBudgetsByName(allBudgets.costCenterBudgetsByName)
       setUsageSummary(summaryResult[0])
-      setPartialLoadWarnings(
+      applyWarnings(
         [seatResult[1], ccResult[1], summaryResult[1]].filter(
           (w): w is PartialLoadWarning => w !== null,
         ),
@@ -227,7 +238,7 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
       setLoading(false)
       setLoadProgress(null)
     }
-  }, [apiFetch, credentials])
+  }, [apiFetch, credentials, applyWarnings])
 
   const connect = useCallback(async (enterpriseUrl: string, token: string) => {
     const parsed = parseEnterpriseUrl(enterpriseUrl)
@@ -239,6 +250,8 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
     setLoading(true)
     setLoadProgress({ loaded: 0, total: undefined })
     setError(null)
+    // Fresh credentials = fresh dismissals.
+    dismissedFeaturesRef.current = new Set()
     setPartialLoadWarnings([])
     try {
       const fetcher = createApiFetch(creds)
@@ -261,7 +274,7 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
       setEnterpriseBudget(allBudgets.enterprise)
       setCostCenterBudgetsByName(allBudgets.costCenterBudgetsByName)
       setUsageSummary(summaryResult[0])
-      setPartialLoadWarnings(
+      applyWarnings(
         [seatResult[1], ccResult[1], summaryResult[1]].filter(
           (w): w is PartialLoadWarning => w !== null,
         ),
@@ -272,7 +285,7 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
       setLoading(false)
       setLoadProgress(null)
     }
-  }, [])
+  }, [applyWarnings])
 
   const disconnect = useCallback(() => {
     setCredentials(null)
@@ -286,6 +299,7 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
     setUsageSummary(null)
     setUsageByCostCenterId(new Map())
     setError(null)
+    dismissedFeaturesRef.current = new Set()
     setPartialLoadWarnings([])
   }, [])
 
