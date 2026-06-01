@@ -95,7 +95,7 @@ emerald → bronze ramp — match that pattern.
 ## Toasts & inline feedback
 
 - One sentence. No exclamation marks.
-- ✅ `Universal UBB set to $7.00k`
+- ✅ `Universal ULB set to $7.00k`
 - ✅ `Unblocked 47 users for the month`
 - ❌ `🎉 Success! 47 users have been unblocked!`
 
