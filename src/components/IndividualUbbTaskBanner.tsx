@@ -57,7 +57,7 @@ export function IndividualUbbTaskBanner({ task, onDismiss }: Props) {
           <div className="font-medium">
             {progress.resolved
               ? `Cost center "${task.costCenterName}" now fits its budget`
-              : `Reducing UBBs for cost center "${task.costCenterName}"`}
+              : `Reducing ULBs for cost center "${task.costCenterName}"`}
           </div>
           <div className="mt-0.5 text-xs opacity-90">
             {task.memberCount} member{task.memberCount === 1 ? '' : 's'},{' '}

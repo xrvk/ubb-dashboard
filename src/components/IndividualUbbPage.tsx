@@ -457,7 +457,7 @@ export function IndividualUbbPage({
                 title={totalBudgetCount >= 10000 ? 'Budget limit of 10,000 reached for this enterprise' : undefined}
               >
                 <Plus size={16} weight="bold" />
-                Add UBB
+                Add ULB
               </Button>
             </div>
             <BudgetsTable

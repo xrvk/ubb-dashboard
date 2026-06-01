@@ -367,7 +367,7 @@ export function UniversalUbbPage() {
       const failed = results.filter(r => !r.ok).length
       const ok = results.length - failed
       if (failed === 0) toast.success(`Created ${ok.toLocaleString()} individual ULBs.`)
-      else if (ok === 0) toast.error(`Failed to create ${failed.toLocaleString()} UBBs.`)
+      else if (ok === 0) toast.error(`Failed to create ${failed.toLocaleString()} ULBs.`)
       else toast.warning(`Created ${ok.toLocaleString()}, failed ${failed.toLocaleString()}.`)
     } finally {
       setBatchProgress(null)
@@ -612,7 +612,7 @@ export function UniversalUbbPage() {
               <h2 className="text-sm font-semibold">Step 2 · Choose your universal ULB</h2>
               <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
                 Click the chart to mark where regular users end and outliers begin, then drag the
-                dashed UBB line to set the cap.
+                dashed ULB line to set the cap.
               </p>
             </div>
             {hasData ? (
@@ -760,7 +760,7 @@ export function UniversalUbbPage() {
                 onClick={() => setConfirmCreateOpen(true)}
                 disabled={selectedOutliers.size === 0 || batchProgress !== null}
               >
-                {batchProgress ? 'Creating…' : `Apply ind UBB (${selectedOutliers.size.toLocaleString()})`}
+                {batchProgress ? 'Creating…' : `Apply ind ULB (${selectedOutliers.size.toLocaleString()})`}
               </Button>
             )}
           </div>
@@ -930,7 +930,7 @@ export function UniversalUbbPage() {
                                       if (!Number.isFinite(n)) return
                                       setRowUbb(u.login, n, suggested)
                                     }}
-                                    aria-label={`UBB for ${u.login}`}
+                                    aria-label={`ULB for ${u.login}`}
                                     title={
                                       inMultiEdit
                                         ? `Editing will apply to all ${selectedOutliers.size.toLocaleString()} selected rows`
@@ -1020,7 +1020,7 @@ export function UniversalUbbPage() {
           <DialogTitle>Create {outlierTargets.length.toLocaleString()} individual ULB{outlierTargets.length === 1 ? '' : 's'}?</DialogTitle>
           <DialogDescription>
             This will create or update an individual ULB for each selected user.
-            Existing UBBs for these users would be overwritten.
+            Existing ULBs for these users would be overwritten.
           </DialogDescription>
 
           <div className="rounded-md border border-amber-300 dark:border-amber-700/60 bg-amber-50 dark:bg-amber-950/30 px-3 py-2 text-xs text-amber-900 dark:text-amber-200 mb-3">
@@ -1081,7 +1081,7 @@ export function UniversalUbbPage() {
               <thead className="bg-neutral-50 dark:bg-neutral-900/50 text-left sticky top-0">
                 <tr>
                   <th className="px-3 py-1.5 font-medium">User</th>
-                  <th className="px-3 py-1.5 text-right font-medium">UBB</th>
+                  <th className="px-3 py-1.5 text-right font-medium">ULB</th>
                 </tr>
               </thead>
               <tbody>
@@ -1116,7 +1116,7 @@ export function UniversalUbbPage() {
             >
               {batchProgress
                 ? 'Creating…'
-                : `Create ${outlierTargets.length.toLocaleString()} UBBs · $${outlierTotalDollars.toLocaleString()}/mo`}
+                : `Create ${outlierTargets.length.toLocaleString()} ULBs · $${outlierTotalDollars.toLocaleString()}/mo`}
             </Button>
           </div>
         </DialogContent>
@@ -1141,7 +1141,7 @@ export function UniversalUbbPage() {
                   put projected spend{' '}
                   <span className="font-semibold">{formatCurrency(pendingOverApply.overBy)} over</span>{' '}
                   the enterprise allowance of {formatCurrency(pendingOverApply.allowance)}.
-                  The enterprise budget would become the binding cap instead of the UBB.
+                  The enterprise budget would become the binding cap instead of the ULB.
                 </>
               ) : (
                 <>

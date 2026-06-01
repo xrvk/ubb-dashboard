@@ -38,8 +38,8 @@ export function EditUniversalUbbDialog({ universalUbb, open, onOpenChange, onSub
         <DialogTitle>{universalUbb ? 'Edit universal ULB' : 'Create universal ULB'}</DialogTitle>
         <DialogDescription>
           {universalUbb
-            ? 'Update the enterprise-wide cap that applies to every user not covered by an individual or cost-center UBB. Hard stop is always enforced.'
-            : 'Create the enterprise-wide cap that applies to every user not covered by an individual or cost-center UBB. Hard stop is always enforced.'}
+            ? 'Update the enterprise-wide cap that applies to every user not covered by an individual or cost-center ULB. Hard stop is always enforced.'
+            : 'Create the enterprise-wide cap that applies to every user not covered by an individual or cost-center ULB. Hard stop is always enforced.'}
         </DialogDescription>
         <form
           onSubmit={async e => {

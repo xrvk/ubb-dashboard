@@ -15,7 +15,6 @@ import { UniversalUbbPage } from '@/components/UniversalUbbPage'
 import { BudgetConstraintsHelpPage } from '@/components/BudgetConstraintsHelpPage'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { PartialLoadBanner } from '@/components/PartialLoadBanner'
-import { CopyErrorLogButton } from '@/components/CopyErrorLogButton'
 import { Button } from '@/components/ui/button'
 import { cn, openExternal } from '@/lib/utils'
 import { describeError, isAborted } from '@/lib/errors'
@@ -223,7 +222,7 @@ export function App() {
           <div className="flex items-center gap-2.5">
             <Gauge size={26} weight="duotone" className="text-emerald-600" />
             <div>
-              <h1 className="text-base font-semibold leading-tight">UBB Dashboard</h1>
+              <h1 className="text-base font-semibold leading-tight">ULB Dashboard</h1>
               <p className="text-xs text-neutral-500 leading-tight">
                 Monitor Copilot AI-credit budgets across your enterprise
               </p>
@@ -438,8 +437,6 @@ export function App() {
             >
               Source
             </a>
-            {' · '}
-            <CopyErrorLogButton />
           </p>
         </div>
       </footer>
