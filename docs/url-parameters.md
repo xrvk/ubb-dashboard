@@ -1,27 +1,9 @@
 # URL parameters
 
-The app accepts a handful of query parameters on its URL
-(`/ubb-dashboard/?param=value&...`). They split cleanly into two
-groups:
-
-- **Connect helpers** are for real users and SEs prefilling the
-  connect form when sharing links.
-- **Demo / dev knobs** are for local development, screenshots, and
-  exploring the UI without an enterprise. They're not meant for
-  real-world usage.
-
-| Param | Audience | Purpose |
-|---|---|---|
-| `?ent=...` | Users / SEs | Prefill the **Enterprise URL** field on the connect form. Accepts a bare slug (`?ent=octodemo`) or a full URL (`?ent=https://github.com/enterprises/octodemo`). Invalid values silently fall back to the `VITE_DEV_ENTERPRISE_URL` default. |
-| `?host=...` | Users / SEs | Companion to `?ent=` for GHE.com tenants. Only used when `?ent=` is a bare slug. Must be `github.com` or `<tenant>.ghe.com`; anything else is ignored. Example: `?ent=octodemo&host=customer.ghe.com` → `https://customer.ghe.com/enterprises/octodemo`. |
-| `?demo=N` | Dev / testing | Force demo mode with `N` synthetic users. Without this, the app starts in connect-an-enterprise mode. |
-| `?cc=N` | Dev / testing | Override the demo cost-center count (1–5000). |
-| `?pool=N` | Dev / testing | Override pool fill % (0–200). Scales `consumedAmount` on every budget so the pool tile shows roughly `N%` drawn. |
-| `?exclude=0` / `?exclude=1` | Dev / testing | Include / exclude CC-bucketed usage from the individual list. Default is `1` (excluded). |
-| `?asof=YYYY-MM-DD` | Dev / testing | Pin the synthetic "today" so screenshots and time-elapsed math stay stable. Default is "5 days before month end" of the current real month. |
-| `?debug=1` | Dev / testing | Show the dashboard data overlay (origins + raw values for each tile). |
-
-## Security note on the PAT
+The app reads a handful of query parameters off its URL
+(`/ubb-dashboard/?param=value&...`). There are two end-user params
+worth knowing about; everything else is for local development,
+screenshots, and deterministic test scenarios.
 
 The personal access token is **never** read from a URL parameter, and
 there is no `?pat=` or equivalent. Tokens in URLs leak through browser
@@ -29,11 +11,97 @@ history, the `Referer` header, server access logs, and screen-share.
 The connect form always requires the PAT to be entered by hand and
 does not auto-submit.
 
+## For end users
+
+### `?ent=...` — Prefill enterprise URL
+
+Prefills the **Enterprise URL** field on the connect form. Useful when
+sharing onboarding links or pointing a colleague at the right
+enterprise. The user still has to paste their PAT and click Connect.
+
+Accepts either:
+
+- A bare slug: `?ent=octodemo` →
+  `https://github.com/enterprises/octodemo`
+- A full URL:
+  `?ent=https://github.com/enterprises/octodemo` or
+  `?ent=https://customer.ghe.com/enterprises/octodemo`
+
+Invalid values (random garbage, non-GitHub hosts, etc.) are silently
+ignored — the form stays usable and falls back to the
+`VITE_DEV_ENTERPRISE_URL` default if one is set, or empty otherwise.
+
+### `?host=...` — Pick a GHE.com tenant
+
+Companion to `?ent=` for GitHub Enterprise Cloud with data residency
+(GHE.com). Only matters when `?ent=` is a bare slug; ignored when
+`?ent=` is already a full URL.
+
+Must be `github.com` or `<tenant>.ghe.com` — anything else is silently
+ignored and we fall back to `github.com`. Example:
+
+```
+?ent=octodemo&host=customer.ghe.com
+→ https://customer.ghe.com/enterprises/octodemo
+```
+
+### `?demo=N` — Try the dashboard with synthetic data
+
+Boots the app with `N` synthetic users instead of asking you to
+connect. Everything in the UI is fake but realistic; all writes are
+stubbed with toast notifications so you can click around without
+consequence.
+
+Good starting points:
+
+| URL | What it does |
+|---|---|
+| `?demo=50` | Small, realistic enterprise |
+| `?demo=900` | Mid-size: paginated table, full histogram |
+| `?demo=9800` | Stress test: rate-limit pre-flight, progress UI |
+
+## For developers and testing
+
+> These parameters are intended for local development, screenshots, and
+> deterministic test scenarios. They are not stable end-user features
+> and may change without notice.
+
+All of them only take effect when `?demo=N` is also set.
+
+### `?cc=N`
+
+Override the demo cost-center count (1–5000). The first 4 stay the
+"story" CCs (`platform-eng`, `data-platform`, `devx`, `security`) so
+constraint scenarios remain consistent.
+
+### `?pool=N`
+
+Override pool fill % (0–200). Scales `consumedAmount` on every budget
+so the pool tile shows roughly `N%` drawn.
+
+### `?exclude=0` / `?exclude=1`
+
+Include (`0`) or exclude (`1`) CC-bucketed usage from the individual
+list. Default is `1` since CC users aren't individually-budgeted.
+
+### `?asof=YYYY-MM-DD`
+
+Pin the synthetic "today" so screenshots and time-elapsed math stay
+stable across runs. Default is "5 days before month end" of the
+current real month.
+
+### `?debug=1`
+
+Show the dashboard data overlay — origins and raw values for each
+tile. See `agents/dashboard-data-flow.md` for what the overlay
+exposes.
+
 ## Stacking
 
-Params stack. For example:
+Params stack. Examples:
 
-- `?ent=octodemo&host=customer.ghe.com` — prefill GHE.com connect form.
+- `?ent=octodemo&host=customer.ghe.com` — prefill the GHE.com connect
+  form.
 - `?demo=150&pool=75` — demo mode, 150 users, pool 75% full.
 - `?demo=150&debug=1` — demo mode with the data overlay on.
 

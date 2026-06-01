@@ -292,7 +292,7 @@ The app ships with a synthetic-data mode for trying the UI at scale:
 | http://localhost:5003/?demo=900 | Mid-size: paginated table, full histogram |
 | http://localhost:5003/?demo=9800 | Stress test: rate-limit pre-flight, progress UI |
 
-Demo mode generates believable user distributions (~70% low / 15% moderate / 7% getting close / 5% about to block / 3% over) and stubs all writes with toast notifications so you can click around without consequence.
+Demo mode generates believable user distributions (~70% low / 15% moderate / 7% getting close / 5% about to block / 3% over) and stubs all writes with toast notifications so you can click around without consequence. See [URL parameters](docs/url-parameters.md) for the full list of knobs.
 
 ---
 

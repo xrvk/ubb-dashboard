@@ -19,8 +19,6 @@ Before opening a PR, the minimum bar is: `npx vitest run` green +
 `npx tsc -b --noEmit` clean. `npm run lint` may have 1 pre-existing
 warning — don't introduce new ones.
 
-## Demo mode knobs
-
 ## URL parameters
 
 The full reference lives in [`docs/url-parameters.md`](../url-parameters.md).
