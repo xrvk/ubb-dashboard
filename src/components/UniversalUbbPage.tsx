@@ -8,13 +8,14 @@ import { CostCenterCombobox, type CostCenterOption } from '@/components/ui/cost-
 import { useCredentials } from '@/hooks/use-credentials'
 import {
   buildCostCenterIndex,
+  apiBaseToWebBase,
   createUniversalUBB,
   createUserBudget as apiCreateUserBudget,
   fetchUniversalUBB,
   patchUniversalUBB,
 } from '@/lib/api'
 import { describeError } from '@/lib/errors'
-import { formatCurrency } from '@/lib/utils'
+import { formatCurrency, openExternal } from '@/lib/utils'
 import { previewConstraintsWithProposedUbb, computeBudgetConstraints, type ComputeBudgetConstraintsInput } from '@/lib/budgetConstraints'
 import {
   loadAllCachedReports,
@@ -75,6 +76,19 @@ export function UniversalUbbPage() {
     costCenters,
     costCenterBudgetsByName,
   } = useCredentials()
+
+  // Deep-link to the enterprise's AI usage billing page so admins can pull
+  // the CSV from the right tenant directly. `apiBaseToWebBase` converts e.g.
+  // `https://api.acme.ghe.com` → `https://acme.ghe.com`, so this works for
+  // both github.com and ghe.com tenants. Falls back to docs when there's no
+  // real enterprise (demo / unauthenticated).
+  const aiUsageReportUrl = useMemo(() => {
+    const docsUrl =
+      'https://docs.github.com/en/billing/how-tos/products/view-productlicense-use#downloading-usage-reports'
+    if (!credentials || credentials.base === 'demo://' || !credentials.ent) return docsUrl
+    const webBase = apiBaseToWebBase(credentials.base)
+    return `${webBase}/enterprises/${encodeURIComponent(credentials.ent)}/billing/ai_usage?period=3&group=7&chart_selection=2&view=models`
+  }, [credentials])
 
   const [editing, setEditing] = useState(false)
   const [cacheBust, setCacheBust] = useState(0)
@@ -558,9 +572,26 @@ export function UniversalUbbPage() {
           <div>
             <h2 className="text-sm font-semibold">Step 1 · Upload historical usage</h2>
             <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
-              Download the detailed billing usage report from GitHub for one or more recent months,
-              then upload the CSV(s) below. Sizing uses each user's biggest single month across
-              everything you load.
+              <a
+                href={aiUsageReportUrl}
+                target="_blank"
+                rel="noreferrer"
+                onClick={openExternal(aiUsageReportUrl)}
+                className="underline underline-offset-2 hover:no-underline"
+              >
+                Generate a detailed billing usage report
+              </a>{' '}
+              for this enterprise on GitHub for one or more recent months, then upload the CSV(s)
+              below. Sizing uses each user's biggest single month across everything you load.{' '}
+              <a
+                href="https://docs.github.com/en/billing/how-tos/products/view-productlicense-use#downloading-usage-reports"
+                target="_blank"
+                rel="noreferrer"
+                onClick={openExternal('https://docs.github.com/en/billing/how-tos/products/view-productlicense-use#downloading-usage-reports')}
+                className="underline underline-offset-2 hover:no-underline"
+              >
+                Learn more
+              </a>
             </p>
           </div>
           {credentials ? (
