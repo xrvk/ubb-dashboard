@@ -10,6 +10,7 @@ in this repo. Read what's relevant before touching the corresponding area.
 | [glossary.md](./glossary.md) | First. Decodes the alphabet soup (UBB, AIC, CB/CE, CC, MTD, gross vs net, …). |
 | [architecture.md](./architecture.md) | 10-minute map of how the app is wired: entry points, state, persistence, demo mode. |
 | [external-systems.md](./external-systems.md) | Before touching `api.ts` or anything that talks to GitHub. Endpoints, auth, version pin, quirks. |
+| [api-reference.md](./api-reference.md) | Deeper than `external-systems.md`: per-endpoint pagination behavior, concurrency model, connect-time call budget, 429 / rate-limit policy, checklist for adding a new endpoint. |
 | [tone-and-voice.md](./tone-and-voice.md) | Before writing UI copy, commit messages, PR bodies, toasts, or docs. |
 | [workflow.md](./workflow.md) | Before opening a PR. Build / lint / test commands, demo knobs, branch conventions, anti-patterns. |
 

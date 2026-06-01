@@ -50,9 +50,13 @@ around. Don't "fix" them without checking the upstream behavior first.
 - **Gross vs net** — `usage/summary` returns both `grossAmount` and
   `netAmount`. The pool drains on gross; billing is on net. Mixing
   these is the single most common source of wrong-looking tiles.
-- **429** responses are retried with backoff inside `apiFetch`. There
-  are tests for both the retry path and the give-up path. Don't
-  remove those.
+- **429 handling is asymmetric.** The read path (`createApiFetch`) does
+  **not** retry — a 429 throws and surfaces to the user. Only mutations
+  routed through `src/lib/batch.ts` (edit budget, bulk unblock) retry
+  on 429 with `Retry-After` honored. See
+  [api-reference.md](./api-reference.md#rate-limits) for the call
+  budget and rationale. Tests for the batch retry / give-up paths live
+  in `src/lib/__tests__/batch.test.ts` — don't remove them.
 
 ## GitHub Pages (hosting)
 
