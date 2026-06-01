@@ -307,6 +307,26 @@ The Import panel needs two things:
 
 On connect, the app fetches every budget and every Copilot seat in your enterprise (both are paginated up to the platform's ~10,000 budget cap and seat count). It does this once on connect and again per Refresh.
 
+### Pre-fill the enterprise URL via a shareable link
+
+The easiest way to generate one of these links is from inside the app: connect to your enterprise, open the connection menu in the top-right, and choose **Copy shareable link**. The result pre-fills the Enterprise URL field on the connect screen for the recipient — they still need to paste their own PAT, since credentials are never in the URL.
+
+Manual construction works too:
+
+**github.com:**
+
+```
+https://xrvk.github.io/ubb-dashboard/?ent=acme-corp
+```
+
+**GHE.com (data residency tenants):** use the full URL form so the link routes to the right host.
+
+```
+https://xrvk.github.io/ubb-dashboard/?ent=https://acme.ghe.com/enterprises/acme-corp
+```
+
+See [`docs/url-parameters.md`](./docs/url-parameters.md) for the full list of supported parameters (most are for development and testing).
+
 ### Endpoints used
 
 All requests go to `{api-base}/enterprises/{ent}/...`:

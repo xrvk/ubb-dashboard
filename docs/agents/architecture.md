@@ -94,7 +94,7 @@ The app persists *nothing* to a server. It uses, in order of preference:
 ## Demo mode
 
 Triggered by any of the demo URL knobs (`?demo=`, `?pool=`, `?exclude=`,
-`?entcap=`, `?asof=`). When in demo mode:
+`?asof=`). When in demo mode:
 
 - `apiFetch` short-circuits to `null` — no network calls happen.
 - `use-credentials` boots a synthetic `Credentials`-shaped value and
