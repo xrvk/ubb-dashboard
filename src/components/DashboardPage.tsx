@@ -37,6 +37,7 @@ import {
   NAV_TO_UNIVERSAL_EVENT,
 } from '@/lib/navEvents'
 import { DebugBadge, type DebugInfo } from './DebugBadge'
+import { BudgetStructureDiagram } from '@/components/BudgetStructureDiagram'
 
 /**
  * Top-level Dashboard. Single-screen rollup of the enterprise's AI credit
@@ -207,6 +208,14 @@ export function DashboardPage() {
         usage={usageSummary}
         credits={credits}
       />
+
+      {/* § 1b — Budget structure: how the enterprise budget and per-CC
+          budgets relate. Same diagram used on the Enterprise Budgets tab;
+          the actionable-items banner is suppressed here because it's
+          surfaced next to the editable cost-center list on that tab and
+          would just be noise on the Dashboard. */}
+      <SectionHeader title="Budget structure" />
+      <BudgetStructureDiagram hideActionableItems />
 
       {/* § 2 — Spend so far + forecast. Numbers are gross AI credit
           drawdown (consumption from the pool plus any post-pool metered
