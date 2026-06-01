@@ -8,6 +8,7 @@ import { projectMonthlyBudget } from '@/lib/projection'
 import { getEffectiveDemoAsof } from '@/lib/demo'
 import { estimateBatchDurationMs, PRIMARY_LIMIT_PER_HOUR, type BatchProgress } from '@/lib/batch'
 import { daysUntilCycleReset } from '@/lib/snapshot'
+import { describeError } from '@/lib/errors'
 import type { UserBudget } from '@/lib/api'
 
 interface Props {
@@ -123,7 +124,7 @@ export function BulkUnblockDialog({ open, onOpenChange, selected, onApply }: Pro
       )
       onOpenChange(false)
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      setError(describeError(e, 'bulk-unblock').body)
     } finally {
       abortRef.current = null
       setSubmitting(false)

@@ -36,30 +36,69 @@ function isStorageAvailable(): boolean {
   }
 }
 
-export function saveSnapshot(snapshot: BulkApplySnapshot): void {
-  if (!isStorageAvailable()) return
+export type SnapshotSaveResult =
+  | { ok: true }
+  | { ok: false; reason: 'storage_unavailable' | 'quota_exceeded' | 'unknown'; error?: unknown }
+
+export function saveSnapshot(snapshot: BulkApplySnapshot): SnapshotSaveResult {
+  if (!isStorageAvailable()) {
+    return { ok: false, reason: 'storage_unavailable' }
+  }
   try {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot))
-  } catch {
-    // Quota exceeded or other write error: ignore, snapshot is best-effort.
+    return { ok: true }
+  } catch (e) {
+    const isQuota =
+      e instanceof DOMException &&
+      (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED')
+    return { ok: false, reason: isQuota ? 'quota_exceeded' : 'unknown', error: e }
   }
 }
 
+export type SnapshotLoadResult =
+  | { ok: true; snapshot: BulkApplySnapshot | null }
+  | { ok: false; reason: 'corrupt' | 'wrong_enterprise' | 'expired'; error?: unknown }
+
 export function loadSnapshot(enterprise: string): BulkApplySnapshot | null {
-  if (!isStorageAvailable()) return null
+  const result = loadSnapshotDetailed(enterprise)
+  return result.ok ? result.snapshot : null
+}
+
+/**
+ * Like `loadSnapshot` but distinguishes "no snapshot" (ok with null) from
+ * "snapshot present but unreadable" (corrupt/wrong-enterprise/expired). The
+ * UI can use this to surface a toast when a rollback path was lost.
+ */
+export function loadSnapshotDetailed(enterprise: string): SnapshotLoadResult {
+  if (!isStorageAvailable()) return { ok: true, snapshot: null }
+  let raw: string | null
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY)
-    if (!raw) return null
-    const parsed = JSON.parse(raw) as BulkApplySnapshot
-    if (!parsed || parsed.enterprise !== enterprise) return null
-    if (Date.now() - parsed.appliedAt > SNAPSHOT_TTL_MS) {
-      window.localStorage.removeItem(STORAGE_KEY)
-      return null
-    }
-    return parsed
-  } catch {
-    return null
+    raw = window.localStorage.getItem(STORAGE_KEY)
+  } catch (e) {
+    return { ok: false, reason: 'corrupt', error: e }
   }
+  if (!raw) return { ok: true, snapshot: null }
+  let parsed: BulkApplySnapshot
+  try {
+    parsed = JSON.parse(raw) as BulkApplySnapshot
+  } catch (e) {
+    return { ok: false, reason: 'corrupt', error: e }
+  }
+  if (!parsed || typeof parsed !== 'object') {
+    return { ok: false, reason: 'corrupt' }
+  }
+  if (parsed.enterprise !== enterprise) {
+    return { ok: false, reason: 'wrong_enterprise' }
+  }
+  if (Date.now() - parsed.appliedAt > SNAPSHOT_TTL_MS) {
+    try {
+      window.localStorage.removeItem(STORAGE_KEY)
+    } catch {
+      /* ignore */
+    }
+    return { ok: false, reason: 'expired' }
+  }
+  return { ok: true, snapshot: parsed }
 }
 
 export function clearSnapshot(): void {

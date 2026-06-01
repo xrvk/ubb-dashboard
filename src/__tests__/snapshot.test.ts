@@ -53,6 +53,25 @@ describe('snapshot storage', () => {
     clearSnapshot()
     expect(loadSnapshot(ent)).toBeNull()
   })
+
+  it('saveSnapshot returns {ok:true} on success', () => {
+    expect(saveSnapshot(makeSnap())).toEqual({ ok: true })
+  })
+
+  it('saveSnapshot returns {ok:false, reason:"quota_exceeded"} when storage throws QuotaExceededError', () => {
+    const orig = Storage.prototype.setItem
+    Storage.prototype.setItem = function (key: string, value: string) {
+      if (key === '__t__') return orig.call(this, key, value)
+      throw new DOMException('quota', 'QuotaExceededError')
+    }
+    try {
+      const result = saveSnapshot(makeSnap())
+      expect(result.ok).toBe(false)
+      if (!result.ok) expect(result.reason).toBe('quota_exceeded')
+    } finally {
+      Storage.prototype.setItem = orig
+    }
+  })
 })
 
 describe('cycle helpers', () => {

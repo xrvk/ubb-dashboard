@@ -11,7 +11,9 @@ import { CreateBudgetDialog } from '@/components/CreateBudgetDialog'
 import { DeleteConfirmDialog } from '@/components/DeleteConfirmDialog'
 import { BulkUnblockDialog } from '@/components/BulkUnblockDialog'
 import { RevertBulkDialog } from '@/components/RevertBulkDialog'
+import { FailedItemsDialog } from '@/components/FailedItemsDialog'
 import { Button } from '@/components/ui/button'
+import { describeError } from '@/lib/errors'
 import { summarize, forecastSummary } from '@/lib/status'
 import { getEffectiveDemoAsof } from '@/lib/demo'
 import { openExternal } from '@/lib/utils'
@@ -22,7 +24,7 @@ import {
   patchUserBudget as apiPatchUserBudget,
   type UserBudget,
 } from '@/lib/api'
-import { runBatch, type BatchProgress } from '@/lib/batch'
+import { runBatch, type BatchOutcome, type BatchProgress } from '@/lib/batch'
 import {
   clearSnapshot,
   endOfMonth,
@@ -76,9 +78,14 @@ export function IndividualUbbPage({
     refresh,
   } = useCredentials()
 
+  type BulkUpdate = { id: string; user: string; newAmount: number }
+  type RevertEntry = BulkApplySnapshot['entries'][number]
+
   const [editing, setEditing] = useState<UserBudget | null>(null)
   const [deleting, setDeleting] = useState<UserBudget | null>(null)
   const [bulkUnblock, setBulkUnblock] = useState<UserBudget[] | null>(null)
+  const [bulkFailures, setBulkFailures] = useState<BatchOutcome<BulkUpdate>[] | null>(null)
+  const [revertFailures, setRevertFailures] = useState<BatchOutcome<RevertEntry>[] | null>(null)
   const [, setSnapshot] = useState<BulkApplySnapshot | null>(null)
   const [filters, setFilters] = useState<TableFilters>(EMPTY_FILTERS)
   const tableRef = useRef<HTMLDivElement | null>(null)
@@ -188,8 +195,29 @@ export function IndividualUbbPage({
     await refresh()
   }
 
+  const runBulkApply = async (
+    updates: BulkUpdate[],
+    handle: { signal: AbortSignal; onProgress: (p: BatchProgress) => void },
+  ): Promise<BatchOutcome<BulkUpdate>[]> => {
+    if (!apiFetch) return []
+    return runBatch(
+      updates,
+      async u => {
+        await apiPatchUserBudget(apiFetch, u.id, u.newAmount)
+      },
+      {
+        concurrency: 5,
+        perTaskDelayMs: 50,
+        maxRetriesOn429: 2,
+        defaultRetryAfterMs: 60_000,
+        signal: handle.signal,
+        onProgress: handle.onProgress,
+      },
+    )
+  }
+
   const handleBulkUnblock = async (
-    updates: Array<{ id: string; user: string; newAmount: number }>,
+    updates: BulkUpdate[],
     handle: { signal: AbortSignal; onProgress: (p: BatchProgress) => void },
   ) => {
     if (credentials?.base === 'demo://') {
@@ -227,25 +255,15 @@ export function IndividualUbbPage({
       })
       .filter((x): x is NonNullable<typeof x> => x !== null)
 
-    const results = await runBatch(
-      updates,
-      async u => {
-        await apiPatchUserBudget(apiFetch, u.id, u.newAmount)
-      },
-      {
-        concurrency: 5,
-        perTaskDelayMs: 50,
-        maxRetriesOn429: 2,
-        defaultRetryAfterMs: 60_000,
-        signal: handle.signal,
-        onProgress: handle.onProgress,
-      },
-    )
-    const failed = results.filter(r => !r.ok).length
+    const results = await runBulkApply(updates, handle)
+    const failedOutcomes = results.filter(r => !r.ok)
+    const failed = failedOutcomes.length
     const ok = results.length - failed
     if (failed === 0) toast.success(`Unblocked ${ok.toLocaleString()} users`)
-    else if (ok === 0) toast.error(`Failed to update ${failed.toLocaleString()} users`)
-    else toast.warning(`Updated ${ok.toLocaleString()}, failed ${failed.toLocaleString()}`)
+    else if (ok === 0) toast.error(`Failed to update ${failed.toLocaleString()} users — see details`)
+    else toast.warning(`Updated ${ok.toLocaleString()}, ${failed.toLocaleString()} failed — see details`)
+
+    if (failed > 0) setBulkFailures(results)
 
     const succeededIds = new Set(results.filter(r => r.ok).map(r => (r.item as { id: string }).id))
     const succeededEntries = snapshotEntries.filter(e => succeededIds.has(e.budgetId))
@@ -257,10 +275,44 @@ export function IndividualUbbPage({
         cycleEndsAt: endOfMonth().getTime(),
         entries: succeededEntries,
       }
-      saveSnapshot(snap)
+      const saveResult = saveSnapshot(snap)
+      if (!saveResult.ok) {
+        const reason =
+          saveResult.reason === 'quota_exceeded'
+            ? 'browser storage is full'
+            : saveResult.reason === 'storage_unavailable'
+              ? 'browser storage is unavailable'
+              : 'an unknown storage error occurred'
+        toast.warning(
+          `Could not save revert snapshot — ${reason}. The revert button will not be available for this batch.`,
+        )
+      }
       updateSnapshot(snap)
     }
 
+    await refresh()
+  }
+
+  const handleRetryBulkFailures = async (failedOutcomes: BatchOutcome<BulkUpdate>[]) => {
+    const subset = failedOutcomes.map(o => o.item)
+    if (subset.length === 0) return
+    const ctrl = new AbortController()
+    const t = toast.loading(`Retrying ${subset.length.toLocaleString()} failures…`)
+    const results = await runBulkApply(subset, {
+      signal: ctrl.signal,
+      onProgress: () => {},
+    })
+    toast.dismiss(t)
+    const stillFailed = results.filter(r => !r.ok)
+    if (stillFailed.length === 0) {
+      toast.success(`Retried ${subset.length.toLocaleString()} updates successfully`)
+      setBulkFailures(null)
+    } else {
+      toast.warning(
+        `Retried ${subset.length - stillFailed.length}, ${stillFailed.length} still failed`,
+      )
+      setBulkFailures(results)
+    }
     await refresh()
   }
 
@@ -282,20 +334,22 @@ export function IndividualUbbPage({
         },
         { concurrency: 5, perTaskDelayMs: 50 },
       )
-      const failed = results.filter(r => !r.ok).length
+      const failedOutcomes = results.filter(r => !r.ok)
+      const failed = failedOutcomes.length
       toast.dismiss(t)
       if (failed === 0) {
         toast.success(`Reverted ${snap.entries.length.toLocaleString()} budgets`)
         clearSnapshot()
         updateSnapshot(null)
       } else {
-        toast.warning(`Reverted ${snap.entries.length - failed}, failed ${failed}`)
+        toast.warning(`Reverted ${snap.entries.length - failed}, ${failed} failed — see details`)
+        setRevertFailures(results)
       }
       onPendingRevertChange(null)
       await refresh()
     } catch (e) {
       toast.dismiss(t)
-      toast.error(e instanceof Error ? e.message : String(e))
+      toast.error(describeError(e, 'bulk-revert').body)
     }
   }
 
@@ -452,6 +506,23 @@ export function IndividualUbbPage({
           onPendingRevertChange(null)
           toast.info('Snapshot discarded')
         }}
+      />
+      <FailedItemsDialog
+        open={bulkFailures !== null}
+        onOpenChange={open => !open && setBulkFailures(null)}
+        title="Bulk update — failed items"
+        outcomes={bulkFailures ?? []}
+        getLabel={u => u.user}
+        onRetry={handleRetryBulkFailures}
+        csvFilename="bulk-update-failures"
+      />
+      <FailedItemsDialog
+        open={revertFailures !== null}
+        onOpenChange={open => !open && setRevertFailures(null)}
+        title="Bulk revert — failed items"
+        outcomes={revertFailures ?? []}
+        getLabel={e => e.user}
+        csvFilename="bulk-revert-failures"
       />
     </>
   )

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Gauge, Moon, Sun, Monitor, ArrowCounterClockwise, BookOpen } from '@phosphor-icons/react'
-import { Toaster } from 'sonner'
+import { Toaster, toast } from 'sonner'
 import { useTheme } from 'next-themes'
 import { useCredentials } from '@/hooks/use-credentials'
 import { ConnectionMenu } from '@/components/ConnectionMenu'
@@ -12,8 +12,13 @@ import { OverviewPage } from '@/components/OverviewPage'
 import { DashboardPage } from '@/components/DashboardPage'
 import { UniversalUbbPage } from '@/components/UniversalUbbPage'
 import { BudgetConstraintsHelpPage } from '@/components/BudgetConstraintsHelpPage'
+import { ErrorBoundary } from '@/components/ErrorBoundary'
+import { PartialLoadBanner } from '@/components/PartialLoadBanner'
+import { CopyErrorLogButton } from '@/components/CopyErrorLogButton'
 import { Button } from '@/components/ui/button'
 import { cn, openExternal } from '@/lib/utils'
+import { describeError, isAborted } from '@/lib/errors'
+import { logDebug } from '@/lib/debugLog'
 import { EMPTY_FILTERS, type TableFilters } from '@/components/BudgetsTable'
 import {
   NAV_TO_BUDGET_MODEL_EVENT,
@@ -37,7 +42,7 @@ const TAB_LABELS: Record<Tab, string> = {
 }
 
 export function App() {
-  const { credentials, refresh, disconnect, loading } = useCredentials()
+  const { credentials, refresh, disconnect, loading, partialLoadWarnings, dismissPartialLoadWarning } = useCredentials()
   const { theme, resolvedTheme, setTheme } = useTheme()
 
   /**
@@ -98,6 +103,31 @@ export function App() {
   // Active hint surfaced under the tab bar on the Budget model page after
   // the user deep-links from an abstract constraint action.
   const [plannerHint, setPlannerHint] = useState<PlannerHighlightDetail | null>(null)
+
+  // Global error sinks. Without these, fire-and-forget promises (e.g. the
+  // per-CC usage fetch fan-out) that throw outside of any try/catch
+  // disappear silently — the user sees nothing, and we get no log entry to
+  // diagnose later.
+  useEffect(() => {
+    const onError = (e: ErrorEvent) => {
+      if (isAborted(e.error)) return
+      const desc = describeError(e.error ?? e.message, 'window.onerror')
+      logDebug('error', 'window.onerror', desc.title, { message: desc.body, filename: e.filename, lineno: e.lineno })
+      toast.error(desc.title, { description: desc.body })
+    }
+    const onRejection = (e: PromiseRejectionEvent) => {
+      if (isAborted(e.reason)) return
+      const desc = describeError(e.reason, 'unhandledrejection')
+      logDebug('error', 'unhandledrejection', desc.title, { message: desc.body })
+      toast.error(desc.title, { description: desc.body })
+    }
+    window.addEventListener('error', onError)
+    window.addEventListener('unhandledrejection', onRejection)
+    return () => {
+      window.removeEventListener('error', onError)
+      window.removeEventListener('unhandledrejection', onRejection)
+    }
+  }, [])
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -286,27 +316,35 @@ export function App() {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 grid gap-6">
         <ImportPanel />
 
+        {credentials && partialLoadWarnings.length > 0 ? (
+          <PartialLoadBanner warnings={partialLoadWarnings} onDismiss={dismissPartialLoadWarning} />
+        ) : null}
+
         {credentials ? (
           tab === 'dashboard' ? (
-            <DashboardPage />
+            <ErrorBoundary label="Dashboard tab"><DashboardPage /></ErrorBoundary>
           ) : tab === 'overview' ? (
-            <OverviewPage />
+            <ErrorBoundary label="Enterprise Budgets tab"><OverviewPage /></ErrorBoundary>
           ) : tab === 'individual' ? (
-            <IndividualUbbPage
-              creating={creating}
-              onCreatingChange={setCreating}
-              onSnapshotChange={setSnapshot}
-              pendingRevert={revertCandidate}
-              onPendingRevertChange={setRevertCandidate}
-              pendingFilter={pendingIndividualFilter}
-              onPendingFilterConsumed={() => setPendingIndividualFilter(null)}
-              activeTask={activeTask}
-              onTaskDismiss={() => setActiveTask(null)}
-            />
+            <ErrorBoundary label="Individual UBBs tab">
+              <IndividualUbbPage
+                creating={creating}
+                onCreatingChange={setCreating}
+                onSnapshotChange={setSnapshot}
+                pendingRevert={revertCandidate}
+                onPendingRevertChange={setRevertCandidate}
+                pendingFilter={pendingIndividualFilter}
+                onPendingFilterConsumed={() => setPendingIndividualFilter(null)}
+                activeTask={activeTask}
+                onTaskDismiss={() => setActiveTask(null)}
+              />
+            </ErrorBoundary>
           ) : tab === 'budget-model' ? (
-            <BudgetConstraintsHelpPage onBack={() => goToTab('overview')} />
+            <ErrorBoundary label="Budget model tab">
+              <BudgetConstraintsHelpPage onBack={() => goToTab('overview')} />
+            </ErrorBoundary>
           ) : (
-            <UniversalUbbPage />
+            <ErrorBoundary label="Universal UBB tab"><UniversalUbbPage /></ErrorBoundary>
           )
         ) : null}
       </main>
@@ -350,6 +388,8 @@ export function App() {
             >
               Source
             </a>
+            {' · '}
+            <CopyErrorLogButton />
           </p>
         </div>
       </footer>

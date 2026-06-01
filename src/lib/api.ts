@@ -5,6 +5,16 @@
  * apiFetch automatically adds Authorization, Accept, and X-GitHub-Api-Version headers.
  */
 
+import {
+  ApiError,
+  AbortedError,
+  NetworkError,
+  apiErrorFromResponse,
+  isAborted,
+  isRetryable,
+  retryAfterSecondsFromError,
+} from '@/lib/errors'
+
 const API_VERSION = '2026-03-10'
 
 export interface Credentials {
@@ -13,15 +23,10 @@ export interface Credentials {
   token: string
 }
 
-export class ApiError extends Error {
-  status: number
-  body: string
-  constructor(status: number, body: string, message?: string) {
-    super(message ?? `API error ${status}: ${body.slice(0, 200)}`)
-    this.status = status
-    this.body = body
-  }
-}
+// Re-export the typed error surface so existing callers that import from
+// `@/lib/api` keep working. New code should import from `@/lib/errors`.
+export { ApiError } from '@/lib/errors'
+export type { ErrorKind, ErrorDescription } from '@/lib/errors'
 
 export type ApiFetch = (path: string, init?: RequestInit) => Promise<unknown>
 
@@ -63,6 +68,62 @@ function assertTrustedApiBase(base: string): string {
   return `${protocol}//${host}`
 }
 
+/**
+ * Headers we care about on errors and rate-limit decisions. Captured into
+ * the thrown error so the batch runner can read `Retry-After` without
+ * needing the original Response.
+ */
+const CAPTURED_HEADERS = [
+  'retry-after',
+  'x-ratelimit-limit',
+  'x-ratelimit-remaining',
+  'x-ratelimit-reset',
+  'x-ratelimit-used',
+  'x-ratelimit-resource',
+  'x-github-request-id',
+] as const
+
+function captureHeaders(res: Response): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const name of CAPTURED_HEADERS) {
+    const v = res.headers.get(name)
+    if (v != null) out[name] = v
+  }
+  return out
+}
+
+/**
+ * Bounded exponential backoff with jitter, capped so the UI thread is never
+ * blocked on a single request for more than ~30s of retries. Used for GETs
+ * only (writes are routed through the batch runner).
+ */
+const GET_RETRY_DEFAULTS = {
+  maxRetries: 2,
+  baseDelayMs: 500,
+  maxDelayMs: 8_000,
+  totalBudgetMs: 30_000,
+}
+
+function jitter(ms: number): number {
+  // Full jitter: random in [0, ms]
+  return Math.round(Math.random() * ms)
+}
+
+function delayWithAbort(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(new AbortedError())
+    const t = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort)
+      resolve()
+    }, ms)
+    const onAbort = () => {
+      clearTimeout(t)
+      reject(new AbortedError())
+    }
+    signal?.addEventListener('abort', onAbort, { once: true })
+  })
+}
+
 export function createApiFetch(creds: Credentials): ApiFetch {
   const safeBase = assertTrustedApiBase(creds.base)
   const safeEnt = encodeURIComponent(creds.ent)
@@ -75,21 +136,68 @@ export function createApiFetch(creds: Credentials): ApiFetch {
     const url = useEnterpriseRoot
       ? `${safeBase}/enterprises/${safeEnt}${cleanPath}`
       : `${safeBase}/enterprises/${safeEnt}/settings/billing${cleanPath}`
-    const res = await fetch(url, {
-      ...init,
-      headers: {
-        Authorization: `Bearer ${safeToken}`,
-        Accept: 'application/vnd.github+json',
-        'X-GitHub-Api-Version': API_VERSION,
-        ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
-        ...(init?.headers ?? {}),
-      },
-    })
-    const text = await res.text()
-    if (!res.ok) {
-      throw new ApiError(res.status, text)
+    const method = (init?.method ?? 'GET').toUpperCase()
+    const isIdempotent = method === 'GET' || method === 'HEAD'
+
+    const doOnce = async (): Promise<unknown> => {
+      let res: Response
+      try {
+        res = await fetch(url, {
+          ...init,
+          headers: {
+            Authorization: `Bearer ${safeToken}`,
+            Accept: 'application/vnd.github+json',
+            'X-GitHub-Api-Version': API_VERSION,
+            ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
+            ...(init?.headers ?? {}),
+          },
+        })
+      } catch (cause) {
+        // fetch rejected outright — offline, DNS, TLS, CORS, etc.
+        if (isAborted(cause)) throw new AbortedError()
+        throw new NetworkError(cause)
+      }
+      const text = await res.text()
+      if (!res.ok) {
+        throw apiErrorFromResponse(res.status, text, captureHeaders(res))
+      }
+      return text ? JSON.parse(text) : null
     }
-    return text ? JSON.parse(text) : null
+
+    // Mutations are single-shot at the transport layer. The batch runner
+    // owns retry policy for writes (it has dedupe context and per-item
+    // failure tracking that the transport does not).
+    if (!isIdempotent) {
+      return doOnce()
+    }
+
+    const { maxRetries, baseDelayMs, maxDelayMs, totalBudgetMs } = GET_RETRY_DEFAULTS
+    const startedAt = Date.now()
+    let attempt = 0
+    let lastErr: unknown
+    while (attempt <= maxRetries) {
+      try {
+        return await doOnce()
+      } catch (err) {
+        lastErr = err
+        if (isAborted(err)) throw err
+        if (!isRetryable(err) || attempt >= maxRetries) throw err
+        // For 429, honor Retry-After if it fits in our remaining budget.
+        let waitMs: number
+        if (err instanceof ApiError && err.kind === 'rate_limit') {
+          const ra = retryAfterSecondsFromError(err)
+          waitMs = ra != null ? ra * 1000 : Math.min(maxDelayMs, baseDelayMs * 2 ** attempt)
+        } else {
+          waitMs = Math.min(maxDelayMs, baseDelayMs * 2 ** attempt)
+        }
+        waitMs += jitter(Math.min(500, waitMs))
+        const elapsed = Date.now() - startedAt
+        if (elapsed + waitMs > totalBudgetMs) throw err
+        await delayWithAbort(waitMs, init?.signal ?? undefined)
+        attempt += 1
+      }
+    }
+    throw lastErr
   }
 }
 
@@ -235,12 +343,17 @@ async function fetchPagesInParallel<T>(
  * (still-parallel) requests. Capped at 1500 pages to support enterprises
  * at the platform cap (~10k budgets).
  */
+// Shared safety limit for paginators. Picked to comfortably cover the platform
+// caps (~10k budgets at 100/page, ~250–1k cost centers, large seat counts)
+// without ever spinning forever on a bug where the server keeps returning
+// non-empty pages. Hitting it is a signal something is wrong and produces a
+// console.warn (caller never sees more than this many pages of data).
+const PAGE_SAFETY_LIMIT = 1500
+
 async function paginateAllBudgets(
   apiFetch: ApiFetch,
   onProgress?: (loaded: number, totalCount: number | undefined) => void,
 ): Promise<{ budgets: RawBudget[]; totalCount: number }> {
-  const PAGE_SAFETY_LIMIT = 1500
-
   const fetchBudgetPage = async (page: number): Promise<{ list: RawBudget[]; totalCount: number | undefined }> => {
     const data = (await apiFetch(`/budgets?per_page=100&page=${page}`)) as BudgetsResponse | RawBudget[]
     const list = Array.isArray(data) ? data : (data?.budgets ?? [])
@@ -852,11 +965,14 @@ interface CostCentersResponse {
  * about live attribution.
  */
 export async function fetchCostCenters(apiFetch: ApiFetch): Promise<CostCenter[]> {
-  const PAGE_SAFETY_LIMIT = 200
+  // Cost-center cap is 250 standard / ~1k for sweetheart customers. 200 pages
+  // at 100/page = 20k headroom; named separately from PAGE_SAFETY_LIMIT
+  // (budgets) since the underlying scale is different.
+  const CC_PAGE_SAFETY_LIMIT = 200
   const PER_PAGE = 100
   const all: CostCenter[] = []
   let page = 1
-  while (page <= PAGE_SAFETY_LIMIT) {
+  while (page <= CC_PAGE_SAFETY_LIMIT) {
     // Note: we intentionally omit `state=active` from the query — the GitHub
     // billing API has been observed to hang (>75s timeout on at least one
     // enterprise) when that filter is applied to enterprises with many cost
@@ -879,9 +995,9 @@ export async function fetchCostCenters(apiFetch: ApiFetch): Promise<CostCenter[]
     if (list.length !== PER_PAGE) break
     page += 1
   }
-  if (page > PAGE_SAFETY_LIMIT) {
+  if (page > CC_PAGE_SAFETY_LIMIT) {
     console.warn(
-      `[ubb-dashboard] Cost-center pagination safety limit hit at ${PAGE_SAFETY_LIMIT} pages; loaded ${all.length}.`,
+      `[ubb-dashboard] Cost-center pagination safety limit hit at ${CC_PAGE_SAFETY_LIMIT} pages; loaded ${all.length}.`,
     )
   }
   return all.filter(cc => cc.state === 'active')
@@ -980,7 +1096,6 @@ export function resolveCostCenter(
  * GitHub handles.
  */
 export async function fetchAllCopilotSeats(apiFetch: ApiFetch): Promise<CopilotSeat[]> {
-  const PAGE_SAFETY_LIMIT = 1500
   const fetchSeatPage = async (page: number): Promise<{ list: RawSeat[]; totalSeats: number | undefined }> => {
     const data = (await apiFetch(
       `enterprise:/copilot/billing/seats?per_page=100&page=${page}`,
