@@ -119,7 +119,7 @@ export function UsageCsvImport({ enterprise, months, onChanged }: Props) {
         ) : null}
         <span className="text-xs text-neutral-500 dark:text-neutral-400">
           {months.length === 0
-            ? 'Select one or more monthly detailed billing reports to ingest.'
+            ? 'Pick one or more monthly billing reports (e.g. gh_copilot_premium_requests_usage_YYYY-MM.csv).'
             : `${months.length} month${months.length === 1 ? '' : 's'} loaded — total users sized off per-user max month.`}
         </span>
       </div>

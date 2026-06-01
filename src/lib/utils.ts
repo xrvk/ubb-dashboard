@@ -7,16 +7,17 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 /**
- * Adaptive currency formatter. Always 3 significant figures with a $-prefix
- * and a 1000× suffix (`k`, `M`, `B`):
+ * Adaptive currency formatter. Always ≤3 significant figures with a $-prefix
+ * and a 1000× suffix (`k`, `M`, `B`). Trailing zero-decimals are stripped
+ * so round numbers don't look noisy (`$9k`, not `$9.00k`):
  *
  *   $0 .. $999          → `$550`              (integer dollars, no suffix)
- *   $1,000 .. $9,999    → `$5.53k`            (2 decimals)
- *   $10,000 .. $99,999  → `$22.5k`            (1 decimal)
+ *   $1,000 .. $9,999    → `$5.53k` / `$7k`    (up to 2 decimals, trimmed)
+ *   $10,000 .. $99,999  → `$22.5k` / `$10k`   (up to 1 decimal, trimmed)
  *   $100,000 .. $999k   → `$225k`             (integer)
- *   $1M .. $9.99M       → `$1.30M`            (2 decimals)
- *   $10M .. $99.9M      → `$12.5M`            (1 decimal)
- *   $100M+              → `$225M` / `$1.30B`  (integer, then promotes)
+ *   $1M .. $9.99M       → `$1.3M` / `$1M`     (up to 2 decimals, trimmed)
+ *   $10M .. $99.9M      → `$12.5M` / `$10M`   (up to 1 decimal, trimmed)
+ *   $100M+              → `$225M` / `$1.3B`   (integer, then promotes)
  *
  * Sub-$1 values render with cents (`$0.42`) so they don't collapse to `$0`.
  * Negative values get a leading `-`.
@@ -31,16 +32,12 @@ export function formatCurrency(amount: number): string {
   const abs = Math.abs(amount)
   if (abs < 1 && abs > 0) return `${sign}$${abs.toFixed(2)}`
   const suffixes = ['', 'k', 'M', 'B', 'T']
-  // Pick the initial band on raw magnitude.
   let bandIdx = 0
   let value = abs
   while (value >= 1_000 && bandIdx < suffixes.length - 1) {
     value /= 1_000
     bandIdx += 1
   }
-  // Round to 3 significant figures within the band. If rounding promotes
-  // the value across the next boundary (e.g. 999_999 → 999.999 → "1000")
-  // bump to the next band and re-round so the display stays at 3 sig figs.
   let rounded = Number.parseFloat(value.toPrecision(3))
   if (rounded >= 1_000 && bandIdx < suffixes.length - 1) {
     rounded /= 1_000
@@ -48,9 +45,13 @@ export function formatCurrency(amount: number): string {
     rounded = Number.parseFloat(rounded.toPrecision(3))
   }
   if (bandIdx === 0) return `${sign}$${Math.round(rounded)}`
-  // 1.00–9.99 → 2 decimals; 10.0–99.9 → 1 decimal; 100–999 → integer.
+  // 1.00–9.99 → up to 2 decimals; 10.0–99.9 → up to 1 decimal; 100–999 → integer.
   const decimals = rounded < 10 ? 2 : rounded < 100 ? 1 : 0
-  return `${sign}$${rounded.toFixed(decimals)}${suffixes[bandIdx]}`
+  // Strip trailing zero-decimals so "$9.00k" → "$9k" and "$9.50k" → "$9.5k".
+  // Done after toFixed so we still round properly first.
+  let body = rounded.toFixed(decimals)
+  if (body.includes('.')) body = body.replace(/\.?0+$/, '')
+  return `${sign}$${body}${suffixes[bandIdx]}`
 }
 
 /**

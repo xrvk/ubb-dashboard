@@ -1,3 +1,4 @@
+import { mapWithConcurrency } from '@/lib/concurrency'
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
@@ -403,12 +404,14 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
       return
     }
     let cancelled = false
-    void Promise.all(
-      costCenters.map(cc =>
-        fetchCopilotUsageSummary(apiFetch, { costCenterId: cc.id })
-          .then(s => [cc.id, s] as const)
-          .catch(() => null),
-      ),
+    // Bounded fan-out: one /usage/summary call per CC. At 1k CCs an
+    // unbounded `Promise.all` would issue 1,000 parallel reads and trip
+    // GitHub's secondary rate limits — we cap at 8 concurrent (same as
+    // `fetchPagesInParallel` for paged endpoints).
+    void mapWithConcurrency(costCenters, 8, cc =>
+      fetchCopilotUsageSummary(apiFetch, { costCenterId: cc.id })
+        .then(s => [cc.id, s] as const)
+        .catch(() => null),
     ).then(results => {
       if (cancelled) return
       const map = new Map<string, CopilotUsageSummary>()

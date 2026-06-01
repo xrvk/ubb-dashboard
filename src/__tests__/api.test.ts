@@ -10,11 +10,14 @@ import {
   AbortedError,
 } from '@/lib/errors'
 import {
+  _resetRateLimitCache,
   buildCostCenterIndex,
   createApiFetch,
   fetchAllCopilotSeats,
   fetchCostCenters,
   fetchUserBudgets,
+  getLastKnownRateLimit,
+  isPrimaryRateLimitExhausted,
   resolveCostCenter,
   type ApiFetch,
   type CostCenter,
@@ -510,6 +513,74 @@ describe('createApiFetch GET retry policy', () => {
     await vi.advanceTimersByTimeAsync(2_000)
     await expect(promise).resolves.toEqual({ ok: true })
     expect(fetchSpy).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('rate limit header capture', () => {
+  it('parses x-ratelimit-* headers and updates the cache on success', async () => {
+    _resetRateLimitCache()
+    const resetSec = Math.floor(Date.now() / 1000) + 1800
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(JSON.stringify([]), {
+        status: 200,
+        headers: {
+          'x-ratelimit-limit': '5000',
+          'x-ratelimit-remaining': '4200',
+          'x-ratelimit-reset': String(resetSec),
+          'x-ratelimit-resource': 'core',
+        },
+      }),
+    )
+    const apiFetch = createApiFetch({ base: 'https://api.github.com', ent: 'x', token: 't' })
+    await apiFetch('/budgets')
+    const snap = getLastKnownRateLimit()
+    expect(snap?.remaining).toBe(4200)
+    expect(snap?.limit).toBe(5000)
+    expect(snap?.resetAt).toBe(resetSec * 1000)
+    expect(snap?.resource).toBe('core')
+    fetchSpy.mockRestore()
+  })
+
+  it('captures rate-limit headers on ApiError so isPrimaryRateLimitExhausted detects exhaustion', async () => {
+    _resetRateLimitCache()
+    const resetSec = Math.floor(Date.now() / 1000) + 600
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response('{"message":"API rate limit exceeded"}', {
+        status: 403,
+        headers: {
+          'x-ratelimit-limit': '5000',
+          'x-ratelimit-remaining': '0',
+          'x-ratelimit-reset': String(resetSec),
+        },
+      }),
+    )
+    const apiFetch = createApiFetch({ base: 'https://api.github.com', ent: 'x', token: 't' })
+    try {
+      await apiFetch('/budgets')
+      throw new Error('should have thrown')
+    } catch (e) {
+      expect(e).toBeInstanceOf(ApiError)
+      const err = e as ApiError
+      expect(err.status).toBe(403)
+      expect(err.headers['x-ratelimit-remaining']).toBe('0')
+      expect(isPrimaryRateLimitExhausted(err)).toBe(true)
+    }
+    fetchSpy.mockRestore()
+  })
+
+  it('isPrimaryRateLimitExhausted is false for 403 with remaining > 0', () => {
+    const err = new ApiError(403, 'forbidden', {
+      headers: { 'x-ratelimit-remaining': '4000' },
+    })
+    expect(isPrimaryRateLimitExhausted(err)).toBe(false)
+  })
+
+  it('isPrimaryRateLimitExhausted is false for 429', () => {
+    const err = new ApiError(429, 'slow down', {
+      headers: { 'x-ratelimit-remaining': '0' },
+    })
+    // 429 = secondary; the retry path handles it. Primary check is 403-only.
+    expect(isPrimaryRateLimitExhausted(err)).toBe(false)
   })
 })
 

@@ -22,6 +22,8 @@ interface Props {
   className?: string
   /** Optional right-aligned slot for filter chips / toggles. */
   rightSlot?: React.ReactNode
+  /** Hide the sort dropdown (e.g. when sortable column headers are present). */
+  hideSort?: boolean
 }
 
 /**
@@ -41,6 +43,7 @@ export function CcListToolbar({
   placeholder,
   className,
   rightSlot,
+  hideSort = false,
 }: Props) {
   return (
     <div className={cn('flex items-center gap-2 flex-wrap', className)}>
@@ -70,21 +73,23 @@ export function CcListToolbar({
           </button>
         ) : null}
       </div>
-      <label className="text-xs text-neutral-500 flex items-center gap-1.5">
-        Sort
-        <select
-          value={sort}
-          onChange={e => onSortChange(e.target.value)}
-          className="h-8 rounded-md border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 text-xs text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-1 focus:ring-neutral-400 dark:focus:ring-neutral-600"
-          aria-label="Sort cost centers by"
-        >
-          {sortOptions.map(o => (
-            <option key={o.id} value={o.id}>
-              {o.label}
-            </option>
-          ))}
-        </select>
-      </label>
+      {hideSort ? null : (
+        <label className="text-xs text-neutral-500 flex items-center gap-1.5">
+          Sort
+          <select
+            value={sort}
+            onChange={e => onSortChange(e.target.value)}
+            className="h-8 rounded-md border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 text-xs text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-1 focus:ring-neutral-400 dark:focus:ring-neutral-600"
+            aria-label="Sort cost centers by"
+          >
+            {sortOptions.map(o => (
+              <option key={o.id} value={o.id}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       <div className="text-[11px] text-neutral-500 tabular-nums">
         {visible === total
           ? `${total.toLocaleString()} CC${total === 1 ? '' : 's'}`
