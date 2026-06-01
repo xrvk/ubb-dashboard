@@ -4,17 +4,21 @@ import { useCredentials } from '@/hooks/use-credentials'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent } from '@/components/ui/card'
+import { readEnterpriseUrlFromUrl } from '@/lib/urlParams'
 
 export function ImportPanel() {
   const { credentials, connect, loading, error } = useCredentials()
-  // Pre-fill the URL from `.env.local` for developer convenience. Gated on
-  // `import.meta.env.DEV` so the bundler tree-shakes the env read away in
-  // production builds — without this guard, the bundle inlines the dev
-  // enterprise URL into the shipped JS.
-  const defaultUrl = import.meta.env.DEV
-    ? ((import.meta.env.VITE_DEV_ENTERPRISE_URL as string | undefined) ?? '')
-    : ''
-  const [url, setUrl] = useState(defaultUrl)
+  // Priority: ?ent= URL param (any environment) > .env.local fallback (dev only).
+  // The env-var read is gated on `import.meta.env.DEV` so the bundler tree-shakes
+  // it away in production builds — without this guard, the bundle would inline
+  // the dev enterprise URL into the shipped JS.
+  const [url, setUrl] = useState(
+    () =>
+      readEnterpriseUrlFromUrl() ??
+      (import.meta.env.DEV
+        ? ((import.meta.env.VITE_DEV_ENTERPRISE_URL as string | undefined) ?? '')
+        : ''),
+  )
   const [token, setToken] = useState('')
 
   if (credentials) {
