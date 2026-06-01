@@ -177,10 +177,10 @@ export function DashboardPage() {
     poolSize === null ? 0 : Math.max(0, trackedForecast.totalProjected - poolSize)
 
   return (
-    <div className="grid gap-6">
+    <div className="space-y-10">
       {/* § 1 — Current state: pool, licenses, used so far. */}
-      <SectionHeader
-        title="AI Credit Pool & Licenses"
+      <Section
+        title="AI credit pool and licenses"
         rightSlot={
           naturalPromoActive ? (
             <button
@@ -193,6 +193,7 @@ export function DashboardPage() {
               }
               className={cn(
                 'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium whitespace-nowrap cursor-pointer transition-colors',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/60 focus-visible:ring-offset-1 dark:focus-visible:ring-offset-neutral-950',
                 promoDisabled
                   ? 'bg-neutral-100 dark:bg-neutral-800/60 text-neutral-500 dark:text-neutral-400 line-through hover:bg-neutral-200 dark:hover:bg-neutral-700/60'
                   : 'bg-amber-100 dark:bg-amber-900/40 text-amber-900 dark:text-amber-200 hover:bg-amber-200 dark:hover:bg-amber-900/60',
@@ -202,20 +203,22 @@ export function DashboardPage() {
             </button>
           ) : null
         }
-      />
-      <PoolAndLicensesCard
-        seatCost={seatCost}
-        usage={usageSummary}
-        credits={credits}
-      />
+      >
+        <PoolAndLicensesCard
+          seatCost={seatCost}
+          usage={usageSummary}
+          credits={credits}
+        />
+      </Section>
 
       {/* § 1b — Budget structure: how the enterprise budget and per-CC
           budgets relate. Same diagram used on the Enterprise Budgets tab;
           the actionable-items banner is suppressed here because it's
           surfaced next to the editable cost-center list on that tab and
           would just be noise on the Dashboard. */}
-      <SectionHeader title="Budget structure" />
-      <BudgetStructureDiagram hideActionableItems />
+      <Section title="Budget structure">
+        <BudgetStructureDiagram hideActionableItems />
+      </Section>
 
       {/* § 2 — Spend so far + forecast. Numbers are gross AI credit
           drawdown (consumption from the pool plus any post-pool metered
@@ -223,8 +226,8 @@ export function DashboardPage() {
           and the pool drawdown bar above. The enterprise budget itself
           caps only the post-pool metered slice, surfaced as a footnote
           in the breakdown card. */}
-      <SectionHeader title="Spend forecast" />
-      <div className="grid gap-3 grid-cols-1 md:grid-cols-4">
+      <Section title="Spend forecast">
+        <div className="grid gap-3 grid-cols-1 md:grid-cols-4">
         <KpiTile
           label="Enterprise budget"
           value={entAmount === null ? 'Not set' : formatCurrency(entAmount)}
@@ -320,37 +323,41 @@ export function DashboardPage() {
             },
           }}
         />
-      </div>
-      <ForecastBreakdownCard tracked={trackedForecast} entBudget={entAmount} />
+        </div>
+        <ForecastBreakdownCard tracked={trackedForecast} entBudget={entAmount} />
+      </Section>
 
       {/* § 3 — Budget allocation: how the enterprise budget and CC budgets
           partition the org. Layout depends on whether CC usage is
           excluded (independent pools) or rolled up into the ent cap. */}
-      <SectionHeader title="Budget allocation" />
-      <BudgetAllocationCard
-        enterpriseBudget={enterpriseBudget}
-        pool={pool}
-      />
+      <Section title="Budget allocation">
+        <BudgetAllocationCard
+          enterpriseBudget={enterpriseBudget}
+          pool={pool}
+        />
+      </Section>
 
       {/* § 4 — Cost centers today: per-CC budget, MTD, projected. */}
-      <SectionHeader title="Cost centers" />
-      <CostCenterStatusCard
-        pool={pool}
-        usageByCostCenterId={usageByCostCenterId}
-      />
+      <Section title="Cost centers">
+        <CostCenterStatusCard
+          pool={pool}
+          usageByCostCenterId={usageByCostCenterId}
+        />
+      </Section>
 
       {/* § 5 — Action items: blocked users, missing budgets, allocation
           risk. */}
-      <SectionHeader title="Action items" />
-      <ActionItemsCard
-        forecast={forecast}
-        universalUlb={universalUlb}
-        entAmount={entAmount}
-        pool={pool}
-        seats={seats}
-        budgets={budgets}
-        loginToCostCenter={loginToCostCenter}
-      />
+      <Section title="Action items">
+        <ActionItemsCard
+          forecast={forecast}
+          universalUlb={universalUlb}
+          entAmount={entAmount}
+          pool={pool}
+          seats={seats}
+          budgets={budgets}
+          loginToCostCenter={loginToCostCenter}
+        />
+      </Section>
     </div>
   )
 }
@@ -606,7 +613,7 @@ function SectionHeader({
   rightSlot?: ReactNode
 }) {
   return (
-    <div className="flex items-baseline gap-2 mt-2">
+    <div className="flex items-baseline gap-2">
       <h2 className="text-base font-semibold text-neutral-900 dark:text-neutral-100">
         {title}
       </h2>
@@ -617,6 +624,28 @@ function SectionHeader({
       ) : null}
       {rightSlot ? <div className="ml-auto">{rightSlot}</div> : null}
     </div>
+  )
+}
+
+// Wraps a section header with its content using a tight inner gap, so the
+// parent's larger inter-section gap reads as a real break in hierarchy
+// rather than a uniform list of rows.
+function Section({
+  title,
+  subtitle,
+  rightSlot,
+  children,
+}: {
+  title: string
+  subtitle?: string
+  rightSlot?: ReactNode
+  children: ReactNode
+}) {
+  return (
+    <section className="space-y-3">
+      <SectionHeader title={title} subtitle={subtitle} rightSlot={rightSlot} />
+      {children}
+    </section>
   )
 }
 
@@ -986,12 +1015,15 @@ function IndependentAllocationView({
 
   return (
     <div className="space-y-3">
-      <div className="flex items-baseline justify-between gap-3 flex-wrap">
-        <div className="text-xs text-neutral-500">
-          Independent pools · enterprise and cost center budgets draw from separate buckets
+      <div className="flex items-baseline justify-between gap-3">
+        <div className="text-xs text-neutral-500 min-w-0">
+          After the pool runs out, metered charges are capped separately for enterprise and cost centers
         </div>
-        <div className="text-[11px] text-neutral-500 tabular-nums">
-          {formatCurrency(totalCommit)} total org commitment
+        <div className="flex items-baseline gap-2 whitespace-nowrap shrink-0">
+          <span className="text-[11px] text-neutral-500">AI credits spend</span>
+          <span className="text-xl font-semibold tabular-nums text-neutral-900 dark:text-neutral-100 leading-none">
+            up to {formatCurrency(totalCommit)}
+          </span>
         </div>
       </div>
 
@@ -1394,7 +1426,7 @@ function CostCenterStatusCard({
             onClick={() => window.dispatchEvent(new Event(NAV_TO_BUDGET_MODEL_EVENT))}
             className="underline hover:text-neutral-700 dark:hover:text-neutral-200"
           >
-            How CCs affect Copilot billing →
+            How Cost centers affect Copilot billing →
           </button>
         </p>
       </CardHeader>
