@@ -90,6 +90,12 @@ The app persists *nothing* to a server. It uses, in order of preference:
    preferences, last-used tab. Keys are namespaced `dashboard.*`.
 3. **`.env.local`** (developer-only) for auto-connecting during local
    dev. Never read in production builds, never bundled, never committed.
+   Multiple `.env.<slug>.local` files can sit alongside it; the Vite
+   dev-server exposes them at `/__dev_profiles` so the connection menu
+   can offer a "Switch profile" picker. See the README §"Multiple profiles"
+   for the user-facing flow. End-user multi-enterprise is intentionally
+   not supported in the deployed app — persisting PATs to `localStorage`
+   would expand XSS blast radius for a small audience.
 
 ## Demo mode
 

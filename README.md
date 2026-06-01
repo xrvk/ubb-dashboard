@@ -227,6 +227,26 @@ VITE_DEV_PAT=ghp_xxxxxxxxxxxxxxxxx
 
 This file is gitignored and never persisted anywhere else.
 
+#### Multiple profiles (dev only)
+
+If you regularly bounce between enterprises (e.g. a staging GHE.com tenant + a production GHEC enterprise), drop one file per profile alongside `.env.local`:
+
+```bash
+# .env.tbb-staffship.local
+VITE_DEV_ENTERPRISE_URL=https://tbb-staffship.ghe.com/enterprises/tbb-staffship
+VITE_DEV_PAT=ghp_xxxxxxxxxxxxxxxxx
+
+# .env.octodemo.local
+VITE_DEV_ENTERPRISE_URL=https://github.com/enterprises/octodemo
+VITE_DEV_PAT=ghp_yyyyyyyyyyyyyyyyy
+```
+
+Any file matching `.env.<slug>.local` with both vars set will appear under **Switch profile** in the connection menu pill at the top of the app. The `<slug>` becomes the profile name. Selecting one disconnects the current session and reconnects against the new enterprise.
+
+This is wired up by a small Vite dev-server middleware ([`vite.config.ts`](./vite.config.ts) exposes `/__dev_profiles`), so the mechanism **only exists in `npm run dev`** — production builds never read these files and never expose this endpoint. All `.env*.local` files are gitignored.
+
+We deliberately don't ship an in-app "Add enterprise" UI for the deployed dashboard. PATs live in memory only on the deployed app; persisting them to `localStorage` would expand the XSS blast radius without a strong product justification. If you self-host and want multiple enterprises, this `.env` pattern is the supported workflow.
+
 ### Run with Docker
 
 A multi-stage `Dockerfile` builds the static bundle and serves it with nginx. A dev variant runs the Vite dev server with HMR.
