@@ -41,7 +41,7 @@ const TAB_LABELS: Record<Tab, string> = {
 }
 
 export function App() {
-  const { credentials, refresh, disconnect, loading, partialLoadWarnings, dismissPartialLoadWarning } = useCredentials()
+  const { credentials, refresh, disconnect, loading, devProfiles, switchProfile, partialLoadWarnings, dismissPartialLoadWarning } = useCredentials()
   const { theme, resolvedTheme, setTheme } = useTheme()
 
   /**
@@ -300,6 +300,11 @@ export function App() {
                     disconnect()
                   }
                 }}
+                devProfiles={devProfiles}
+                onSwitchProfile={p => {
+                  void switchProfile(p)
+                }}
+                currentHost={credentials.base !== 'demo://' ? new URL(credentials.base).host : undefined}
               />
             </div>
           </div>

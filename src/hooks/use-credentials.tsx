@@ -141,6 +141,10 @@ interface CredentialsContextValue {
   connect: (enterpriseUrl: string, token: string) => Promise<void>
   disconnect: () => void
   refresh: () => Promise<void>
+  /** Dev-only: extra `.env.*.local` profiles for the connection menu's quick-switch. Empty in production. */
+  devProfiles: ReadonlyArray<{ name: string; url: string; token: string }>
+  /** Dev-only: disconnect, then connect with the given profile's credentials. */
+  switchProfile: (profile: { url: string; token: string }) => Promise<void>
 }
 
 const Ctx = createContext<CredentialsContextValue | null>(null)
@@ -163,6 +167,7 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(false)
   const [loadProgress, setLoadProgress] = useState<{ loaded: number; total: number | undefined } | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [devProfiles, setDevProfiles] = useState<ReadonlyArray<{ name: string; url: string; token: string }>>([])
   const [partialLoadWarnings, setPartialLoadWarnings] = useState<PartialLoadWarning[]>([])
   // Features the user has explicitly dismissed. Persists across `refresh()`
   // so a permanent condition (e.g. missing scope) doesn't keep re-surfacing
@@ -178,6 +183,28 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
   /** Filter out warnings the user has already dismissed this session. */
   const applyWarnings = useCallback((warnings: PartialLoadWarning[]) => {
     setPartialLoadWarnings(warnings.filter(w => !dismissedFeaturesRef.current.has(w.feature)))
+  }, [])
+
+  // Fetch dev profiles from the Vite middleware. Only attempted in dev
+  // (the endpoint doesn't exist in production builds). Failures are
+  // silently swallowed — profiles are a developer convenience.
+  useEffect(() => {
+    if (!import.meta.env.DEV) return
+    void fetch('/__dev_profiles')
+      .then(r => (r.ok ? r.json() : []))
+      .then((data: unknown) => {
+        if (Array.isArray(data)) {
+          setDevProfiles(
+            data.filter(
+              (p): p is { name: string; url: string; token: string } =>
+                !!p && typeof (p as { name?: unknown }).name === 'string' &&
+                typeof (p as { url?: unknown }).url === 'string' &&
+                typeof (p as { token?: unknown }).token === 'string',
+            ),
+          )
+        }
+      })
+      .catch(() => {})
   }, [])
 
   const apiFetch = useMemo(
@@ -319,6 +346,11 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
     setPartialLoadWarnings([])
   }, [])
 
+  const switchProfile = useCallback(async (profile: { url: string; token: string }) => {
+    disconnect()
+    await connect(profile.url, profile.token)
+  }, [connect, disconnect])
+
   // Dev auto-connect from .env.local (runs at most once)
   const autoConnectRef = useRef(false)
   useEffect(() => {
@@ -358,11 +390,18 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
       })
       return
     }
-    const url = import.meta.env.VITE_DEV_ENTERPRISE_URL as string | undefined
-    const token = import.meta.env.VITE_DEV_PAT as string | undefined
-    if (url && token) {
-      autoConnectRef.current = true
-      void Promise.resolve().then(() => connect(url, token))
+    // Auto-connect from `.env.local` is a developer convenience and must
+    // never run in a production build — Vite would otherwise inline the
+    // PAT into the bundle. Gating on `import.meta.env.DEV` (a compile-time
+    // boolean literal) lets the bundler dead-code-eliminate this branch in
+    // production, stripping the env reads with it.
+    if (import.meta.env.DEV) {
+      const url = import.meta.env.VITE_DEV_ENTERPRISE_URL as string | undefined
+      const token = import.meta.env.VITE_DEV_PAT as string | undefined
+      if (url && token) {
+        autoConnectRef.current = true
+        void Promise.resolve().then(() => connect(url, token))
+      }
     }
   }, [connect, credentials])
 
@@ -462,6 +501,8 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
     connect,
     disconnect,
     refresh,
+    devProfiles,
+    switchProfile,
   }
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
