@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import {
   buildCostCenterIndex,
   createApiFetch,
+  fetchAllCopilotSeats,
   fetchCostCenters,
   fetchUserBudgets,
   resolveCostCenter,
@@ -35,7 +36,7 @@ describe('fetchUserBudgets pagination', () => {
       all.push(fakeBudget(i, i % 10 === 0 ? 'enterprise' : 'user'))
     }
     const fetchMock: ApiFetch = vi.fn(async path => {
-      const m = String(path).match(/page=(\d+)/)
+      const m = String(path).match(/[?&]page=(\d+)/)
       const page = m ? Number(m[1]) : 1
       const start = (page - 1) * PAGE_SIZE
       return {
@@ -68,7 +69,47 @@ describe('fetchUserBudgets pagination', () => {
     expect(result.totalBudgetCount).toBe(5)
   })
 
-  it('stops on an empty page when total_count is missing', async () => {
+  it('preserves page order when pages 2..N return out of order (parallel fetch)', async () => {
+    const TOTAL = 50
+    const PAGE_SIZE = 10
+    // Simulate variable per-page latency so page 5 lands before page 2.
+    const delays: Record<number, number> = { 1: 0, 2: 50, 3: 30, 4: 10, 5: 0 }
+    const fetchMock: ApiFetch = vi.fn(async path => {
+      const m = String(path).match(/[?&]page=(\d+)/)
+      const page = m ? Number(m[1]) : 1
+      const start = (page - 1) * PAGE_SIZE
+      await new Promise(r => setTimeout(r, delays[page] ?? 0))
+      const slice = Array.from({ length: PAGE_SIZE }, (_, i) => fakeBudget(start + i, 'user'))
+      return { total_count: TOTAL, budgets: slice }
+    })
+
+    const result = await fetchUserBudgets(fetchMock)
+    expect(result.userBudgets).toHaveLength(TOTAL)
+    // IDs must come out in original ascending order even when later pages
+    // resolve first — guards against accidentally concatenating in resolution
+    // order instead of page order.
+    expect(result.userBudgets.map(b => b.id)).toEqual(
+      Array.from({ length: TOTAL }, (_, i) => `b${i}`),
+    )
+  })
+
+  it('rejects when a later parallel page fails', async () => {
+    const TOTAL = 30
+    const PAGE_SIZE = 10
+    const fetchMock: ApiFetch = vi.fn(async path => {
+      const m = String(path).match(/[?&]page=(\d+)/)
+      const page = m ? Number(m[1]) : 1
+      if (page === 3) throw new Error('500: boom')
+      const start = (page - 1) * PAGE_SIZE
+      return {
+        total_count: TOTAL,
+        budgets: Array.from({ length: PAGE_SIZE }, (_, i) => fakeBudget(start + i, 'user')),
+      }
+    })
+    await expect(fetchUserBudgets(fetchMock)).rejects.toThrow(/500: boom/)
+  })
+
+  it('stops on an empty page when total_count is missing (sequential fallback)', async () => {
     let calls = 0
     const fetchMock: ApiFetch = vi.fn(async () => {
       calls += 1
@@ -77,9 +118,79 @@ describe('fetchUserBudgets pagination', () => {
     })
     const result = await fetchUserBudgets(fetchMock)
     expect(result.userBudgets).toHaveLength(2)
-    // Falls back to the number of raw budgets paginated through
     expect(result.totalBudgetCount).toBe(2)
     expect(calls).toBe(2)
+  })
+})
+
+describe('fetchAllCopilotSeats pagination', () => {
+  function fakeSeatPage(start: number, count: number, totalSeats: number) {
+    return {
+      total_seats: totalSeats,
+      seats: Array.from({ length: count }, (_, i) => ({
+        assignee: { login: `user${start + i}` },
+        organization: { login: `org${(start + i) % 3}` },
+        last_activity_at: null,
+        plan_type: 'business',
+      })),
+    }
+  }
+
+  it('paginates a large enterprise (1320 seats / 14 pages) and dedupes', async () => {
+    const TOTAL = 1320
+    const PAGE_SIZE = 100
+    const fetchMock: ApiFetch = vi.fn(async (path: string) => {
+      const m = path.match(/[?&]page=(\d+)/)
+      const page = m ? Number(m[1]) : 1
+      const start = (page - 1) * PAGE_SIZE
+      const count = Math.min(PAGE_SIZE, TOTAL - start)
+      return fakeSeatPage(start, count, TOTAL)
+    })
+    const result = await fetchAllCopilotSeats(fetchMock)
+    // ceil(1320/100) = 14
+    expect(fetchMock).toHaveBeenCalledTimes(14)
+    expect(result).toHaveLength(TOTAL)
+    expect(result[0].login).toBe('user0')
+    expect(result[TOTAL - 1].login).toBe('user1319')
+  })
+
+  it('returns page 1 only when total_seats is already satisfied', async () => {
+    const fetchMock: ApiFetch = vi.fn(async () => fakeSeatPage(0, 3, 3))
+    const result = await fetchAllCopilotSeats(fetchMock)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(result).toHaveLength(3)
+  })
+
+  it('falls back to sequential when total_seats is missing', async () => {
+    let calls = 0
+    const fetchMock: ApiFetch = vi.fn(async () => {
+      calls += 1
+      if (calls <= 2) {
+        return {
+          // total_seats intentionally omitted
+          seats: Array.from({ length: 100 }, (_, i) => ({
+            assignee: { login: `user${(calls - 1) * 100 + i}` },
+          })),
+        }
+      }
+      return { seats: [] }
+    })
+    const result = await fetchAllCopilotSeats(fetchMock)
+    expect(result).toHaveLength(200)
+    expect(calls).toBe(3)
+  })
+
+  it('dedupes seats that appear in multiple orgs', async () => {
+    const fetchMock: ApiFetch = vi.fn(async () => ({
+      total_seats: 3,
+      seats: [
+        { assignee: { login: 'alice' }, organization: { login: 'org-a' } },
+        { assignee: { login: 'alice' }, organization: { login: 'org-b' } },
+        { assignee: { login: 'bob' }, organization: { login: 'org-a' } },
+      ],
+    }))
+    const result = await fetchAllCopilotSeats(fetchMock)
+    expect(result.map(s => s.login).sort()).toEqual(['alice', 'bob'])
   })
 })
 
