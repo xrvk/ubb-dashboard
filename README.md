@@ -300,12 +300,36 @@ Demo mode generates believable user distributions (~70% low / 15% moderate / 7% 
 
 The Import panel needs two things:
 
-1. **Enterprise URL** — e.g. `https://github.com/enterprises/your-slug` or `https://your-host.ghe.com/enterprises/your-slug`. Can be prefilled via [`?ent=your-slug`](docs/url-parameters.md) when sharing links.
+1. **Enterprise URL** — e.g. `https://github.com/enterprises/your-slug` or `https://your-host.ghe.com/enterprises/your-slug`.
 2. **Classic personal access token** with the `manage_billing:enterprise` scope.
 
 > Fine-grained tokens are **not** supported on the enterprise billing API. This is a platform limitation, not an app limitation.
 
 On connect, the app fetches every budget and every Copilot seat in your enterprise (both are paginated up to the platform's ~10,000 budget cap and seat count). It does this once on connect and again per Refresh.
+
+### Pre-fill the enterprise URL via a shareable link
+
+Solutions Engineers and admins can send teammates a link that pre-fills the Enterprise URL field on the connect screen. The recipient still needs to paste their own PAT — credentials are never in the URL.
+
+**github.com:**
+
+```
+https://xrvk.github.io/ubb-dashboard/?ent=acme-corp
+```
+
+**GHE.com (data residency tenants):**
+
+```
+https://xrvk.github.io/ubb-dashboard/?ent=acme-corp&host=acme.ghe.com
+```
+
+Or pass the full URL directly:
+
+```
+https://xrvk.github.io/ubb-dashboard/?ent=https://acme.ghe.com/enterprises/acme-corp
+```
+
+See [`docs/url-parameters.md`](./docs/url-parameters.md) for the full list of supported parameters (most are for development and testing).
 
 ### Endpoints used
 
