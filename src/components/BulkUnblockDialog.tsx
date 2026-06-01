@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { formatCurrency, cn } from '@/lib/utils'
 import { projectMonthlyBudget } from '@/lib/projection'
+import { getEffectiveDemoAsof } from '@/lib/demo'
 import { estimateBatchDurationMs, PRIMARY_LIMIT_PER_HOUR, type BatchProgress } from '@/lib/batch'
 import { daysUntilCycleReset } from '@/lib/snapshot'
 import type { UserBudget } from '@/lib/api'
@@ -71,14 +72,18 @@ export function BulkUnblockDialog({ open, onOpenChange, selected, onApply }: Pro
 
   const rows: Row[] = useMemo(() => {
     const buffer = bufferPct / 100
+    const asof = getEffectiveDemoAsof() ?? undefined
     return selected.map(b => {
-      const p = projectMonthlyBudget(b.consumedAmount, buffer)
+      const p = projectMonthlyBudget(b.consumedAmount, buffer, asof)
       const override = overrides[b.id] ?? null
       return { budget: b, recommended: p.recommendedBudget, override, lowConfidence: p.lowConfidence }
     })
   }, [selected, bufferPct, overrides])
 
-  const projMeta = useMemo(() => projectMonthlyBudget(0, bufferPct / 100), [bufferPct])
+  const projMeta = useMemo(
+    () => projectMonthlyBudget(0, bufferPct / 100, getEffectiveDemoAsof() ?? undefined),
+    [bufferPct],
+  )
 
   const totalNew = rows.reduce((sum, r) => sum + (r.override ?? r.recommended), 0)
   const totalOld = rows.reduce((sum, r) => sum + r.budget.budgetAmount, 0)

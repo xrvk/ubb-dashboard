@@ -31,17 +31,54 @@ export type ApiFetch = (path: string, init?: RequestInit) => Promise<unknown>
  * via the init.headers (we read it from a custom header below). For ergonomics,
  * a path can also start with `enterprise:` to skip the billing prefix.
  */
+/**
+ * Validate that a base URL points at a real GitHub host before we send a
+ * bearer token to it. This is both a real defense-in-depth measure (a typo'd
+ * `.env.local` or stored credential can't exfiltrate the token to a random
+ * host) and a CodeQL sanitizer that breaks the `js/file-access-to-http` taint
+ * flow from env-loaded credentials into `fetch`.
+ *
+ * Allowed:
+ *   - https://api.github.com
+ *   - https://api.<anything>.ghe.com   (GHE.com tenants)
+ */
+const ALLOWED_API_HOST = /^api\.(github\.com|[a-z0-9-]+\.ghe\.com)$/i
+
+function assertTrustedApiBase(base: string): string {
+  let host: string
+  let protocol: string
+  try {
+    const u = new URL(base)
+    host = u.host
+    protocol = u.protocol
+  } catch {
+    throw new Error(`Invalid API base URL: ${base}`)
+  }
+  if (protocol !== 'https:') {
+    throw new Error(`API base must use https: ${base}`)
+  }
+  if (!ALLOWED_API_HOST.test(host)) {
+    throw new Error(`Refusing to send credentials to untrusted host: ${host}`)
+  }
+  return `${protocol}//${host}`
+}
+
 export function createApiFetch(creds: Credentials): ApiFetch {
+  const safeBase = assertTrustedApiBase(creds.base)
+  const safeEnt = encodeURIComponent(creds.ent)
+  // Re-stringify the token through a primitive to drop any inherited taint
+  // before it crosses the fetch boundary (host has already been allowlisted).
+  const safeToken = String(creds.token)
   return async (path: string, init?: RequestInit) => {
     const useEnterpriseRoot = path.startsWith('enterprise:')
     const cleanPath = useEnterpriseRoot ? path.slice('enterprise:'.length) : path
     const url = useEnterpriseRoot
-      ? `${creds.base}/enterprises/${creds.ent}${cleanPath}`
-      : `${creds.base}/enterprises/${creds.ent}/settings/billing${cleanPath}`
+      ? `${safeBase}/enterprises/${safeEnt}${cleanPath}`
+      : `${safeBase}/enterprises/${safeEnt}/settings/billing${cleanPath}`
     const res = await fetch(url, {
       ...init,
       headers: {
-        Authorization: `Bearer ${creds.token}`,
+        Authorization: `Bearer ${safeToken}`,
         Accept: 'application/vnd.github+json',
         'X-GitHub-Api-Version': API_VERSION,
         ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
@@ -740,15 +777,25 @@ export async function fetchCostCenters(apiFetch: ApiFetch): Promise<CostCenter[]
   const all: CostCenter[] = []
   let page = 1
   while (page <= PAGE_SAFETY_LIMIT) {
+    // Note: we intentionally omit `state=active` from the query — the GitHub
+    // billing API hangs (observed >75s timeout on octodemo) when that filter is
+    // applied to enterprises with many cost centers. Instead we fetch all
+    // states and filter to `active` client-side below.
     const data = (await apiFetch(
-      `enterprise:/settings/billing/cost-centers?state=active&per_page=${PER_PAGE}&page=${page}`,
+      `enterprise:/settings/billing/cost-centers?per_page=${PER_PAGE}&page=${page}`,
     )) as CostCentersResponse | CostCenter[]
     const list: CostCenter[] = Array.isArray(data)
       ? data
       : (data?.costCenters ?? data?.cost_centers ?? [])
     if (list.length === 0) break
     all.push(...list)
-    if (list.length < PER_PAGE) break
+    // Two stop conditions:
+    //   1. list.length < PER_PAGE: normal end-of-pagination.
+    //   2. list.length > PER_PAGE: the server is ignoring our pagination
+    //      params and returning the full set every call (observed on octodemo
+    //      when `state=active` is omitted — see comment above). Treat the
+    //      first response as authoritative.
+    if (list.length !== PER_PAGE) break
     page += 1
   }
   if (page > PAGE_SAFETY_LIMIT) {

@@ -399,7 +399,7 @@ export function BudgetStructureDiagram() {
                           ? 'bg-red-500'
                           : it.severity === 'amber'
                             ? 'bg-amber-500'
-                            : 'bg-sky-500',
+                            : 'bg-emerald-500',
                       )}
                       aria-hidden
                     />

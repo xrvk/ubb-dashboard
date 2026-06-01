@@ -14,9 +14,9 @@ export interface UtilBucket {
 
 export const UTIL_BUCKETS: UtilBucket[] = [
   { id: 'b0-50', label: '0–50% (low)', short: '0–50', min: 0, max: 0.5, color: '#10b981' },
-  { id: 'b50-80', label: '50–80% (moderate)', short: '50–80', min: 0.5, max: 0.8, color: '#22c55e' },
+  { id: 'b50-80', label: '50–80% (moderate)', short: '50–80', min: 0.5, max: 0.8, color: '#059669' },
   { id: 'b80-90', label: '80–90% (getting close)', short: '80–90', min: 0.8, max: 0.9, color: '#f59e0b' },
-  { id: 'b90-100', label: '90–100% (about to block)', short: '90–100', min: 0.9, max: 1, color: '#f97316' },
+  { id: 'b90-100', label: '90–100% (about to block)', short: '90–100', min: 0.9, max: 1, color: '#b45309' },
   { id: 'b100', label: '100%+ (blocked / over)', short: '100+', min: 1, max: Infinity, color: '#dc2626' },
 ]
 
