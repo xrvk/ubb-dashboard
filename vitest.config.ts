@@ -8,11 +8,16 @@ export default defineConfig({
     },
   },
   test: {
-    environment: 'jsdom',
+    // Default to `node` — most of the suite is pure logic and starts
+    // ~3x faster without a jsdom window. Tests that need DOM opt in
+    // with `// @vitest-environment jsdom` at the top of the file
+    // (currently snapshot.test.ts and reportCache.test.ts).
+    environment: 'node',
     globals: true,
     setupFiles: './src/__tests__/setup.ts',
-    // Threads pool is faster than the default forks pool for this
-    // small jsdom suite (lower per-worker startup cost).
+    // Threads pool benchmarked faster than forks for this suite
+    // (lower per-worker startup cost); revisit if file count grows
+    // or tests start sharing module-level state across workers.
     pool: 'threads',
     // Suppress vitest's per-file progress output in non-TTY contexts
     // (CI logs) while keeping the default reporter locally.
