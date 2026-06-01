@@ -1,10 +1,11 @@
 /* eslint-disable react-refresh/only-export-components */
 import { useMemo, useState } from 'react'
-import { CaretDown, CaretUp, PencilSimple, Trash, MagnifyingGlass, CaretLeft, CaretRight, LockOpen, X, Buildings } from '@phosphor-icons/react'
+import { CaretDown, CaretUp, PencilSimple, Trash, MagnifyingGlass, CaretLeft, CaretRight, LockOpen, X } from '@phosphor-icons/react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { StatusBadge } from '@/components/ui/status-badge'
+import { CostCenterCombobox, type CostCenterOption } from '@/components/ui/cost-center-combobox'
 import { formatCurrency, formatPercent, cn } from '@/lib/utils'
 import { classifyStatus, utilization, type Status } from '@/lib/status'
 import { projectMonthlyBudget } from '@/lib/projection'
@@ -338,36 +339,34 @@ export function BudgetsTable({ budgets, filters, onFiltersChange, onEdit, onDele
               ) : null}
             </div>
             {costCenters.length > 0 ? (
-              <div className="inline-flex items-center gap-1.5 text-xs text-neutral-500">
-                <Buildings size={14} weight="duotone" className="text-neutral-400" />
-                <select
-                  value={filters.costCenter}
-                  onChange={e => setFilter({ costCenter: e.target.value })}
-                  className="h-8 rounded-md border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 text-xs text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-1 focus:ring-neutral-400 dark:focus:ring-neutral-600"
-                  title="Filter by cost center"
-                  aria-label="Filter by cost center"
-                >
-                  <option value="">All cost centers</option>
-                  <option value={UNASSIGNED_CC}>Unassigned</option>
-                  <optgroup label="Cost centers">
-                    {[...costCenters]
-                      .sort((a, b) => a.name.localeCompare(b.name))
-                      .map(cc => (
-                        <option key={cc.id} value={cc.id}>{cc.name}</option>
-                      ))}
-                  </optgroup>
-                </select>
-                {filters.costCenter ? (
-                  <button
-                    onClick={() => setFilter({ costCenter: '' })}
-                    className="h-8 px-1.5 inline-flex items-center rounded-md text-neutral-600 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-neutral-100 hover:bg-neutral-100 dark:hover:bg-neutral-800"
-                    title="Clear cost center filter"
-                    aria-label="Clear cost center filter"
-                  >
-                    <X size={12} weight="bold" />
-                  </button>
-                ) : null}
-              </div>
+              (() => {
+                const ccCounts = new Map<string, number>()
+                let unassignedCount = 0
+                for (const b of budgets) {
+                  const res = loginToCostCenter?.get(b.user)
+                  if (res) ccCounts.set(res.cc.id, (ccCounts.get(res.cc.id) ?? 0) + 1)
+                  else unassignedCount += 1
+                }
+                const ccOptions: CostCenterOption[] = [
+                  { id: '', label: 'All cost centers', count: budgets.length, emphasis: true },
+                ]
+                if (unassignedCount > 0) {
+                  ccOptions.push({ id: UNASSIGNED_CC, label: 'Unassigned', count: unassignedCount })
+                }
+                for (const cc of [...costCenters].sort((a, b) => a.name.localeCompare(b.name))) {
+                  ccOptions.push({ id: cc.id, label: cc.name, count: ccCounts.get(cc.id) ?? 0 })
+                }
+                return (
+                  <CostCenterCombobox
+                    options={ccOptions}
+                    value={filters.costCenter}
+                    onChange={id => setFilter({ costCenter: id })}
+                    placeholder="All cost centers"
+                    ariaLabel="Filter by cost center"
+                    onClear={filters.costCenter ? () => setFilter({ costCenter: '' }) : undefined}
+                  />
+                )
+              })()
             ) : null}
             <div className="relative">
               <MagnifyingGlass size={14} weight="duotone" className="absolute left-2.5 top-1/2 -translate-y-1/2 text-neutral-400" />
