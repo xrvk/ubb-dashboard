@@ -15,7 +15,6 @@ import { UniversalUbbPage } from '@/components/UniversalUbbPage'
 import { BudgetConstraintsHelpPage } from '@/components/BudgetConstraintsHelpPage'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { PartialLoadBanner } from '@/components/PartialLoadBanner'
-import { CopyErrorLogButton } from '@/components/CopyErrorLogButton'
 import { Button } from '@/components/ui/button'
 import { cn, openExternal } from '@/lib/utils'
 import { describeError, isAborted } from '@/lib/errors'
@@ -438,8 +437,6 @@ export function App() {
             >
               Source
             </a>
-            {' · '}
-            <CopyErrorLogButton />
           </p>
         </div>
       </footer>
