@@ -186,7 +186,7 @@ export function parseSnapshot(input: string, expectedEnterprise?: string): Parse
       error: `Snapshot was taken from enterprise '${obj.enterprise}', but you are connected to '${expectedEnterprise}'.`,
     }
   }
-  if (typeof obj.id !== 'string' || typeof obj.appliedAt !== 'number' || typeof obj.cycleEndsAt !== 'number') {
+  if (typeof obj.id !== 'string' || !Number.isFinite(obj.appliedAt as number) || !Number.isFinite(obj.cycleEndsAt as number)) {
     return { ok: false, error: 'Snapshot is missing required fields.' }
   }
   if (!Array.isArray(obj.entries) || obj.entries.length === 0) {
@@ -199,16 +199,16 @@ export function parseSnapshot(input: string, expectedEnterprise?: string): Parse
     if (
       typeof e.budgetId !== 'string' ||
       typeof e.user !== 'string' ||
-      typeof e.previousAmount !== 'number' ||
-      typeof e.newAmount !== 'number'
+      !Number.isFinite(e.previousAmount as number) ||
+      !Number.isFinite(e.newAmount as number)
     ) {
       return { ok: false, error: 'Snapshot entries are missing required fields.' }
     }
     entries.push({
       budgetId: e.budgetId,
       user: e.user,
-      previousAmount: e.previousAmount,
-      newAmount: e.newAmount,
+      previousAmount: e.previousAmount as number,
+      newAmount: e.newAmount as number,
     })
   }
   return {
@@ -216,8 +216,8 @@ export function parseSnapshot(input: string, expectedEnterprise?: string): Parse
     snapshot: {
       id: obj.id,
       enterprise: obj.enterprise,
-      appliedAt: obj.appliedAt,
-      cycleEndsAt: obj.cycleEndsAt,
+      appliedAt: obj.appliedAt as number,
+      cycleEndsAt: obj.cycleEndsAt as number,
       entries,
     },
   }

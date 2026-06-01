@@ -52,4 +52,44 @@ describe('projectMonthlyBudget', () => {
     // projected = 5 + 5 * 29 = 150, * 1.05 = 157.5 → ceil 158
     expect(r.recommendedBudget).toBe(158)
   })
+
+  // --- Input sanitization. The function feeds a customer-facing UI; non-
+  // finite inputs from upstream parsing must not leak through as "$NaN"
+  // or "$Infinity" budget recommendations. ---
+
+  it('clamps NaN consumed to 0 (returns the $1 floor, not NaN)', () => {
+    const now = new Date(2025, 5, 15)
+    const r = projectMonthlyBudget(NaN, 0.05, now)
+    expect(Number.isFinite(r.recommendedBudget)).toBe(true)
+    expect(r.recommendedBudget).toBe(1)
+  })
+
+  it('clamps Infinity consumed to 0', () => {
+    const now = new Date(2025, 5, 15)
+    const r = projectMonthlyBudget(Infinity, 0.05, now)
+    expect(Number.isFinite(r.recommendedBudget)).toBe(true)
+    expect(r.recommendedBudget).toBe(1)
+  })
+
+  it('clamps negative consumed to 0 (cannot have spent less than zero)', () => {
+    const now = new Date(2025, 5, 15)
+    const r = projectMonthlyBudget(-50, 0.05, now)
+    expect(r.recommendedBudget).toBe(1)
+  })
+
+  it('clamps non-finite growth buffer to 0', () => {
+    const now = new Date(2025, 5, 15) // 15/30 days
+    const r = projectMonthlyBudget(50, NaN, now)
+    // projection = 100, no growth → recommended = 100
+    expect(r.recommendedBudget).toBe(100)
+    const r2 = projectMonthlyBudget(50, Infinity, now)
+    expect(Number.isFinite(r2.recommendedBudget)).toBe(true)
+    expect(r2.recommendedBudget).toBe(100)
+  })
+
+  it('clamps negative growth buffer to 0 (no negative-buffer discount)', () => {
+    const now = new Date(2025, 5, 15)
+    const r = projectMonthlyBudget(50, -0.5, now)
+    expect(r.recommendedBudget).toBe(100)
+  })
 })
