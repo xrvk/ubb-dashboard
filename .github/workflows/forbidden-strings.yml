@@ -11,10 +11,11 @@ permissions:
 # GitHub's built-in secret scanning + push protection (enabled on this repo)
 # only covers known provider token patterns. This job is a custom belt-and-
 # suspenders gate for things that aren't credentials but that we still don't
-# want in source: real tenant slugs / hostnames the author used during dev.
+# want in source: real tenant slugs the author used during dev.
 #
-# To add a forbidden pattern, append a Perl-compatible regex to PATTERNS.
-# Add an exception path to EXCLUDE_PATHS if a legitimate match exists.
+# To add a forbidden pattern, append a fixed string or Perl-compatible regex
+# to PATTERNS. Add an exception path to EXCLUDE_PATHS if a legitimate match
+# exists (e.g. this workflow file itself).
 jobs:
   scan:
     runs-on: ubuntu-latest
@@ -29,7 +30,6 @@ jobs:
           PATTERNS=(
             'tbb-staffship'
             'octodemo'
-            '[a-z0-9-]+\.ghe\.com/enterprises/'
           )
           EXCLUDE_PATHS=(
             ':!.github/workflows/forbidden-strings.yml'
