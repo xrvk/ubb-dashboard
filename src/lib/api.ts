@@ -27,6 +27,60 @@ export interface Credentials {
 // `@/lib/api` keep working. New code should import from `@/lib/errors`.
 export { ApiError } from '@/lib/errors'
 export type { ErrorKind, ErrorDescription } from '@/lib/errors'
+import { ApiError as _ApiError } from '@/lib/errors'
+
+/**
+ * Snapshot of the GitHub primary rate limit at the time of a response.
+ * Parsed from `x-ratelimit-*` headers. `resetAt` is a unix-epoch ms timestamp.
+ */
+export interface RateLimitSnapshot {
+  limit: number
+  remaining: number
+  resetAt: number
+  resource: string | null
+}
+
+/**
+ * GitHub returns `403 Forbidden` (not 429) when the primary 5,000 req/hr
+ * limit is exhausted, with `x-ratelimit-remaining: 0`. Distinguishing this
+ * from a permission 403 lets the batch runner abort cleanly instead of
+ * retrying or sleeping for up to an hour.
+ */
+export function isPrimaryRateLimitExhausted(err: unknown): err is _ApiError {
+  if (!(err instanceof _ApiError)) return false
+  if (err.status !== 403) return false
+  return err.headers['x-ratelimit-remaining'] === '0'
+}
+
+function parseRateLimitHeaders(headers: Headers): RateLimitSnapshot | null {
+  const limit = headers.get('x-ratelimit-limit')
+  const remaining = headers.get('x-ratelimit-remaining')
+  const reset = headers.get('x-ratelimit-reset')
+  if (!limit || !remaining || !reset) return null
+  const limitNum = Number(limit)
+  const remainingNum = Number(remaining)
+  const resetSec = Number(reset)
+  if (!Number.isFinite(limitNum) || !Number.isFinite(remainingNum) || !Number.isFinite(resetSec)) {
+    return null
+  }
+  return {
+    limit: limitNum,
+    remaining: remainingNum,
+    resetAt: Math.round(resetSec * 1000),
+    resource: headers.get('x-ratelimit-resource'),
+  }
+}
+
+let lastRateLimit: RateLimitSnapshot | null = null
+
+export function getLastKnownRateLimit(): RateLimitSnapshot | null {
+  return lastRateLimit
+}
+
+/** Test-only: reset module state between tests. */
+export function _resetRateLimitCache(): void {
+  lastRateLimit = null
+}
 
 export type ApiFetch = (path: string, init?: RequestInit) => Promise<unknown>
 
@@ -158,6 +212,8 @@ export function createApiFetch(creds: Credentials): ApiFetch {
         throw new NetworkError(cause)
       }
       const text = await res.text()
+      const snapshot = parseRateLimitHeaders(res.headers)
+      if (snapshot) lastRateLimit = snapshot
       if (!res.ok) {
         throw apiErrorFromResponse(res.status, text, captureHeaders(res))
       }
@@ -204,6 +260,27 @@ export function createApiFetch(creds: Credentials): ApiFetch {
     }
     throw lastErr
   }
+}
+
+/**
+ * Free pre-flight lookup of the caller's current rate-limit window. The
+ * `/rate_limit` endpoint does not itself count against the limit, so it's
+ * safe to poll before launching a large batch.
+ */
+export async function fetchRateLimit(creds: Credentials): Promise<RateLimitSnapshot | null> {
+  const safeBase = assertTrustedApiBase(creds.base)
+  const safeToken = String(creds.token)
+  const res = await fetch(`${safeBase}/rate_limit`, {
+    headers: {
+      Authorization: `Bearer ${safeToken}`,
+      Accept: 'application/vnd.github+json',
+      'X-GitHub-Api-Version': API_VERSION,
+    },
+  })
+  if (!res.ok) return null
+  const snapshot = parseRateLimitHeaders(res.headers)
+  if (snapshot) lastRateLimit = snapshot
+  return snapshot
 }
 
 /**

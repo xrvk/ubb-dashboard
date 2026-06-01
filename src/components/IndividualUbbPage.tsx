@@ -241,6 +241,7 @@ export function IndividualUbbPage({
           inFlight: 0,
           retrying: 0,
           startedAt: Date.now() - done * 8,
+          rateLimitExhausted: null,
         })
       }
       toast.info(`Demo mode: would update ${updates.length.toLocaleString()} budgets`)

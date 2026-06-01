@@ -4,6 +4,7 @@ import { PencilSimple, Coins, ChartLine, Users } from '@phosphor-icons/react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { CostCenterCombobox, type CostCenterOption } from '@/components/ui/cost-center-combobox'
 import { useCredentials } from '@/hooks/use-credentials'
 import {
   createUniversalUBB,
@@ -636,31 +637,38 @@ export function UniversalUbbPage() {
                       <label className="text-neutral-600 dark:text-neutral-400" htmlFor="cc-filter">
                         Cost center:
                       </label>
-                      <select
-                        id="cc-filter"
-                        value={costCenterFilter === null ? '__all__' : costCenterFilter === '' ? '__unassigned__' : costCenterFilter}
-                        onChange={e => {
-                          const v = e.target.value
-                          setCostCenterFilter(v === '__all__' ? null : v === '__unassigned__' ? '' : v)
-                          setOutlierPage(0)
-                        }}
-                        className="h-7 rounded border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2"
-                      >
-                        <option value="__all__">All ({threshold.powerUsers.length.toLocaleString()})</option>
-                        {hasAnyOutlierUnassigned && (
-                          <option value="__unassigned__">
-                            Unassigned ({threshold.powerUsers.filter(u => !getCC(u.login)).length.toLocaleString()})
-                          </option>
-                        )}
-                        {outlierCostCenters.map(cc => {
+                      {(() => {
+                        const OUTLIER_UNASSIGNED = '__unassigned__'
+                        const OUTLIER_ALL = '__all__'
+                        const unassignedCount = threshold.powerUsers.filter(u => !getCC(u.login)).length
+                        const ccOptions: CostCenterOption[] = [
+                          { id: OUTLIER_ALL, label: `All`, count: threshold.powerUsers.length, emphasis: true },
+                        ]
+                        if (hasAnyOutlierUnassigned) {
+                          ccOptions.push({ id: OUTLIER_UNASSIGNED, label: 'Unassigned', count: unassignedCount })
+                        }
+                        for (const cc of outlierCostCenters) {
                           const count = threshold.powerUsers.filter(u => getCC(u.login)?.cc.id === cc.id).length
-                          return (
-                            <option key={cc.id} value={cc.id}>
-                              {cc.name} ({count.toLocaleString()})
-                            </option>
-                          )
-                        })}
-                      </select>
+                          ccOptions.push({ id: cc.id, label: cc.name, count })
+                        }
+                        const comboValue =
+                          costCenterFilter === null ? OUTLIER_ALL :
+                          costCenterFilter === '' ? OUTLIER_UNASSIGNED :
+                          costCenterFilter
+                        return (
+                          <CostCenterCombobox
+                            options={ccOptions}
+                            value={comboValue}
+                            onChange={id => {
+                              setCostCenterFilter(
+                                id === OUTLIER_ALL ? null : id === OUTLIER_UNASSIGNED ? '' : id,
+                              )
+                              setOutlierPage(0)
+                            }}
+                            ariaLabel="Filter outliers by cost center"
+                          />
+                        )
+                      })()}
                       {costCenterFilter !== null && (
                         <button
                           type="button"

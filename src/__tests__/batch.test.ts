@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { runBatch } from '@/lib/batch'
+import { runBatch, type BatchProgress } from '@/lib/batch'
 import { ApiError } from '@/lib/api'
 
 /**
@@ -277,5 +277,54 @@ describe('runBatch', () => {
     const results = await promise
     expect(results[0].ok).toBe(true)
     expect(worker).toHaveBeenCalledTimes(2)
+  })
+
+  it('aborts the batch on primary rate-limit exhaustion (403 + remaining=0)', async () => {
+    const resetSec = Math.floor((Date.now() + 30 * 60_000) / 1000)
+    let calls = 0
+    const worker = vi.fn(async () => {
+      calls += 1
+      // First call drains the quota; runner should bail immediately,
+      // marking the remaining items as failed without invoking the worker.
+      throw new ApiError(403, 'rate limit exceeded', {
+        headers: {
+          'x-ratelimit-limit': '5000',
+          'x-ratelimit-remaining': '0',
+          'x-ratelimit-reset': String(resetSec),
+          'x-ratelimit-resource': 'core',
+        },
+      })
+    })
+    const finalStates: BatchProgress[] = []
+    const results = await runBatch([1, 2, 3, 4, 5], worker, {
+      concurrency: 1,
+      perTaskDelayMs: 0,
+      onProgress: s => finalStates.push(s),
+    })
+    expect(calls).toBe(1)
+    expect(results.every(r => !r.ok)).toBe(true)
+    const last = finalStates[finalStates.length - 1]
+    expect(last.rateLimitExhausted?.resetAt).toBe(resetSec * 1000)
+    expect(last.failed).toBe(5)
+  })
+
+  it('does not treat a non-rate-limit 403 as exhaustion', async () => {
+    const worker = vi.fn(async () => {
+      // Permission 403 carries no x-ratelimit-remaining: 0 signal.
+      throw new ApiError(403, 'forbidden', {
+        headers: {
+          'x-ratelimit-limit': '5000',
+          'x-ratelimit-remaining': '4000',
+        },
+      })
+    })
+    const results = await runBatch([1, 2, 3], worker, {
+      concurrency: 1,
+      perTaskDelayMs: 0,
+    })
+    // Each item should be attempted; only the one that 403s is failed,
+    // not an early-bail of the whole batch.
+    expect(worker).toHaveBeenCalledTimes(3)
+    expect(results.every(r => !r.ok)).toBe(true)
   })
 })

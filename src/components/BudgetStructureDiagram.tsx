@@ -9,6 +9,12 @@ import {
 import { useCredentials } from '@/hooks/use-credentials'
 import { formatCurrency, formatCurrencyShort, cn } from '@/lib/utils'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import {
+  collapseToTopN,
+  isOtherSegment,
+  STRUCTURE_DIAGRAM_TOPN,
+  type MaybeOtherSegment,
+} from '@/lib/structureDiagramCollapse'
 
 /**
  * Sepia-tinted adaptation of the Budget Structure diagram from
@@ -97,7 +103,11 @@ export function BudgetStructureDiagram() {
 
   // CC sub-segment widths
   const ccSegments = useMemo(() => {
-    const segs = segmentsForBar
+    const collapsed: MaybeOtherSegment[] = collapseToTopN(
+      segmentsForBar,
+      STRUCTURE_DIAGRAM_TOPN,
+    )
+    const segs = collapsed
     if (segs.length === 0) return []
 
     const cappedCount = segs.filter(s => !s.uncapped).length
@@ -184,11 +194,18 @@ export function BudgetStructureDiagram() {
                     Cost-center sub-limits (within enterprise cap)
                   </div>
                   <div className="flex h-5 rounded-lg overflow-hidden border border-emerald-600/15 dark:border-emerald-500/15 gap-px">
-                    {ccSegments.map((seg, i) => (
+                    {ccSegments.map((seg, i) => {
+                      const other = isOtherSegment(seg)
+                      return (
                       <Tooltip key={seg.id}>
                         <TooltipTrigger asChild>
                           <div
-                            className="h-full flex items-center justify-start px-1.5 text-[10px] font-medium bg-amber-500/25 text-amber-900 dark:bg-amber-400/25 dark:text-amber-200 cursor-help transition-all duration-200 truncate"
+                            className={cn(
+                              'h-full flex items-center justify-start px-1.5 text-[10px] font-medium cursor-help transition-all duration-200 truncate',
+                              other
+                                ? 'bg-neutral-300/40 dark:bg-neutral-700/40 text-neutral-700 dark:text-neutral-300'
+                                : 'bg-amber-500/25 text-amber-900 dark:bg-amber-400/25 dark:text-amber-200',
+                            )}
                             style={{
                               width: `${seg.percent}%`,
                               minWidth: ccSegments.length <= 6 ? '2rem' : '0.5rem',
@@ -200,20 +217,37 @@ export function BudgetStructureDiagram() {
                                     : 0,
                             }}
                           >
-                            {segmentLabel(seg, seg.percent)}
+                            {other
+                              ? (seg.percent >= 10 ? `Other · ${seg.hiddenCount}` : '')
+                              : segmentLabel(seg, seg.percent)}
                           </div>
                         </TooltipTrigger>
                         <TooltipContent>
                           <div className="font-medium">{seg.name}</div>
-                          <div className="opacity-80">
-                            {formatCurrency(seg.budget)} sub-limit · {seg.preventFurtherUsage ? 'Hard cap' : 'Soft cap'}
-                          </div>
+                          {other ? (
+                            <>
+                              <div className="opacity-80">
+                                {seg.hiddenCount.toLocaleString()} cost center{seg.hiddenCount === 1 ? '' : 's'} grouped
+                                {seg.hiddenUncappedCount > 0
+                                  ? ` · ${seg.hiddenUncappedCount} uncapped`
+                                  : ''}
+                              </div>
+                              <div className="opacity-80">
+                                {formatCurrency(seg.budget)} combined sub-limits
+                              </div>
+                            </>
+                          ) : (
+                            <div className="opacity-80">
+                              {formatCurrency(seg.budget)} sub-limit · {seg.preventFurtherUsage ? 'Hard cap' : 'Soft cap'}
+                            </div>
+                          )}
                           <div className="opacity-70 text-[10px] mt-0.5">
                             {seg.seatCount.toLocaleString()} Copilot seat{seg.seatCount === 1 ? '' : 's'}
                           </div>
                         </TooltipContent>
                       </Tooltip>
-                    ))}
+                      )
+                    })}
                   </div>
                   <div className="flex justify-between text-[10px] text-neutral-500">
                     <span>
@@ -270,15 +304,19 @@ export function BudgetStructureDiagram() {
                   </span>
                 </div>
                 <div className="flex h-5 rounded-lg overflow-hidden border border-amber-500/15 dark:border-amber-400/15 gap-px">
-                  {ccSegments.map((seg, i) => (
+                  {ccSegments.map((seg, i) => {
+                    const other = isOtherSegment(seg)
+                    return (
                     <Tooltip key={seg.id}>
                       <TooltipTrigger asChild>
                         <div
                           className={cn(
                             'h-full flex items-center justify-start px-1.5 text-[10px] font-medium cursor-help transition-all duration-200 truncate',
-                            seg.uncapped
-                              ? 'text-red-700 dark:text-red-300'
-                              : 'bg-amber-500/30 text-amber-900 dark:bg-amber-400/30 dark:text-amber-200',
+                            other
+                              ? 'bg-neutral-300/40 dark:bg-neutral-700/40 text-neutral-700 dark:text-neutral-300'
+                              : seg.uncapped
+                                ? 'text-red-700 dark:text-red-300'
+                                : 'bg-amber-500/30 text-amber-900 dark:bg-amber-400/30 dark:text-amber-200',
                           )}
                           style={{
                             width: `${seg.percent}%`,
@@ -289,7 +327,7 @@ export function BudgetStructureDiagram() {
                                 : i === ccSegments.length - 1
                                   ? '0 0.5rem 0.5rem 0'
                                   : 0,
-                            ...(seg.uncapped
+                            ...(!other && seg.uncapped
                               ? {
                                   background:
                                     'repeating-linear-gradient(135deg, color-mix(in oklch, var(--color-destructive) 25%, transparent), color-mix(in oklch, var(--color-destructive) 25%, transparent) 3px, color-mix(in oklch, var(--color-destructive) 12%, transparent) 3px, color-mix(in oklch, var(--color-destructive) 12%, transparent) 6px)',
@@ -297,31 +335,50 @@ export function BudgetStructureDiagram() {
                               : {}),
                           }}
                         >
-                          {segmentLabel(seg, seg.percent)}
+                          {other
+                            ? (seg.percent >= 10 ? `Other · ${seg.hiddenCount}` : '')
+                            : segmentLabel(seg, seg.percent)}
                         </div>
                       </TooltipTrigger>
                       <TooltipContent>
                         <div className="font-medium">{seg.name}</div>
-                        <div className="opacity-80">
-                          {seg.uncapped
-                            ? 'No stop budget on Cost Center'
-                            : `${formatCurrency(seg.budget)} independent cap · ${seg.preventFurtherUsage ? 'Hard cap' : 'Soft cap'}`}
-                        </div>
-                        {seg.uncapped && uncappedBackstopLine(seg.seatCount) ? (
-                          <div className="opacity-80 text-[10px] mt-0.5">
-                            {uncappedBackstopLine(seg.seatCount)}
-                          </div>
-                        ) : null}
+                        {other ? (
+                          <>
+                            <div className="opacity-80">
+                              {seg.hiddenCount.toLocaleString()} cost center{seg.hiddenCount === 1 ? '' : 's'} grouped
+                              {seg.hiddenUncappedCount > 0
+                                ? ` · ${seg.hiddenUncappedCount} uncapped`
+                                : ''}
+                            </div>
+                            <div className="opacity-80">
+                              {formatCurrency(seg.budget)} combined independent caps
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div className="opacity-80">
+                              {seg.uncapped
+                                ? 'No stop budget on Cost Center'
+                                : `${formatCurrency(seg.budget)} independent cap · ${seg.preventFurtherUsage ? 'Hard cap' : 'Soft cap'}`}
+                            </div>
+                            {seg.uncapped && uncappedBackstopLine(seg.seatCount) ? (
+                              <div className="opacity-80 text-[10px] mt-0.5">
+                                {uncappedBackstopLine(seg.seatCount)}
+                              </div>
+                            ) : null}
+                          </>
+                        )}
                         <div className="opacity-70 text-[10px] mt-0.5">
                           {seg.seatCount.toLocaleString()} Copilot seat{seg.seatCount === 1 ? '' : 's'}
                         </div>
                       </TooltipContent>
                     </Tooltip>
-                  ))}
+                    )
+                  })}
                 </div>
                 <div className="flex justify-between text-[10px] text-neutral-500">
                   <span>
-                    {ccSegments.length} cost center{ccSegments.length !== 1 ? 's' : ''}
+                    {segmentsForBar.length} cost center{segmentsForBar.length !== 1 ? 's' : ''}
                     {data.uncappedCount > 0 ? ` · ${data.uncappedCount} uncapped` : ''}
                   </span>
                   <span>Each caps charges independently</span>

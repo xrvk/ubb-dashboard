@@ -1,11 +1,15 @@
 import { useMemo, useState } from 'react'
-import { CheckCircle, Warning, XCircle, CaretDown, CaretUp, ArrowDown, ArrowUp, ArrowSquareOut, Users, ArrowsClockwise } from '@phosphor-icons/react'
+import { CheckCircle, Warning, XCircle, CaretDown, CaretUp } from '@phosphor-icons/react'
 import { useCredentials } from '@/hooks/use-credentials'
 import { buildCostCenterIndex, budgetEditUrl } from '@/lib/api'
 import { computeBudgetConstraints } from '@/lib/budgetConstraints'
 import { computeRequiredMinimums, proposeLowerUniversalUbb } from '@/lib/budgetAutoFix'
-import { formatCurrency, cn, openExternal } from '@/lib/utils'
+import { formatCurrency, cn } from '@/lib/utils'
 import { EMPTY_FILTERS } from '@/components/BudgetsTable'
+import {
+  FailureList,
+} from '@/components/ConstraintsBannerFailureList'
+import { type FailingCheck } from '@/lib/constraintsBannerFailures'
 import {
   NAV_TO_BUDGET_MODEL_EVENT,
   NAV_TO_INDIVIDUAL_EVENT,
@@ -43,17 +47,10 @@ function scrollToPlanner(targetId: string) {
   }, 2000)
 }
 
-interface FailingCheck {
-  kind: 'cc-over' | 'cc-vs-ent' | 'leftover'
-  message: string
-  actions: Array<{
-    label: string
-    onClick?: () => void
-    href?: string
-    icon?: 'scroll-up' | 'scroll-down' | 'external' | 'users' | 'universal'
-    primary?: boolean
-  }>
-}
+/**
+ * (FailingCheck and FailureList live in `ConstraintsBannerFailureList.tsx`
+ * so the top-N capping logic is testable in isolation.)
+ */
 
 /**
  * Banner that surfaces the budget-constraint health for the current enterprise.
@@ -178,6 +175,8 @@ export function ConstraintsBanner() {
           kind: 'cc-over',
           message: `Cost center "${c.costCenterName}" is over by ${formatCurrency(c.check.overBy)} — ${c.memberCount} member${c.memberCount === 1 ? '' : 's'} have effective UBBs totaling ${formatCurrency(c.check.actual)} against a ${formatCurrency(c.check.allowed)} budget.`,
           actions,
+          overBy: c.check.overBy,
+          costCenterName: c.costCenterName,
         })
       }
     }
@@ -308,71 +307,7 @@ export function ConstraintsBanner() {
 
           {expanded ? (
             <div className="mt-2 space-y-2">
-              {hasFailure ? (
-                <div>
-                  <div className="text-xs font-semibold uppercase tracking-wide opacity-70">Failing checks</div>
-                  <ul className="mt-1 space-y-2">
-                    {failingChecks.map((fc, i) => {
-                      return (
-                      <li key={i} className="rounded border border-current/20 bg-white/40 dark:bg-black/20 px-2.5 py-2 text-xs">
-                        <div>{fc.message}</div>
-                        {fc.actions.length > 0 ? (
-                          <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
-                            {fc.actions.map((a, j) => {
-                              const isExternalLink = a.icon === 'external'
-                              const baseClass = cn(
-                                'inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-medium transition-colors',
-                                isExternalLink
-                                  ? 'opacity-70 hover:opacity-100 hover:underline'
-                                  : 'bg-current/10 hover:bg-current/20',
-                              )
-                              const iconEl =
-                                a.icon === 'scroll-up' ? (
-                                  <ArrowUp size={10} weight="bold" />
-                                ) : a.icon === 'scroll-down' ? (
-                                  <ArrowDown size={10} weight="bold" />
-                                ) : a.icon === 'external' ? (
-                                  <ArrowSquareOut size={10} />
-                                ) : a.icon === 'users' ? (
-                                  <Users size={10} weight="bold" />
-                                ) : a.icon === 'universal' ? (
-                                  <ArrowsClockwise size={10} weight="bold" />
-                                ) : null
-                              if (a.href) {
-                                return (
-                                  <a
-                                    key={j}
-                                    href={a.href}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    onClick={openExternal(a.href)}
-                                    className={baseClass}
-                                  >
-                                    {a.label}
-                                    {iconEl}
-                                  </a>
-                                )
-                              }
-                              return (
-                                <button
-                                  key={j}
-                                  type="button"
-                                  onClick={a.onClick}
-                                  className={baseClass}
-                                >
-                                  {iconEl}
-                                  {a.label}
-                                </button>
-                              )
-                            })}
-                          </div>
-                        ) : null}
-                      </li>
-                      )
-                    })}
-                  </ul>
-                </div>
-              ) : null}
+              {hasFailure ? <FailureList checks={failingChecks} /> : null}
               {hasWarning ? (
                 <div>
                   <div className="text-xs font-semibold uppercase tracking-wide opacity-70">Warnings</div>
