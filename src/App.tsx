@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Gauge, Moon, Sun, ArrowCounterClockwise, BookOpen } from '@phosphor-icons/react'
+import { Gauge, Moon, Sun, Monitor, ArrowCounterClockwise, BookOpen } from '@phosphor-icons/react'
 import { Toaster } from 'sonner'
 import { useTheme } from 'next-themes'
 import { useCredentials } from '@/hooks/use-credentials'
@@ -38,7 +38,34 @@ const TAB_LABELS: Record<Tab, string> = {
 
 export function App() {
   const { credentials, refresh, disconnect, loading } = useCredentials()
-  const { resolvedTheme, setTheme } = useTheme()
+  const { theme, resolvedTheme, setTheme } = useTheme()
+
+  /**
+   * Cycle the theme through system → light → dark → system. Starting from
+   * "system" keeps the app tracking the OS appearance setting (Windows /
+   * macOS Auto) until the user explicitly overrides it, and lets them get
+   * back to system tracking without clearing localStorage.
+   */
+  const cycleTheme = () => {
+    const next = theme === 'system' ? 'light' : theme === 'light' ? 'dark' : 'system'
+    setTheme(next)
+  }
+
+  const themeIcon =
+    theme === 'system' ? (
+      <Monitor size={18} weight="duotone" />
+    ) : resolvedTheme === 'dark' ? (
+      <Sun size={18} weight="duotone" />
+    ) : (
+      <Moon size={18} weight="duotone" />
+    )
+
+  const themeLabel =
+    theme === 'system'
+      ? 'Theme: system (click for light)'
+      : theme === 'light'
+        ? 'Theme: light (click for dark)'
+        : 'Theme: dark (click for system)'
 
   const [tab, setTab] = useState<Tab>('dashboard')
 
@@ -178,10 +205,11 @@ export function App() {
           <Button
             variant="ghost"
             size="icon"
-            aria-label="Toggle theme"
-            onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
+            aria-label={themeLabel}
+            title={themeLabel}
+            onClick={cycleTheme}
           >
-            {resolvedTheme === 'dark' ? <Sun size={18} weight="duotone" /> : <Moon size={18} weight="duotone" />}
+            {themeIcon}
           </Button>
         </div>
       </header>
