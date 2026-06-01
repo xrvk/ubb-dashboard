@@ -223,7 +223,7 @@ export function App() {
           <div className="flex items-center gap-2.5">
             <Gauge size={26} weight="duotone" className="text-emerald-600" />
             <div>
-              <h1 className="text-base font-semibold leading-tight">UBB Dashboard</h1>
+              <h1 className="text-base font-semibold leading-tight">ULB Dashboard</h1>
               <p className="text-xs text-neutral-500 leading-tight">
                 Monitor Copilot AI-credit budgets across your enterprise
               </p>
