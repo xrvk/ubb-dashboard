@@ -1,6 +1,6 @@
 import { mapWithConcurrency } from '@/lib/concurrency'
 /* eslint-disable react-refresh/only-export-components */
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react'
 import {
   buildCostCenterIndex,
   createApiFetch,
@@ -23,6 +23,7 @@ import {
 } from '@/lib/api'
 import {
   generateDemoBudgets,
+  generateDemoCachedReports,
   generateDemoCostCenterBudgets,
   generateDemoCostCenters,
   generateDemoEnterpriseBudget,
@@ -36,6 +37,7 @@ import {
   readDemoPoolPctFromUrl,
   scaleDemoConsumptionTo,
 } from '@/lib/demo'
+import { saveCachedReport } from '@/lib/reportCache'
 import { includedAiCredits, seatCostBreakdown } from '@/lib/pricing'
 import { describeError, isAborted } from '@/lib/errors'
 
@@ -89,6 +91,13 @@ interface CredentialsContextValue {
   /** Universal UBB (multi_user_customer scope) or null if not configured. */
   universalUbb: UniversalUbb | null
   setUniversalUbb: (u: UniversalUbb | null) => void
+  /**
+   * Local mutation of the budgets array. Exposed so demo-mode "apply" actions
+   * can mirror real API mutations into the in-memory store without hitting
+   * github.com. Real (non-demo) callers should keep using the API + refresh()
+   * cycle; this setter exists for sandbox flows only.
+   */
+  setBudgets: Dispatch<SetStateAction<UserBudget[]>>
   /** Enterprise-scope ai_credits budget or null if not configured. */
   enterpriseBudget: EnterpriseBudget | null
   /** Cost-center-scope ai_credits budgets, keyed by lowercased CC name. */
@@ -205,6 +214,9 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
           poolExhausted: poolPct === null ? true : poolPct >= 100,
         }),
       )
+      for (const report of generateDemoCachedReports(credentials.ent, demoSeats)) {
+        saveCachedReport(report)
+      }
       return
     }
     if (!apiFetch) return
@@ -340,6 +352,9 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
             poolExhausted: poolPct === null ? true : poolPct >= 100,
           }),
         )
+        for (const report of generateDemoCachedReports(`demo-${demoCount}`, demoSeats)) {
+          saveCachedReport(report)
+        }
       })
       return
     }
@@ -433,6 +448,7 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
     loginToCostCenter,
     universalUbb,
     setUniversalUbb,
+    setBudgets,
     enterpriseBudget,
     costCenterBudgetsByName,
     usageSummary,

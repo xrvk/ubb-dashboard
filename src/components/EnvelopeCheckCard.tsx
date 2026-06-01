@@ -98,7 +98,7 @@ export function EnvelopeCheckCard({ proposedUsd, constraintsInput, onSnapToMaxSa
   const anyFail = leftoverFail || failingCcs.length > 0
 
   const styles = anyFail
-    ? 'border-red-300 bg-red-50 text-red-900 dark:border-red-800/60 dark:bg-red-950/40 dark:text-red-200'
+    ? 'border-2 border-red-400 bg-red-50 text-red-900 dark:border-red-600 dark:bg-red-950/60 dark:text-red-100 shadow-sm ring-2 ring-red-500/15'
     : 'border-emerald-300 bg-emerald-50 text-emerald-900 dark:border-emerald-800/60 dark:bg-emerald-950/40 dark:text-emerald-200'
   const Icon = anyFail ? Warning : CheckCircle
 
@@ -114,11 +114,11 @@ export function EnvelopeCheckCard({ proposedUsd, constraintsInput, onSnapToMaxSa
   const showRaiseEnt = leftoverFail && enterpriseBudget !== null
 
   return (
-    <div role="status" className={cn('rounded-md border px-3 py-2 text-xs', styles)}>
+    <div role="status" aria-live="polite" className={cn('rounded-md border px-3 py-2 text-xs transition-colors', styles)}>
       <div className="flex items-start gap-2">
-        <Icon size={16} weight="duotone" className="mt-0.5 shrink-0" />
+        <Icon size={anyFail ? 20 : 16} weight={anyFail ? 'fill' : 'duotone'} className="mt-0.5 shrink-0" />
         <div className="flex-1 min-w-0">
-          <div className="font-medium text-sm">
+          <div className={cn('font-semibold', anyFail ? 'text-base' : 'text-sm')}>
             {anyFail
               ? leftoverFail
                 ? 'Proposed UBB exceeds the enterprise envelope'

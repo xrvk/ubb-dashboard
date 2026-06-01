@@ -69,6 +69,7 @@ export function UniversalUbbPage() {
     seats,
     universalUbb,
     setUniversalUbb,
+    setBudgets,
     loginToCostCenter,
     enterpriseBudget,
     costCenters,
@@ -221,7 +222,22 @@ export function UniversalUbbPage() {
 
   const handleEditCap = async (newAmount: number) => {
     if (credentials?.base === 'demo://') {
-      toast.info(`Demo mode: would set universal UBB to $${newAmount}`)
+      // Sandbox: mutate local state so the demo can follow the full apply →
+      // re-evaluate → outlier cleanup loop without calling github.com.
+      const current = universalUbb
+      setUniversalUbb(
+        current
+          ? { ...current, budgetAmount: newAmount }
+          : {
+              id: 'demo-uubb',
+              budgetAmount: newAmount,
+              consumedAmount: 0,
+              preventFurtherUsage: true,
+              willAlert: false,
+              alertRecipients: [],
+            },
+      )
+      toast.success(`Demo: universal UBB set to ${formatCurrency(newAmount)}`)
       return
     }
     if (!apiFetch) return
@@ -289,16 +305,36 @@ export function UniversalUbbPage() {
   /** Create individual UBBs for selected outliers at ceil(maxAICs/100 × 1.10),
    * or at the admin's edited amount if they've customized the row. */
   const handleCreateOutlierUbbs = async () => {
-    if (!apiFetch) return
     const targets = outlierTargets
     if (targets.length === 0) {
       toast.error('Select at least one outlier.')
       return
     }
     if (credentials?.base === 'demo://') {
-      toast.info(`Demo mode: would create ${targets.length} individual UBBs.`)
+      // Sandbox: append synthetic individual UBBs to the local store. The
+      // Universal UBB sizing curve will refilter on the next render because
+      // its indUbbLogins set rebuilds from `budgets`.
+      setBudgets(prev => {
+        const existing = new Set(prev.map(b => b.user.toLowerCase()))
+        const additions = targets
+          .filter(t => !existing.has(t.login.toLowerCase()))
+          .map((t, i) => ({
+            id: `demo-ubb-new-${Date.now()}-${i}`,
+            user: t.login,
+            budgetAmount: t.amount,
+            consumedAmount: 0,
+            preventFurtherUsage: true,
+            willAlert: false,
+            alertRecipients: [] as string[],
+          }))
+        return [...prev, ...additions]
+      })
+      setSelectedOutlierLogins(new Set())
+      setEditedOutlierUbbsEntry(null)
+      toast.success(`Demo: created ${targets.length.toLocaleString()} individual UBBs.`)
       return
     }
+    if (!apiFetch) return
     setBatchProgress({ done: 0, total: targets.length })
     try {
       const results = await runBatch(
@@ -591,6 +627,16 @@ export function UniversalUbbPage() {
             ) : null}
           </div>
 
+          {hasData ? (
+            <EnvelopeCheckCard
+              proposedUsd={ubbDeltaUsd}
+              constraintsInput={constraintsInput}
+              onSnapToMaxSafe={usd =>
+                setUbbOverrideEntry({ sig: datasetSig, value: usd * AICS_PER_USD })
+              }
+            />
+          ) : null}
+
           <ConsumptionCurve
             sortedUsers={[...csvUsers].sort((a, b) => b.totalAICs - a.totalAICs)}
             thresholdAICs={threshold.thresholdAICs}
@@ -652,16 +698,6 @@ export function UniversalUbbPage() {
                 </div>
               </div>
             </div>
-          ) : null}
-
-          {hasData ? (
-            <EnvelopeCheckCard
-              proposedUsd={ubbDeltaUsd}
-              constraintsInput={constraintsInput}
-              onSnapToMaxSafe={usd =>
-                setUbbOverrideEntry({ sig: datasetSig, value: usd * AICS_PER_USD })
-              }
-            />
           ) : null}
 
           <div className="flex flex-wrap gap-2 justify-end">
