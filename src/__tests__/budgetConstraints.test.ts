@@ -9,7 +9,7 @@ import type {
   CostCenterBudget,
   CostCenterIndex,
   EnterpriseBudget,
-  UniversalUbb,
+  UniversalUlb,
   UserBudget,
 } from '../lib/api'
 
@@ -51,7 +51,7 @@ const entBudget = (
   alertRecipients: [],
 })
 
-const universalUbb = (amount: number, preventFurtherUsage = true): UniversalUbb => ({
+const universalUlb = (amount: number, preventFurtherUsage = true): UniversalUlb => ({
   id: 'uni-1',
   budgetAmount: amount,
   consumedAmount: 0,
@@ -81,7 +81,7 @@ const baseInput = (
   overrides: Partial<ComputeBudgetConstraintsInput> = {},
 ): ComputeBudgetConstraintsInput => ({
   enterpriseBudget: null,
-  universalUbb: null,
+  universalUlb: null,
   costCenters: [],
   costCenterIndex: buildIndex(),
   ccBudgetsByName: new Map(),
@@ -112,7 +112,7 @@ describe('computeBudgetConstraints', () => {
       const r = computeBudgetConstraints(
         baseInput({
           enterpriseBudget: entBudget(1000),
-          universalUbb: universalUbb(10),
+          universalUlb: universalUlb(10),
           costCenters: [ccA],
           costCenterIndex: buildIndex({ userToCC: new Map([['alice', ccA]]) }),
           ccBudgetsByName: new Map([['cca', ccBudget('ccb1', 'ccA', 50)]]),
@@ -125,7 +125,7 @@ describe('computeBudgetConstraints', () => {
       expect(r.checks.perCc[0]?.memberCount).toBe(1)
     })
 
-    it('fails and reports overBy when Σ UBBs > CC budget', () => {
+    it('fails and reports overBy when Σ ULBs > CC budget', () => {
       const ccA = cc('cc1', 'ccA', [
         { type: 'User', name: 'alice' },
         { type: 'User', name: 'bob' },
@@ -133,7 +133,7 @@ describe('computeBudgetConstraints', () => {
       const r = computeBudgetConstraints(
         baseInput({
           enterpriseBudget: entBudget(1000),
-          universalUbb: universalUbb(30),
+          universalUlb: universalUlb(30),
           costCenters: [ccA],
           costCenterIndex: buildIndex({
             userToCC: new Map([
@@ -156,7 +156,7 @@ describe('computeBudgetConstraints', () => {
       const r = computeBudgetConstraints(
         baseInput({
           enterpriseBudget: entBudget(100),
-          universalUbb: universalUbb(20),
+          universalUlb: universalUlb(20),
           costCenters: [ccA],
           costCenterIndex: buildIndex({ userToCC: new Map([['alice', ccA]]) }),
           ccBudgetsByName: new Map(),
@@ -167,12 +167,12 @@ describe('computeBudgetConstraints', () => {
       expect(r.checks.unassignedLeftover?.actual).toBe(20)
     })
 
-    it('CC with budget_amount=0 fails check when members have positive UBB', () => {
+    it('CC with budget_amount=0 fails check when members have positive ULB', () => {
       const ccA = cc('cc1', 'ccA', [{ type: 'User', name: 'alice' }])
       const r = computeBudgetConstraints(
         baseInput({
           enterpriseBudget: entBudget(100),
-          universalUbb: universalUbb(5),
+          universalUlb: universalUlb(5),
           costCenters: [ccA],
           costCenterIndex: buildIndex({ userToCC: new Map([['alice', ccA]]) }),
           ccBudgetsByName: new Map([['cca', ccBudget('ccb1', 'ccA', 0)]]),
@@ -188,7 +188,7 @@ describe('computeBudgetConstraints', () => {
       const r = computeBudgetConstraints(
         baseInput({
           enterpriseBudget: entBudget(1000),
-          universalUbb: universalUbb(10),
+          universalUlb: universalUlb(10),
           costCenters: [ccA],
           costCenterIndex: buildIndex({ userToCC: new Map([['alice', ccA]]) }),
           ccBudgetsByName: new Map([['cca', ccBudget('ccb1', 'ccA', 100)]]),
@@ -257,7 +257,7 @@ describe('computeBudgetConstraints', () => {
       const r = computeBudgetConstraints(
         baseInput({
           enterpriseBudget: entBudget(100, false),
-          universalUbb: universalUbb(30),
+          universalUlb: universalUlb(30),
           costCenters: [ccA],
           costCenterIndex: buildIndex({ userToCC: new Map([['alice', ccA]]) }),
           ccBudgetsByName: new Map([['cca', ccBudget('ccb1', 'ccA', 40)]]),
@@ -273,7 +273,7 @@ describe('computeBudgetConstraints', () => {
       const r = computeBudgetConstraints(
         baseInput({
           enterpriseBudget: entBudget(50, false),
-          universalUbb: universalUbb(1),
+          universalUlb: universalUlb(1),
           costCenters: [cc('cc1', 'ccA')],
           ccBudgetsByName: new Map([['cca', ccBudget('ccb1', 'ccA', 100)]]),
           seats: [seat('bob')],
@@ -288,7 +288,7 @@ describe('computeBudgetConstraints', () => {
       const r = computeBudgetConstraints(
         baseInput({
           enterpriseBudget: entBudget(100, true),
-          universalUbb: universalUbb(40),
+          universalUlb: universalUlb(40),
           costCenters: [ccA],
           costCenterIndex: buildIndex({ userToCC: new Map([['alice', ccA]]) }),
           ccBudgetsByName: new Map([['cca', ccBudget('ccb1', 'ccA', 500)]]),
@@ -299,11 +299,11 @@ describe('computeBudgetConstraints', () => {
       expect(r.checks.unassignedLeftover?.actual).toBe(40)
     })
 
-    it('overflow: leftover Σ UBBs > allowance reports overBy', () => {
+    it('overflow: leftover Σ ULBs > allowance reports overBy', () => {
       const r = computeBudgetConstraints(
         baseInput({
           enterpriseBudget: entBudget(50, false),
-          universalUbb: universalUbb(20),
+          universalUlb: universalUlb(20),
           seats: [seat('a'), seat('b'), seat('c')],
         }),
       )
@@ -313,7 +313,7 @@ describe('computeBudgetConstraints', () => {
     })
 
     it('no ent budget: unassignedLeftover is null', () => {
-      const r = computeBudgetConstraints(baseInput({ seats: [seat('a')], universalUbb: universalUbb(5) }))
+      const r = computeBudgetConstraints(baseInput({ seats: [seat('a')], universalUlb: universalUlb(5) }))
       expect(r.checks.unassignedLeftover).toBeNull()
     })
   })
@@ -321,7 +321,7 @@ describe('computeBudgetConstraints', () => {
   describe('warnings', () => {
     it('warns when universal ULB has prevent_further_usage=false', () => {
       const r = computeBudgetConstraints(
-        baseInput({ universalUbb: universalUbb(10, false), seats: [seat('a')] }),
+        baseInput({ universalUlb: universalUlb(10, false), seats: [seat('a')] }),
       )
       expect(r.warnings.some(w => w.code === 'prevent_further_usage_off')).toBe(true)
     })
@@ -380,10 +380,10 @@ describe('computeBudgetConstraints', () => {
     })
   })
 
-  describe('maxSafeUniversalUbb', () => {
+  describe('maxSafeUniversalUlb', () => {
     it('Infinity when no envelope binds (no ent, no CC budgets)', () => {
       const r = computeBudgetConstraints(baseInput({ seats: [seat('a')] }))
-      expect(r.maxSafeUniversalUbb).toBe(Infinity)
+      expect(r.maxSafeUniversalUlb).toBe(Infinity)
     })
 
     it('umbrella: bound by leftover allowance / leftover user count', () => {
@@ -394,7 +394,7 @@ describe('computeBudgetConstraints', () => {
           seats: [seat('a'), seat('b'), seat('c'), seat('d')],
         }),
       )
-      expect(r.maxSafeUniversalUbb).toBe(25)
+      expect(r.maxSafeUniversalUlb).toBe(25)
     })
 
     it('respects individual ULBs in the fixed sum', () => {
@@ -407,7 +407,7 @@ describe('computeBudgetConstraints', () => {
           userBudgets: [userBudget('alice', 40)],
         }),
       )
-      expect(r.maxSafeUniversalUbb).toBe(30)
+      expect(r.maxSafeUniversalUlb).toBe(30)
     })
 
     it('bound by tightest per-CC constraint', () => {
@@ -434,7 +434,7 @@ describe('computeBudgetConstraints', () => {
           seats: [seat('a'), seat('b'), seat('c'), seat('d'), seat('e')],
         }),
       )
-      expect(r.maxSafeUniversalUbb).toBe(5)
+      expect(r.maxSafeUniversalUlb).toBe(5)
     })
 
     it('returns 0 when fixed individuals already exceed an envelope', () => {
@@ -449,7 +449,7 @@ describe('computeBudgetConstraints', () => {
           userBudgets: [userBudget('alice', 120)],
         }),
       )
-      expect(r.maxSafeUniversalUbb).toBe(0)
+      expect(r.maxSafeUniversalUlb).toBe(0)
     })
   })
 
@@ -460,7 +460,7 @@ describe('computeBudgetConstraints', () => {
       const r = computeBudgetConstraints(
         baseInput({
           enterpriseBudget: entBudget(1000),
-          universalUbb: universalUbb(10),
+          universalUlb: universalUlb(10),
           costCenters: [ccUser, ccOrg],
           costCenterIndex: buildIndex({
             userToCC: new Map([['alice', ccUser]]),
@@ -482,100 +482,100 @@ describe('computeBudgetConstraints', () => {
   })
 })
 
-describe('previewConstraintsWithProposedUbb', () => {
+describe('previewConstraintsWithProposedUlb', () => {
   it('flags the small-ent / no-CC / aggressive-ULB scenario as over', async () => {
-    const { previewConstraintsWithProposedUbb } = await import('../lib/budgetConstraints')
+    const { previewConstraintsWithProposedUlb } = await import('../lib/budgetConstraints')
     // 100 seats, $500 ent budget, no CCs, no individual ULBs. Sizing the
     // universal ULB from "top 5%" usage at $20/user proposes $2000 of
     // projected leftover spend — $1500 over a $500 envelope.
     const seats: CopilotSeat[] = Array.from({ length: 100 }, (_, i) => seat(`u${i}`))
     const input = baseInput({
       enterpriseBudget: entBudget(500),
-      universalUbb: null,
+      universalUlb: null,
       seats,
     })
-    const r = previewConstraintsWithProposedUbb(input, 20)
+    const r = previewConstraintsWithProposedUlb(input, 20)
     expect(r.checks.unassignedLeftover?.ok).toBe(false)
     expect(r.checks.unassignedLeftover?.actual).toBe(2000)
     expect(r.checks.unassignedLeftover?.allowed).toBe(500)
     expect(r.checks.unassignedLeftover?.overBy).toBe(1500)
     // The engine should also surface the matching max-safe value the snap
     // action will offer: floor(500/100) = $5.
-    expect(r.maxSafeUniversalUbb).toBe(5)
+    expect(r.maxSafeUniversalUlb).toBe(5)
   })
 
-  it('passes when the proposed UBB fits under the leftover allowance', async () => {
-    const { previewConstraintsWithProposedUbb } = await import('../lib/budgetConstraints')
+  it('passes when the proposed ULB fits under the leftover allowance', async () => {
+    const { previewConstraintsWithProposedUlb } = await import('../lib/budgetConstraints')
     const seats: CopilotSeat[] = Array.from({ length: 10 }, (_, i) => seat(`u${i}`))
     const input = baseInput({
       enterpriseBudget: entBudget(500),
-      universalUbb: null,
+      universalUlb: null,
       seats,
     })
-    const r = previewConstraintsWithProposedUbb(input, 10)
+    const r = previewConstraintsWithProposedUlb(input, 10)
     expect(r.checks.unassignedLeftover?.ok).toBe(true)
     expect(r.checks.unassignedLeftover?.actual).toBe(100)
     expect(r.checks.unassignedLeftover?.allowed).toBe(500)
   })
 
-  it('reports maxSafeUniversalUbb=0 when individual ULBs alone fill the envelope', async () => {
-    const { previewConstraintsWithProposedUbb } = await import('../lib/budgetConstraints')
+  it('reports maxSafeUniversalUlb=0 when individual ULBs alone fill the envelope', async () => {
+    const { previewConstraintsWithProposedUlb } = await import('../lib/budgetConstraints')
     // 1 seat with an individual ULB at $500 already saturates the $500 ent
     // budget. Any universal ULB > 0 covering additional seats would breach.
     const seats: CopilotSeat[] = [seat('alice'), seat('bob')]
     const input = baseInput({
       enterpriseBudget: entBudget(500),
-      universalUbb: null,
+      universalUlb: null,
       seats,
       userBudgets: [userBudget('alice', 500)],
     })
-    const r = previewConstraintsWithProposedUbb(input, 1)
+    const r = previewConstraintsWithProposedUlb(input, 1)
     expect(r.checks.unassignedLeftover?.ok).toBe(false)
-    expect(r.maxSafeUniversalUbb).toBe(0)
+    expect(r.maxSafeUniversalUlb).toBe(0)
   })
 
-  it('does not mutate the caller-supplied universalUbb reference', async () => {
-    const { previewConstraintsWithProposedUbb } = await import('../lib/budgetConstraints')
-    const live = universalUbb(5)
+  it('does not mutate the caller-supplied universalUlb reference', async () => {
+    const { previewConstraintsWithProposedUlb } = await import('../lib/budgetConstraints')
+    const live = universalUlb(5)
     const input = baseInput({
       enterpriseBudget: entBudget(500),
-      universalUbb: live,
+      universalUlb: live,
       seats: [seat('alice')],
     })
-    previewConstraintsWithProposedUbb(input, 999)
+    previewConstraintsWithProposedUlb(input, 999)
     expect(live.budgetAmount).toBe(5)
   })
 
   it('drives the snap-button proposal the EnvelopeCheckCard renders', async () => {
-    const { previewConstraintsWithProposedUbb } = await import('../lib/budgetConstraints')
-    const { proposeLowerUniversalUbb } = await import('../lib/budgetAutoFix')
+    const { previewConstraintsWithProposedUlb } = await import('../lib/budgetConstraints')
+    const { proposeLowerUniversalUlb } = await import('../lib/budgetAutoFix')
     const seats: CopilotSeat[] = Array.from({ length: 100 }, (_, i) => seat(`u${i}`))
     const input = baseInput({
       enterpriseBudget: entBudget(500),
-      universalUbb: null,
+      universalUlb: null,
       seats,
     })
     // Aggressive proposal → preview fails → snap proposal is the max-safe.
-    const overPreview = previewConstraintsWithProposedUbb(input, 20)
-    expect(proposeLowerUniversalUbb(overPreview, 20)).toEqual({
+    const overPreview = previewConstraintsWithProposedUlb(input, 20)
+    expect(proposeLowerUniversalUlb(overPreview, 20)).toEqual({
       label: expect.any(String),
       newValue: 5,
-      scope: 'universal_ubb',
+      scope: 'universal_ulb',
     })
     // When the envelope is fully consumed by individual ULBs, the snap is
     // suppressed (safe=0) and the card must rely on the raise-ent action.
     const noHeadroomInput = baseInput({
       enterpriseBudget: entBudget(500),
-      universalUbb: null,
+      universalUlb: null,
       seats: [seat('alice'), seat('bob')],
       userBudgets: [userBudget('alice', 500)],
     })
-    const noHeadroomPreview = previewConstraintsWithProposedUbb(noHeadroomInput, 1)
-    expect(proposeLowerUniversalUbb(noHeadroomPreview, 1)).toBeNull()
+    const noHeadroomPreview = previewConstraintsWithProposedUlb(noHeadroomInput, 1)
+    expect(proposeLowerUniversalUlb(noHeadroomPreview, 1)).toBeNull()
   })
 
   it('returns a non-integer max-safe value when seats × dollars does not divide evenly', async () => {
-    const { previewConstraintsWithProposedUbb } = await import('../lib/budgetConstraints')
+    const { previewConstraintsWithProposedUlb } = await import('../lib/budgetConstraints')
     // 90 seats, $500 ent → max safe = $5.555…. The card floors to whole
     // dollars ($5) before calling onSnapToMaxSafe so the apply path
     // (which ceils AICs/100 → whole USD) does not bounce the value back
@@ -583,27 +583,27 @@ describe('previewConstraintsWithProposedUbb', () => {
     const seats: CopilotSeat[] = Array.from({ length: 90 }, (_, i) => seat(`u${i}`))
     const input = baseInput({
       enterpriseBudget: entBudget(500),
-      universalUbb: null,
+      universalUlb: null,
       seats,
     })
-    const overPreview = previewConstraintsWithProposedUbb(input, 10)
-    expect(overPreview.maxSafeUniversalUbb).toBeCloseTo(5.555, 2)
+    const overPreview = previewConstraintsWithProposedUlb(input, 10)
+    expect(overPreview.maxSafeUniversalUlb).toBeCloseTo(5.555, 2)
     // Sanity-check that flooring to whole dollars and re-previewing passes.
-    const safePreview = previewConstraintsWithProposedUbb(input, 5)
+    const safePreview = previewConstraintsWithProposedUlb(input, 5)
     expect(safePreview.checks.unassignedLeftover?.ok).toBe(true)
   })
 
-  it('forces preventFurtherUsage=true even when the live UBB has it off', async () => {
-    const { previewConstraintsWithProposedUbb } = await import('../lib/budgetConstraints')
-    const live = universalUbb(5, /* preventFurtherUsage */ false)
+  it('forces preventFurtherUsage=true even when the live ULB has it off', async () => {
+    const { previewConstraintsWithProposedUlb } = await import('../lib/budgetConstraints')
+    const live = universalUlb(5, /* preventFurtherUsage */ false)
     const input = baseInput({
       enterpriseBudget: entBudget(500),
-      universalUbb: live,
+      universalUlb: live,
       seats: [seat('alice')],
     })
-    const r = previewConstraintsWithProposedUbb(input, 10)
+    const r = previewConstraintsWithProposedUlb(input, 10)
     // The preview should not carry over the prevent_further_usage_off
-    // warning because patch/createUniversalUBB both apply with the flag on.
+    // warning because patch/createUniversalULB both apply with the flag on.
     expect(r.warnings.some(w => w.code === 'prevent_further_usage_off')).toBe(false)
   })
 })

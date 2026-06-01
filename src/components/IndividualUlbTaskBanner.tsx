@@ -16,8 +16,8 @@ interface Props {
  * context so progress updates as the user edits per-user budgets without
  * having to scroll back up to a stale banner.
  */
-export function IndividualUbbTaskBanner({ task, onDismiss }: Props) {
-  const { budgets, costCenters, universalUbb } = useCredentials()
+export function IndividualUlbTaskBanner({ task, onDismiss }: Props) {
+  const { budgets, costCenters, universalUlb } = useCredentials()
 
   const progress = useMemo(() => {
     const cc = costCenters.find(c => c.id === task.costCenterId)
@@ -25,7 +25,7 @@ export function IndividualUbbTaskBanner({ task, onDismiss }: Props) {
     const memberLogins = new Set(
       cc.resources.filter(r => r.type === 'User').map(r => r.name.toLowerCase()),
     )
-    const universalAmount = universalUbb?.budgetAmount ?? 0
+    const universalAmount = universalUlb?.budgetAmount ?? 0
     const individualByUser = new Map(
       budgets.map(b => [b.user.toLowerCase(), b.budgetAmount]),
     )
@@ -35,10 +35,10 @@ export function IndividualUbbTaskBanner({ task, onDismiss }: Props) {
       sum += ind !== undefined ? ind : universalAmount
     }
     const overBy = Math.max(0, sum - task.ccBudget)
-    const reducedBy = Math.max(0, task.actualUbbSum - sum)
+    const reducedBy = Math.max(0, task.actualUlbSum - sum)
     const resolved = sum <= task.ccBudget
     return { currentSum: sum, overBy, reducedBy, resolved }
-  }, [task, costCenters, budgets, universalUbb])
+  }, [task, costCenters, budgets, universalUlb])
 
   if (!progress) return null
 

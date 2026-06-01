@@ -69,7 +69,7 @@ const baseInput = (
   overrides: Partial<ComputeBudgetConstraintsInput> = {},
 ): ComputeBudgetConstraintsInput => ({
   enterpriseBudget: null,
-  universalUbb: null,
+  universalUlb: null,
   costCenters: [],
   costCenterIndex: buildIndex(),
   ccBudgetsByName: new Map(),
@@ -144,7 +144,7 @@ describe('EnvelopeCheckCard', () => {
     expect(screen.getByRole('button', { name: /raise enterprise budget/i })).toBeInTheDocument()
   })
 
-  it('does not surface pre-existing failures the proposed UBB did not cause', () => {
+  it('does not surface pre-existing failures the proposed ULB did not cause', () => {
     // Pre-existing breach: an individual ULB already exceeds the small ent
     // budget. The proposed universal ULB on a NEW seat is well within
     // headroom relative to baseline (baseline already over), so the card
@@ -167,7 +167,7 @@ describe('EnvelopeCheckCard', () => {
     // contribution. To exercise the "not blamed" branch we need the
     // proposed ULB to not increase leftover. Use a seat that's already
     // covered by an individual ULB → no contribution from the universal.
-    // (Re-test with only alice, who has an ind UBB.)
+    // (Re-test with only alice, who has an ind ULB.)
     const noContribution = baseInput({
       enterpriseBudget: entBudget(100),
       seats: [seat('alice')],
@@ -181,7 +181,7 @@ describe('EnvelopeCheckCard', () => {
       />,
     )
     // Should render the green within-envelope state because the proposed
-    // UBB does not change leftover.actual (alice's ind UBB covers her).
+    // ULB does not change leftover.actual (alice's ind ULB covers her).
     expect(container.textContent).toMatch(/within enterprise envelope/i)
   })
 

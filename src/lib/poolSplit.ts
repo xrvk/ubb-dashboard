@@ -12,13 +12,13 @@ import {
   type CostCenter,
   type CostCenterBudget,
   type EnterpriseBudget,
-  type UniversalUbb,
+  type UniversalUlb,
   type UserBudget,
 } from './api'
 
 export interface PoolSplitInput {
   enterpriseBudget: EnterpriseBudget | null
-  universalUbb: UniversalUbb | null
+  universalUlb: UniversalUlb | null
   costCenters: CostCenter[]
   ccBudgetsByName: ReadonlyMap<string, CostCenterBudget>
   seats: CopilotSeat[]
@@ -31,12 +31,12 @@ export interface CcSlice {
   /** Configured CC budget, or null if uncapped. */
   budgetAmount: number | null
   /** Σ effective ULBs of seats routed to this CC. The "ULB ceiling". */
-  ubbCeiling: number
+  ulbCeiling: number
   seatCount: number
   /**
    * What this CC could realistically draw from the enterprise pool:
-   *   - capped:   min(budget, ubbCeiling) — UBBs may bind below the budget
-   *   - uncapped: ubbCeiling              — the only thing bounding it
+   *   - capped:   min(budget, ulbCeiling) — ULBs may bind below the budget
+   *   - uncapped: ulbCeiling              — the only thing bounding it
    */
   effectiveDraw: number
 }
@@ -47,7 +47,7 @@ export interface PoolSplit {
   costCenters: CcSlice[]
   /** Σ effectiveDraw of capped CCs. */
   cappedTotal: number
-  /** Σ effectiveDraw of uncapped (but UBB-bounded) CCs. */
+  /** Σ effectiveDraw of uncapped (but ULB-bounded) CCs. */
   uncappedTotal: number
   /** Σ effectiveDraw of seats not routed to any CC (consumed from ent pool directly). */
   unassignedTotal: number
@@ -63,17 +63,17 @@ export interface PoolSplit {
  * plus the un-assigned bucket and remaining headroom.
  */
 export function computePoolSplit(input: PoolSplitInput): PoolSplit {
-  const { enterpriseBudget, universalUbb, costCenters, ccBudgetsByName, seats, userBudgets } = input
+  const { enterpriseBudget, universalUlb, costCenters, ccBudgetsByName, seats, userBudgets } = input
 
   const individualByLogin = new Map<string, number>()
   for (const ub of userBudgets) {
     if (ub.user) individualByLogin.set(ub.user.toLowerCase(), ub.budgetAmount)
   }
-  const universal = universalUbb?.budgetAmount ?? 0
+  const universal = universalUlb?.budgetAmount ?? 0
 
   const index = buildCostCenterIndex(costCenters, ccBudgetsByName)
 
-  const ubbByCcId = new Map<string, number>()
+  const ulbByCcId = new Map<string, number>()
   const seatsByCcId = new Map<string, number>()
   let unassignedTotal = 0
   for (const seat of seats) {
@@ -84,7 +84,7 @@ export function computePoolSplit(input: PoolSplitInput): PoolSplit {
       unassignedTotal += eff
       continue
     }
-    ubbByCcId.set(r.cc.id, (ubbByCcId.get(r.cc.id) ?? 0) + eff)
+    ulbByCcId.set(r.cc.id, (ulbByCcId.get(r.cc.id) ?? 0) + eff)
     seatsByCcId.set(r.cc.id, (seatsByCcId.get(r.cc.id) ?? 0) + 1)
   }
 
@@ -94,11 +94,11 @@ export function computePoolSplit(input: PoolSplitInput): PoolSplit {
   for (const cc of costCenters) {
     const seatCount = seatsByCcId.get(cc.id) ?? 0
     if (seatCount === 0) continue // CC has no Copilot seats today; doesn't draw from pool
-    const ubbCeiling = ubbByCcId.get(cc.id) ?? 0
+    const ulbCeiling = ulbByCcId.get(cc.id) ?? 0
     const budget = ccBudgetsByName.get(cc.name.toLowerCase())
     const budgetAmount = budget?.budgetAmount ?? null
     const effectiveDraw =
-      budgetAmount === null ? ubbCeiling : Math.min(budgetAmount, ubbCeiling)
+      budgetAmount === null ? ulbCeiling : Math.min(budgetAmount, ulbCeiling)
     if (budgetAmount === null) {
       uncappedTotal += effectiveDraw
     } else {
@@ -108,7 +108,7 @@ export function computePoolSplit(input: PoolSplitInput): PoolSplit {
       costCenterId: cc.id,
       name: cc.name,
       budgetAmount,
-      ubbCeiling,
+      ulbCeiling,
       seatCount,
       effectiveDraw,
     })

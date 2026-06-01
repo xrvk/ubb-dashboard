@@ -3,7 +3,7 @@ import type {
   CostCenter,
   CostCenterBudget,
   EnterpriseBudget,
-  UniversalUbb,
+  UniversalUlb,
   UserBudget,
 } from './api'
 import { fillerBudgetFor, rollFillerHealth, rollFillerSeatCount } from './demoRng'
@@ -123,7 +123,7 @@ export function readDemoCcCountFromUrl(): number | null {
 /**
  * Optional `?pool=N` query param (0-100) — target % drawn from the shared
  * AI credit pool for the demo. When set, demo individual-budget and
- * universal-UBB consumed amounts are scaled so total UBB consumption
+ * universal-ULB consumed amounts are scaled so total ULB consumption
  * matches `N%` of the seat-derived pool value, and `aiCreditsNet` is
  * forced to 0 (no metered overflow yet) when `N` is below 100.
  */
@@ -184,7 +184,7 @@ export function getEffectiveDemoAsof(): Date | null {
 }
 
 /**
- * Demo seats: a superset of the demo budget users so the "Add UBB" autocomplete
+ * Demo seats: a superset of the demo budget users so the "Add ULB" autocomplete
  * can suggest users who don't yet have an individual cap. The org assignment
  * mirrors the CC layout in generateDemoCostCenters so seats line up cleanly
  * with the User and Org based CC resources.
@@ -305,7 +305,7 @@ export function generateDemoEnterpriseBudget(opts?: { excludeCostCenterUsage?: b
   }
 }
 
-export function generateDemoUniversalUbb(budgets?: UserBudget[]): UniversalUbb {
+export function generateDemoUniversalUlb(budgets?: UserBudget[]): UniversalUlb {
   // Mirror the universal share assumed by generateDemoUsageSummary (18% of
   // individual consumption). Without this, the Forecast Breakdown card
   // shows Universal ULB at $0 in default demo mode, which contradicts the
@@ -313,7 +313,7 @@ export function generateDemoUniversalUbb(budgets?: UserBudget[]): UniversalUbb {
   const indivConsumed = (budgets ?? []).reduce((s, b) => s + b.consumedAmount, 0)
   const consumed = Math.round(indivConsumed * 0.18 * 100) / 100
   return {
-    id: 'demo-uubb',
+    id: 'demo-uulb',
     budgetAmount: 50,
     consumedAmount: consumed,
     preventFurtherUsage: true,
@@ -336,7 +336,7 @@ export function generateDemoUniversalUbb(budgets?: UserBudget[]): UniversalUbb {
 export function scaleDemoConsumptionTo(
   targetDollars: number,
   budgets: UserBudget[],
-  universal: UniversalUbb,
+  universal: UniversalUlb,
 ) {
   if (targetDollars <= 0) {
     universal.consumedAmount = 0
@@ -510,7 +510,7 @@ export function generateDemoUsageSummary(
  * The distribution mirrors the budget tiers used elsewhere in demo:
  *   ~5% heavy ($80-$200/mo), ~10% high ($30-$80), ~25% mid ($5-$30),
  *   ~35% low ($0-$5), ~25% idle. With ~75 universal-only seats (demo=150),
- *   the Top 5% threshold lands a proposed UBB in the $80-$200 band, which
+ *   the Top 5% threshold lands a proposed ULB in the $80-$200 band, which
  *   collides with the small demo enterprise envelope ($9k) and exercises
  *   the new pre-flight envelope check end-to-end.
  *

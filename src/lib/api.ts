@@ -348,7 +348,7 @@ interface BudgetsResponse {
   total_count?: number
 }
 /**
- * Predicate for "this is a budget that our UBB constraint math should consider."
+ * Predicate for "this is a budget that our ULB constraint math should consider."
  *
  * We intentionally only match `BundlePricing / ai_credits`. The enterprise can
  * also have parallel `SkuPricing / copilot_ai_credit` budgets — that's a
@@ -568,7 +568,7 @@ export async function deleteUserBudget(apiFetch: ApiFetch, budgetId: string): Pr
  * budget that caps every enterprise user not covered by a more specific budget
  * (cost center or individual). Enterprises have at most one of these.
  */
-export interface UniversalUbb {
+export interface UniversalUlb {
   id: string
   budgetAmount: number
   consumedAmount: number
@@ -577,7 +577,7 @@ export interface UniversalUbb {
   alertRecipients: string[]
 }
 
-function toUniversalUbb(b: RawBudget): UniversalUbb {
+function toUniversalUlb(b: RawBudget): UniversalUlb {
   return {
     id: b.id,
     budgetAmount: b.budget_amount,
@@ -592,14 +592,14 @@ function toUniversalUbb(b: RawBudget): UniversalUbb {
  * Fetch the enterprise's universal ULB (multi_user_customer scope, ai_credits SKU).
  * Returns null if one isn't configured.
  */
-export async function fetchUniversalUBB(apiFetch: ApiFetch): Promise<UniversalUbb | null> {
+export async function fetchUniversalULB(apiFetch: ApiFetch): Promise<UniversalUlb | null> {
   const { budgets } = await paginateAllBudgets(apiFetch)
   const hit = budgets.find(b => b.budget_scope === 'multi_user_customer' && isCopilotBudget(b))
-  return hit ? toUniversalUbb(hit) : null
+  return hit ? toUniversalUlb(hit) : null
 }
 
 /** Update the universal ULB's cap. Hard stop is always enforced. */
-export async function patchUniversalUBB(
+export async function patchUniversalULB(
   apiFetch: ApiFetch,
   budgetId: string,
   budgetAmount: number,
@@ -614,7 +614,7 @@ export async function patchUniversalUBB(
 }
 
 /** Create the universal ULB (only used if one doesn't exist yet). */
-export async function createUniversalUBB(
+export async function createUniversalULB(
   apiFetch: ApiFetch,
   budgetAmount: number,
 ): Promise<void> {
@@ -742,7 +742,7 @@ function buildCostCenterBudgetMap(budgets: RawBudget[]): Map<string, CostCenterB
  */
 export interface AiCreditsBudgets {
   enterprise: EnterpriseBudget | null
-  universal: UniversalUbb | null
+  universal: UniversalUlb | null
   costCenterBudgetsByName: Map<string, CostCenterBudget>
   userBudgets: UserBudget[]
   totalBudgetCount: number
@@ -756,7 +756,7 @@ export async function fetchAllAiCreditsBudgets(
   const universalRaw = budgets.find(b => b.budget_scope === 'multi_user_customer' && isCopilotBudget(b))
   return {
     enterprise: pickEnterpriseBudget(budgets),
-    universal: universalRaw ? toUniversalUbb(universalRaw) : null,
+    universal: universalRaw ? toUniversalUlb(universalRaw) : null,
     costCenterBudgetsByName: buildCostCenterBudgetMap(budgets),
     userBudgets: budgets.filter(b => b.budget_scope === 'user' && isCopilotBudget(b)).map(toUserBudget),
     totalBudgetCount: totalCount,
@@ -968,7 +968,7 @@ export function enterpriseSeatsUrl(apiBase: string, ent: string): string {
   return `${apiBaseToWebBase(apiBase)}/enterprises/${ent}/people`
 }
 
-// --- Copilot seats (used as the source of truth for "add UBB" autocomplete) ---
+// --- Copilot seats (used as the source of truth for "add ULB" autocomplete) ---
 
 export interface CopilotSeat {
   login: string
@@ -1174,7 +1174,7 @@ export function resolveCostCenter(
 
 /**
  * Fetch every Copilot seat in the enterprise. Used to power the username
- * autocomplete in the "Add UBB" dialog so admins don't have to remember
+ * autocomplete in the "Add ULB" dialog so admins don't have to remember
  * GitHub handles.
  */
 export async function fetchAllCopilotSeats(apiFetch: ApiFetch): Promise<CopilotSeat[]> {

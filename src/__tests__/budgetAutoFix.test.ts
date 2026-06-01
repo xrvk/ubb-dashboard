@@ -6,7 +6,7 @@ import {
 import {
   proposeRaiseEnt,
   proposeRaiseCc,
-  proposeLowerUniversalUbb,
+  proposeLowerUniversalUlb,
   computeRequiredMinimums,
 } from '../lib/budgetAutoFix'
 import type {
@@ -15,7 +15,7 @@ import type {
   CostCenterBudget,
   CostCenterIndex,
   EnterpriseBudget,
-  UniversalUbb,
+  UniversalUlb,
   UserBudget,
 } from '../lib/api'
 
@@ -45,49 +45,49 @@ const ccBudget = (id: string, name: string, amount: number): CostCenterBudget =>
 })
 
 // Mutation-resistance: cent-boundary direction tests for proposeLower-
-// UniversalUbb. The proposal must floor to the nearest cent so applying it
+// UniversalUlb. The proposal must floor to the nearest cent so applying it
 // never re-breaches. A mutation to `Math.ceil` or `Math.round` would still
 // pass integer-only tests but ship a re-breaching proposal in production.
-describe('proposeLowerUniversalUbb cent-boundary direction', () => {
+describe('proposeLowerUniversalUlb cent-boundary direction', () => {
   it('floors a sub-cent maxSafe to the nearest cent below (never up)', () => {
     const result = {
       mode: 'umbrella',
-      maxSafeUniversalUbb: 10.999, // a `ceil`/`round` mutation would propose 11.00 and re-breach
+      maxSafeUniversalUlb: 10.999, // a `ceil`/`round` mutation would propose 11.00 and re-breach
       checks: { perCc: [] },
-    } as unknown as Parameters<typeof proposeLowerUniversalUbb>[0]
-    const proposal = proposeLowerUniversalUbb(result, 11.5)
+    } as unknown as Parameters<typeof proposeLowerUniversalUlb>[0]
+    const proposal = proposeLowerUniversalUlb(result, 11.5)
     expect(proposal).not.toBeNull()
     expect(proposal!.newValue).toBe(10.99)
     expect(proposal!.label).toBe('Lower universal ULB to $10.99')
-    expect(proposal!.scope).toBe('universal_ubb')
+    expect(proposal!.scope).toBe('universal_ulb')
   })
 
   it('returns null when current is already at or below the safe value', () => {
     const result = {
       mode: 'umbrella',
-      maxSafeUniversalUbb: 10.99,
+      maxSafeUniversalUlb: 10.99,
       checks: { perCc: [] },
-    } as unknown as Parameters<typeof proposeLowerUniversalUbb>[0]
-    expect(proposeLowerUniversalUbb(result, 10.99)).toBeNull()
-    expect(proposeLowerUniversalUbb(result, 5)).toBeNull()
+    } as unknown as Parameters<typeof proposeLowerUniversalUlb>[0]
+    expect(proposeLowerUniversalUlb(result, 10.99)).toBeNull()
+    expect(proposeLowerUniversalUlb(result, 5)).toBeNull()
   })
 
   it('returns null when the safe value is zero (turning the knob off is not a fix)', () => {
     const result = {
       mode: 'umbrella',
-      maxSafeUniversalUbb: 0,
+      maxSafeUniversalUlb: 0,
       checks: { perCc: [] },
-    } as unknown as Parameters<typeof proposeLowerUniversalUbb>[0]
-    expect(proposeLowerUniversalUbb(result, 50)).toBeNull()
+    } as unknown as Parameters<typeof proposeLowerUniversalUlb>[0]
+    expect(proposeLowerUniversalUlb(result, 50)).toBeNull()
   })
 
-  it('returns null when maxSafeUniversalUbb is Infinity (nothing binds)', () => {
+  it('returns null when maxSafeUniversalUlb is Infinity (nothing binds)', () => {
     const result = {
       mode: 'umbrella',
-      maxSafeUniversalUbb: Infinity,
+      maxSafeUniversalUlb: Infinity,
       checks: { perCc: [] },
-    } as unknown as Parameters<typeof proposeLowerUniversalUbb>[0]
-    expect(proposeLowerUniversalUbb(result, 50)).toBeNull()
+    } as unknown as Parameters<typeof proposeLowerUniversalUlb>[0]
+    expect(proposeLowerUniversalUlb(result, 50)).toBeNull()
   })
 })
 
@@ -100,7 +100,7 @@ const entBudget = (amount: number, excludeCostCenterUsage = false): EnterpriseBu
   alertRecipients: [],
 })
 
-const universal = (amount: number): UniversalUbb => ({
+const universal = (amount: number): UniversalUlb => ({
   id: 'uni-1',
   budgetAmount: amount,
   consumedAmount: 0,
@@ -132,7 +132,7 @@ const baseInput = (
   overrides: Partial<ComputeBudgetConstraintsInput> = {},
 ): ComputeBudgetConstraintsInput => ({
   enterpriseBudget: null,
-  universalUbb: null,
+  universalUlb: null,
   costCenters: [],
   costCenterIndex: idx(),
   ccBudgetsByName: new Map(),
@@ -151,7 +151,7 @@ describe('proposeRaiseEnt', () => {
     const r = computeBudgetConstraints(
       baseInput({
         enterpriseBudget: entBudget(1000),
-        universalUbb: universal(10),
+        universalUlb: universal(10),
         seats: [seat('alice'), seat('bob')],
       }),
     )
@@ -165,7 +165,7 @@ describe('proposeRaiseEnt', () => {
     const r = computeBudgetConstraints(
       baseInput({
         enterpriseBudget: entBudget(40),
-        universalUbb: universal(10),
+        universalUlb: universal(10),
         costCenters: [ccFoo],
         costCenterIndex: idx([['alice', ccFoo]]),
         ccBudgetsByName: new Map([['foo', ccBudget('b1', 'foo', 50)]]),
@@ -184,7 +184,7 @@ describe('proposeRaiseEnt', () => {
     const r = computeBudgetConstraints(
       baseInput({
         enterpriseBudget: entBudget(5, /* excludeCostCenterUsage */ true),
-        universalUbb: universal(10),
+        universalUlb: universal(10),
         costCenters: [ccFoo],
         costCenterIndex: idx([['alice', ccFoo]]),
         ccBudgetsByName: new Map([['foo', ccBudget('b1', 'foo', 50)]]),
@@ -200,7 +200,7 @@ describe('proposeRaiseEnt', () => {
     const r = computeBudgetConstraints(
       baseInput({
         enterpriseBudget: entBudget(1),
-        universalUbb: universal(3.333),
+        universalUlb: universal(3.333),
         seats: [seat('a'), seat('b'), seat('c')],
       }),
     )
@@ -216,7 +216,7 @@ describe('proposeRaiseCc', () => {
     const r = computeBudgetConstraints(
       baseInput({
         enterpriseBudget: entBudget(1000),
-        universalUbb: universal(10),
+        universalUlb: universal(10),
         costCenters: [ccFoo],
         costCenterIndex: idx([['alice', ccFoo]]),
         ccBudgetsByName: new Map([['foo', ccBudget('b1', 'foo', 50)]]),
@@ -231,7 +231,7 @@ describe('proposeRaiseCc', () => {
     const r = computeBudgetConstraints(
       baseInput({
         enterpriseBudget: entBudget(1000),
-        universalUbb: universal(25),
+        universalUlb: universal(25),
         costCenters: [ccFoo],
         costCenterIndex: idx([
           ['alice', ccFoo],
@@ -254,42 +254,42 @@ describe('proposeRaiseCc', () => {
   })
 })
 
-describe('proposeLowerUniversalUbb', () => {
+describe('proposeLowerUniversalUlb', () => {
   it('returns null when no current universal', () => {
     const r = computeBudgetConstraints(baseInput({ enterpriseBudget: entBudget(100) }))
-    expect(proposeLowerUniversalUbb(r, null)).toBeNull()
+    expect(proposeLowerUniversalUlb(r, null)).toBeNull()
   })
 
   it('returns null when nothing binds the universal', () => {
     // No envelope binds universal because no seats / no enterprise.
-    const r = computeBudgetConstraints(baseInput({ universalUbb: universal(10) }))
-    expect(proposeLowerUniversalUbb(r, 10)).toBeNull()
+    const r = computeBudgetConstraints(baseInput({ universalUlb: universal(10) }))
+    expect(proposeLowerUniversalUlb(r, 10)).toBeNull()
   })
 
-  it('proposes the floor-cent of maxSafeUniversalUbb when current exceeds it', () => {
+  it('proposes the floor-cent of maxSafeUniversalUlb when current exceeds it', () => {
     // Ent $30, 3 seats, universal $20 → max safe = 10. Currently $20.
     const r = computeBudgetConstraints(
       baseInput({
         enterpriseBudget: entBudget(30),
-        universalUbb: universal(20),
+        universalUlb: universal(20),
         seats: [seat('a'), seat('b'), seat('c')],
       }),
     )
-    expect(r.maxSafeUniversalUbb).toBe(10)
-    const proposal = proposeLowerUniversalUbb(r, 20)
+    expect(r.maxSafeUniversalUlb).toBe(10)
+    const proposal = proposeLowerUniversalUlb(r, 20)
     expect(proposal!.newValue).toBe(10)
-    expect(proposal!.scope).toBe('universal_ubb')
+    expect(proposal!.scope).toBe('universal_ulb')
   })
 
   it('returns null when already at or below safe max', () => {
     const r = computeBudgetConstraints(
       baseInput({
         enterpriseBudget: entBudget(30),
-        universalUbb: universal(10),
+        universalUlb: universal(10),
         seats: [seat('a'), seat('b'), seat('c')],
       }),
     )
-    expect(proposeLowerUniversalUbb(r, 10)).toBeNull()
+    expect(proposeLowerUniversalUlb(r, 10)).toBeNull()
   })
 
   it('returns null when safe max would be $0 (no real fix)', () => {
@@ -300,11 +300,11 @@ describe('proposeLowerUniversalUbb', () => {
     const r = computeBudgetConstraints(
       baseInput({
         enterpriseBudget: entBudget(0.01),
-        universalUbb: universal(1),
+        universalUlb: universal(1),
         seats: [seat('a'), seat('b'), seat('c')],
       }),
     )
-    expect(proposeLowerUniversalUbb(r, 1)).toBeNull()
+    expect(proposeLowerUniversalUlb(r, 1)).toBeNull()
   })
 })
 
@@ -319,7 +319,7 @@ describe('computeRequiredMinimums', () => {
     const r = computeBudgetConstraints(
       baseInput({
         enterpriseBudget: entBudget(1000),
-        universalUbb: universal(7),
+        universalUlb: universal(7),
         costCenters: [ccFoo],
         costCenterIndex: idx([['alice', ccFoo]]),
         ccBudgetsByName: new Map([['foo', ccBudget('b1', 'foo', 50)]]),
@@ -328,7 +328,7 @@ describe('computeRequiredMinimums', () => {
     )
     const min = computeRequiredMinimums(r)
     expect(min.enterprise).toBe(57) // 50 + 7
-    expect(min.perCc.get('cc1')).toBe(7) // alice's UBB
+    expect(min.perCc.get('cc1')).toBe(7) // alice's ULB
   })
 
   it('only Σ unassigned ULBs in independent', () => {
@@ -336,7 +336,7 @@ describe('computeRequiredMinimums', () => {
     const r = computeBudgetConstraints(
       baseInput({
         enterpriseBudget: entBudget(1000, true),
-        universalUbb: universal(7),
+        universalUlb: universal(7),
         costCenters: [ccFoo],
         costCenterIndex: idx([['alice', ccFoo]]),
         ccBudgetsByName: new Map([['foo', ccBudget('b1', 'foo', 50)]]),
@@ -350,7 +350,7 @@ describe('computeRequiredMinimums', () => {
     const r = computeBudgetConstraints(
       baseInput({
         enterpriseBudget: entBudget(1000),
-        universalUbb: universal(10),
+        universalUlb: universal(10),
         seats: [seat('a'), seat('b')],
         userBudgets: [userBudget('a', 50)], // a overrides universal
       }),

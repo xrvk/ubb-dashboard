@@ -46,7 +46,7 @@ export interface ThresholdResult {
   regularUserCount: number
   powerUserAICShare: number
   suggestedPowerUserBudget: number
-  suggestedUBB: number
+  suggestedULB: number
 }
 
 export type ThresholdMode = 'top-5' | 'top-10' | 'top-15' | 'custom'
@@ -123,7 +123,7 @@ export function applyThreshold(
   // Universal ULB = P95 of regular group: covers most regulars without inflating
   // the cap to the very top outlier. Admins can drag higher/lower.
   const regularSorted = regularUsers.map(u => u.totalAICs).sort((a, b) => a - b)
-  const suggestedUBB = regularSorted.length > 0 ? percentile(regularSorted, 95) : 0
+  const suggestedULB = regularSorted.length > 0 ? percentile(regularSorted, 95) : 0
 
   return {
     thresholdAICs,
@@ -133,7 +133,7 @@ export function applyThreshold(
     regularUserCount: regularUsers.length,
     powerUserAICShare,
     suggestedPowerUserBudget: Math.ceil(suggestedPowerUserBudget),
-    suggestedUBB: Math.ceil(suggestedUBB),
+    suggestedULB: Math.ceil(suggestedULB),
   }
 }
 

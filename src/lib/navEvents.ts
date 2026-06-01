@@ -25,10 +25,10 @@ export interface NavToIndividualTask {
   costCenterName: string
   memberCount: number
   /** Σ of effective ULBs of the CC members at the time of the click. */
-  actualUbbSum: number
+  actualUlbSum: number
   /** Current CC budget the members must fit under. */
   ccBudget: number
-  /** actualUbbSum − ccBudget. */
+  /** actualUlbSum − ccBudget. */
   overBy: number
 }
 
