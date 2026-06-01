@@ -182,42 +182,122 @@ export function toUserBudget(b: RawBudget): UserBudget {
 }
 
 /**
+ * Internal: fetch pages 2..N concurrently with a small concurrency cap.
+ *
+ * Used by paginated endpoints where page 1 already tells us the grand
+ * total (so we know exactly how many more pages exist) and the upstream
+ * API doesn't punish parallel reads. Replaces the previous
+ * await-each-page loop, which was the dominant connect-time cost on
+ * large enterprises (e.g. 14 seat pages × ~1s sequential).
+ *
+ * Concurrency is capped at 8 — well below GitHub's secondary rate-limit
+ * threshold for read-only billing endpoints, and enough to hide all but
+ * the first round-trip's latency for any realistic page count.
+ *
+ * Errors propagate: any rejected page rejects the whole batch (same
+ * behavior as the old sequential loop, which would throw on the first
+ * failure).
+ */
+const PARALLEL_PAGE_CONCURRENCY = 8
+
+async function fetchPagesInParallel<T>(
+  fetchPage: (page: number) => Promise<T[]>,
+  pageNumbers: number[],
+): Promise<T[][]> {
+  const results: T[][] = new Array(pageNumbers.length)
+  for (let i = 0; i < pageNumbers.length; i += PARALLEL_PAGE_CONCURRENCY) {
+    const chunkStart = i
+    const chunk = pageNumbers.slice(i, i + PARALLEL_PAGE_CONCURRENCY)
+    await Promise.all(
+      chunk.map(async (page, j) => {
+        results[chunkStart + j] = await fetchPage(page)
+      }),
+    )
+  }
+  return results
+}
+
+/**
  * Internal: page through ALL budgets across the enterprise account (every
  * scope, type, and SKU). Used by every higher-level fetcher to avoid making
  * multiple full scans of the budgets endpoint.
  *
+ * Strategy: fetch page 1, then if `total_count` and the page-1 length tell
+ * us more pages remain, fetch them all in parallel via
+ * `fetchPagesInParallel`. Falls back to sequential when `total_count` is
+ * missing (defensive — the budgets endpoint always returns it today, but
+ * a server change shouldn't quietly truncate our results).
+ *
  * Note: the enterprise billing budgets endpoint historically ignored
  * `per_page` and returned ~10 items per page; recent versions honor it.
- * Either way the safety loop handles both. We cap at 1500 pages to support
- * enterprises at the platform cap (~10k budgets).
+ * Either path handles both — parallel just uses the page-1 length as the
+ * effective page size, so a 10/page response just means we issue more
+ * (still-parallel) requests. Capped at 1500 pages to support enterprises
+ * at the platform cap (~10k budgets).
  */
 async function paginateAllBudgets(
   apiFetch: ApiFetch,
   onProgress?: (loaded: number, totalCount: number | undefined) => void,
 ): Promise<{ budgets: RawBudget[]; totalCount: number }> {
   const PAGE_SAFETY_LIMIT = 1500
-  const all: RawBudget[] = []
-  let page = 1
-  let totalCount: number | undefined
-  while (page <= PAGE_SAFETY_LIMIT) {
+
+  const fetchBudgetPage = async (page: number): Promise<{ list: RawBudget[]; totalCount: number | undefined }> => {
     const data = (await apiFetch(`/budgets?per_page=100&page=${page}`)) as BudgetsResponse | RawBudget[]
     const list = Array.isArray(data) ? data : (data?.budgets ?? [])
-    if (!Array.isArray(data) && typeof data?.total_count === 'number') {
-      totalCount = data.total_count
+    const totalCount = !Array.isArray(data) && typeof data?.total_count === 'number' ? data.total_count : undefined
+    return { list, totalCount }
+  }
+
+  const first = await fetchBudgetPage(1)
+  const all: RawBudget[] = [...first.list]
+  const totalCount = first.totalCount
+  onProgress?.(all.length, totalCount)
+
+  // Stop early when page 1 already has everything (or we got nothing).
+  if (first.list.length === 0 || (totalCount !== undefined && all.length >= totalCount)) {
+    return { budgets: all, totalCount: totalCount ?? all.length }
+  }
+
+  if (totalCount !== undefined) {
+    const pageSize = first.list.length
+    const remaining = Math.ceil((totalCount - all.length) / pageSize)
+    const capped = Math.min(remaining, PAGE_SAFETY_LIMIT - 1)
+    if (capped < remaining) {
+      console.warn(
+        `[ubb-dashboard] Pagination safety limit hit at ${PAGE_SAFETY_LIMIT} pages; ` +
+          `would have loaded ${remaining + 1} pages for total_count=${totalCount}.`,
+      )
     }
+    const pages = Array.from({ length: capped }, (_, i) => i + 2)
+    const fetched = await fetchPagesInParallel(
+      async page => (await fetchBudgetPage(page)).list,
+      pages,
+    )
+    // Append in page order (results[i] is for pages[i]) so callers that
+    // rely on a stable order see the same shape as the old sequential loop.
+    for (const list of fetched) {
+      all.push(...list)
+    }
+    onProgress?.(all.length, totalCount)
+    return { budgets: all, totalCount }
+  }
+
+  // Defensive sequential fallback when total_count is missing.
+  let page = 2
+  while (page <= PAGE_SAFETY_LIMIT) {
+    const { list } = await fetchBudgetPage(page)
     if (list.length === 0) break
     all.push(...list)
-    onProgress?.(all.length, totalCount)
-    if (totalCount !== undefined && all.length >= totalCount) break
+    onProgress?.(all.length, undefined)
     page += 1
   }
   if (page > PAGE_SAFETY_LIMIT) {
     console.warn(
-      `[ubb-dashboard] Pagination safety limit hit at ${PAGE_SAFETY_LIMIT} pages; ` +
-        `loaded ${all.length} budgets but total_count was ${totalCount ?? 'unknown'}.`,
+      `[ubb-dashboard] Pagination safety limit hit at ${PAGE_SAFETY_LIMIT} pages (no total_count); ` +
+        `loaded ${all.length} budgets.`,
     )
   }
-  return { budgets: all, totalCount: totalCount ?? all.length }
+  return { budgets: all, totalCount: all.length }
 }
 
 export interface FetchUserBudgetsResult {
@@ -900,18 +980,51 @@ export function resolveCostCenter(
  * GitHub handles.
  */
 export async function fetchAllCopilotSeats(apiFetch: ApiFetch): Promise<CopilotSeat[]> {
-  const all: RawSeat[] = []
-  let page = 1
-  let totalSeats: number | undefined
-  while (page <= 1500) {
-    const data = (await apiFetch(`enterprise:/copilot/billing/seats?per_page=100&page=${page}`)) as SeatsResponse
+  const PAGE_SAFETY_LIMIT = 1500
+  const fetchSeatPage = async (page: number): Promise<{ list: RawSeat[]; totalSeats: number | undefined }> => {
+    const data = (await apiFetch(
+      `enterprise:/copilot/billing/seats?per_page=100&page=${page}`,
+    )) as SeatsResponse
     const list = data?.seats ?? []
-    if (typeof data?.total_seats === 'number') totalSeats = data.total_seats
-    if (list.length === 0) break
-    all.push(...list)
-    if (totalSeats !== undefined && all.length >= totalSeats) break
-    page += 1
+    const totalSeats = typeof data?.total_seats === 'number' ? data.total_seats : undefined
+    return { list, totalSeats }
   }
+
+  const first = await fetchSeatPage(1)
+  const all: RawSeat[] = [...first.list]
+  const totalSeats = first.totalSeats
+
+  // When page 1 already has everything, or total_seats says we're done.
+  const needsMore =
+    first.list.length > 0 && (totalSeats === undefined || all.length < totalSeats)
+
+  if (needsMore) {
+    if (totalSeats !== undefined) {
+      // Known total → fan out pages 2..N in parallel.
+      const pageSize = first.list.length
+      const remaining = Math.ceil((totalSeats - all.length) / pageSize)
+      const capped = Math.min(remaining, PAGE_SAFETY_LIMIT - 1)
+      const pages = Array.from({ length: capped }, (_, i) => i + 2)
+      const fetched = await fetchPagesInParallel(
+        async page => (await fetchSeatPage(page)).list,
+        pages,
+      )
+      // Append in page order to keep the post-dedupe set stable.
+      for (const list of fetched) {
+        all.push(...list)
+      }
+    } else {
+      // Defensive sequential fallback when total_seats is missing.
+      let page = 2
+      while (page <= PAGE_SAFETY_LIMIT) {
+        const { list } = await fetchSeatPage(page)
+        if (list.length === 0) break
+        all.push(...list)
+        page += 1
+      }
+    }
+  }
+
   // Dedupe by login (the API can return the same user across multiple orgs)
   const seen = new Set<string>()
   const out: CopilotSeat[] = []
