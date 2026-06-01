@@ -28,7 +28,18 @@ import {
  * Cost centers without an ai_credits budget are surfaced separately as
  * "uncapped" so they can't silently overflow the enterprise pool.
  */
-export function BudgetStructureDiagram() {
+export function BudgetStructureDiagram({
+  hideActionableItems = false,
+}: {
+  /**
+   * When true, suppresses the "✓ enforcement looks solid" / "⚠ actionable
+   * items" banner at the bottom of the diagram. Used on the Dashboard
+   * where the same banner is already surfaced (or would just add noise);
+   * the Enterprise Budgets page leaves it on so admins see it next to
+   * the editable cost-center list.
+   */
+  hideActionableItems?: boolean
+} = {}) {
   const {
     enterpriseBudget,
     costCenterBudgetsByName,
@@ -391,8 +402,9 @@ export function BudgetStructureDiagram() {
         {/* Cost-center list is rendered (editable) by BudgetPlanner immediately
             below this diagram — kept consolidated to avoid duplication. */}
 
-        {/* Actionable items — info-style alert listing things the user can fix */}
-        {(() => {
+        {/* Actionable items — info-style alert listing things the user can fix.
+            Suppressed on the Dashboard placement via `hideActionableItems`. */}
+        {!hideActionableItems && (() => {
           interface Item {
             severity: 'red' | 'amber' | 'info'
             text: string
