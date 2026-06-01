@@ -45,7 +45,7 @@ export function BudgetStructureDiagram({
     costCenterBudgetsByName,
     costCenters,
     loginToCostCenter,
-    universalUbb,
+    universalUlb,
   } = useCredentials()
 
   // Count Copilot-affecting seats per CC (a CC "affects Copilot" if any seat
@@ -107,9 +107,9 @@ export function BudgetStructureDiagram({
   // This is the implicit ceiling once universal ULB is set; without it the CC
   // has no per-CC bound at all.
   function uncappedBackstopLine(seatCount: number): string | null {
-    const ubb = universalUbb?.budgetAmount ?? null
-    if (ubb === null || ubb <= 0 || seatCount <= 0) return null
-    return `Effective cap: ${seatCount.toLocaleString()} seat${seatCount === 1 ? '' : 's'} × ${formatCurrencyShort(ubb)} = ${formatCurrencyShort(seatCount * ubb)}`
+    const ulb = universalUlb?.budgetAmount ?? null
+    if (ulb === null || ulb <= 0 || seatCount <= 0) return null
+    return `Effective cap: ${seatCount.toLocaleString()} seat${seatCount === 1 ? '' : 's'} × ${formatCurrencyShort(ulb)} = ${formatCurrencyShort(seatCount * ulb)}`
   }
 
   // CC sub-segment widths

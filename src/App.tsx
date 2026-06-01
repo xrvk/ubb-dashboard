@@ -5,13 +5,13 @@ import { useTheme } from 'next-themes'
 import { useCredentials } from '@/hooks/use-credentials'
 import { ConnectionMenu } from '@/components/ConnectionMenu'
 import { ImportPanel } from '@/components/ImportPanel'
-import { IndividualUbbPage } from '@/components/IndividualUbbPage'
-import { IndividualUbbTaskBanner } from '@/components/IndividualUbbTaskBanner'
+import { IndividualUlbPage } from '@/components/IndividualUlbPage'
+import { IndividualUlbTaskBanner } from '@/components/IndividualUlbTaskBanner'
 import { BudgetPlannerHintBanner } from '@/components/BudgetPlannerHintBanner'
 import { LoadProgressBanner } from '@/components/LoadProgressBanner'
 import { OverviewPage } from '@/components/OverviewPage'
 import { DashboardPage } from '@/components/DashboardPage'
-import { UniversalUbbPage } from '@/components/UniversalUbbPage'
+import { UniversalUlbPage } from '@/components/UniversalUlbPage'
 import { BudgetConstraintsHelpPage } from '@/components/BudgetConstraintsHelpPage'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { PartialLoadBanner } from '@/components/PartialLoadBanner'
@@ -90,12 +90,12 @@ export function App() {
     })
   }
   const [creating, setCreating] = useState(false)
-  // Snapshot is owned by IndividualUbbPage but surfaced here so the header
+  // Snapshot is owned by IndividualUlbPage but surfaced here so the header
   // can render the Revert button regardless of which tab is active.
   const [snapshot, setSnapshot] = useState<BulkApplySnapshot | null>(null)
   const [revertCandidate, setRevertCandidate] = useState<BulkApplySnapshot | null>(null)
   // Pending filter set by deep-link events (e.g. from ConstraintsBanner).
-  // Cleared by IndividualUbbPage once consumed.
+  // Cleared by IndividualUlbPage once consumed.
   const [pendingIndividualFilter, setPendingIndividualFilter] = useState<TableFilters | null>(null)
   // Active task context shown as a contextual banner on the Individual ULBs
   // page so the user remembers what they came to fix.
@@ -193,7 +193,7 @@ export function App() {
       // user sees where to act after clicking 'Lower universal ULB to $X'.
       window.requestAnimationFrame(() => {
         window.requestAnimationFrame(() => {
-          const el = document.getElementById('uubb-cap')
+          const el = document.getElementById('uulb-cap')
           if (!el) return
           el.scrollIntoView({ behavior: 'smooth', block: 'center' })
           const cls = [
@@ -349,7 +349,7 @@ export function App() {
       {credentials && !loading && tab === 'individual' && activeTask ? (
         <div className="sticky top-[49px] z-10 border-b border-neutral-200 dark:border-neutral-800 bg-white/95 dark:bg-neutral-950/95 backdrop-blur supports-[backdrop-filter]:bg-white/80 dark:supports-[backdrop-filter]:bg-neutral-950/80">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 py-2">
-            <IndividualUbbTaskBanner task={activeTask} onDismiss={() => setActiveTask(null)} />
+            <IndividualUlbTaskBanner task={activeTask} onDismiss={() => setActiveTask(null)} />
           </div>
         </div>
       ) : null}
@@ -376,7 +376,7 @@ export function App() {
             <ErrorBoundary label="Enterprise Budgets tab"><OverviewPage /></ErrorBoundary>
           ) : tab === 'individual' ? (
             <ErrorBoundary label="Individual ULBs tab">
-              <IndividualUbbPage
+              <IndividualUlbPage
                 creating={creating}
                 onCreatingChange={setCreating}
                 onSnapshotChange={setSnapshot}
@@ -393,7 +393,7 @@ export function App() {
               <BudgetConstraintsHelpPage onBack={() => goToTab('overview')} />
             </ErrorBoundary>
           ) : (
-            <ErrorBoundary label="Universal ULB tab"><UniversalUbbPage /></ErrorBoundary>
+            <ErrorBoundary label="Universal ULB tab"><UniversalUlbPage /></ErrorBoundary>
           )
         ) : null}
       </main>

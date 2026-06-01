@@ -42,7 +42,7 @@ import { BudgetStructureDiagram } from '@/components/BudgetStructureDiagram'
 /**
  * Top-level Dashboard. Single-screen rollup of the enterprise's AI credit
  * posture: where the pool is committed, how budgets compare to effective
- * caps, where spend is trending, UBB coverage, and license cost context.
+ * caps, where spend is trending, ULB coverage, and license cost context.
  *
  * Every section here is read-only — editing happens on the dedicated tabs
  * (Enterprise Budgets, Universal ULB, Individual ULBs) — so the dashboard
@@ -51,7 +51,7 @@ import { BudgetStructureDiagram } from '@/components/BudgetStructureDiagram'
 export function DashboardPage() {
   const {
     enterpriseBudget,
-    universalUbb,
+    universalUlb,
     costCenters,
     costCenterBudgetsByName,
     seats,
@@ -65,13 +65,13 @@ export function DashboardPage() {
     () =>
       computePoolSplit({
         enterpriseBudget,
-        universalUbb,
+        universalUlb,
         costCenters,
         ccBudgetsByName: costCenterBudgetsByName,
         seats,
         userBudgets: budgets,
       }),
-    [enterpriseBudget, universalUbb, costCenters, costCenterBudgetsByName, seats, budgets],
+    [enterpriseBudget, universalUlb, costCenters, costCenterBudgetsByName, seats, budgets],
   )
 
   const demoAsof = useMemo(() => getEffectiveDemoAsof() ?? undefined, [])
@@ -101,7 +101,7 @@ export function DashboardPage() {
    * be honest about coverage.
    */
   const trackedForecast = useMemo(() => {
-    const univMtd = universalUbb?.consumedAmount ?? 0
+    const univMtd = universalUlb?.consumedAmount ?? 0
     const univProj = projectMonthlyBudget(univMtd, 0, demoAsof).projectedMonthTotal
     const indMtd = forecast.spendMtd
     const indProj = forecast.projectedEom
@@ -124,7 +124,7 @@ export function DashboardPage() {
     const actualProjected =
       actualMtd !== null ? projectMonthlyBudget(actualMtd, 0, demoAsof).projectedMonthTotal : null
     return {
-      universal: { mtd: univMtd, projected: univProj, hasBudget: !!universalUbb },
+      universal: { mtd: univMtd, projected: univProj, hasBudget: !!universalUlb },
       individual: { mtd: indMtd, projected: indProj, count: indCoverage.withInd },
       trackedMtd: univMtd + indMtd,
       trackedProjected: univProj + indProj,
@@ -134,7 +134,7 @@ export function DashboardPage() {
       untrackedSeats,
     }
   }, [
-    universalUbb,
+    universalUlb,
     forecast.spendMtd,
     forecast.projectedEom,
     indCoverage.withInd,
@@ -257,13 +257,13 @@ export function DashboardPage() {
           debug={{
             source: trackedForecast.hasActual
               ? "/usage/summary · Σ usageItems[sku='copilot_ai_unit'].grossAmount"
-              : 'universalUbb.consumedAmount + Σ userBudgets[].consumedAmount',
+              : 'universalUlb.consumedAmount + Σ userBudgets[].consumedAmount',
             formula: trackedForecast.hasActual
               ? 'usage.aiCreditsGross'
               : 'univMtd + indMtd  (no enterprise gross available)',
             inputs: {
               'usage.aiCreditsGross': usageSummary?.aiCreditsGross ?? 'null',
-              'universalUbb.consumedAmount': universalUbb?.consumedAmount ?? 0,
+              'universalUlb.consumedAmount': universalUlb?.consumedAmount ?? 0,
               'Σ userBudgets.consumedAmount': forecast.spendMtd,
               hasActual: String(trackedForecast.hasActual),
             },
@@ -344,7 +344,7 @@ export function DashboardPage() {
       <SectionHeader title="Action items" />
       <ActionItemsCard
         forecast={forecast}
-        universalUbb={universalUbb}
+        universalUlb={universalUlb}
         entAmount={entAmount}
         pool={pool}
         seats={seats}
@@ -738,7 +738,7 @@ function PoolAndLicensesCard({
         </div>
 
         {/* Pool drawdown — answers "how much of the pool has been used so
-            far". We can only see UBB-scope consumption directly; once any
+            far". We can only see ULB-scope consumption directly; once any
             metered charges appear, the pool is fully drawn. */}
         {meteredMtd === null ? (
           <div className="rounded-md border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900/40 text-neutral-600 dark:text-neutral-400 px-3 py-2 text-xs">
@@ -1442,7 +1442,7 @@ function CostCenterStatusCard({
               key: cc.costCenterId,
               name: cc.name,
               budget: cc.budgetAmount,
-              ceiling: cc.ubbCeiling,
+              ceiling: cc.ulbCeiling,
               mtd: cc._mtd,
               projected: cc._projected,
               measured: cc._measured,
@@ -1747,7 +1747,7 @@ type ActionItem = {
 
 function ActionItemsCard({
   forecast,
-  universalUbb,
+  universalUlb,
   entAmount,
   pool,
   seats,
@@ -1755,7 +1755,7 @@ function ActionItemsCard({
   loginToCostCenter,
 }: {
   forecast: ReturnType<typeof forecastSummary>
-  universalUbb: import('@/lib/api').UniversalUbb | null
+  universalUlb: import('@/lib/api').UniversalUlb | null
   entAmount: number | null
   pool: ReturnType<typeof computePoolSplit>
   seats: import('@/lib/api').CopilotSeat[]
@@ -1807,7 +1807,7 @@ function ActionItemsCard({
       onCta: () => window.dispatchEvent(new CustomEvent(NAV_TO_BUDGET_MODEL_EVENT)),
     })
   }
-  if (!universalUbb) {
+  if (!universalUlb) {
     const indLogins = new Set(budgets.filter(b => b.user).map(b => b.user.toLowerCase()))
     const fallbackSeats = seats.filter(s => !indLogins.has(s.login.toLowerCase())).length
     if (fallbackSeats > 0) {
@@ -1828,7 +1828,7 @@ function ActionItemsCard({
   )
   const uncappedRiskyCcs = pool.costCenters.filter(cc => {
     if (cc.budgetAmount !== null) return false
-    if (universalUbb) return false // universal ULB covers them
+    if (universalUlb) return false // universal ULB covers them
     // count seats in this CC without an individual ULB
     let bare = 0
     for (const seat of seats) {

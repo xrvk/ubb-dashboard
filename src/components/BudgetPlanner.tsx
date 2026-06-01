@@ -95,7 +95,7 @@ type PendingChange =
 
 /**
  * Small chip rendered next to a budget input that shows the minimum dollar
- * amount required to cover current UBB allocation. Helps the user satisfy the
+ * amount required to cover current ULB allocation. Helps the user satisfy the
  * constraint without bouncing to another tab to read it.
  *
  * Color: neutral when the current value already covers requirement, amber when
@@ -271,7 +271,7 @@ function SeatsLink({ seats, href }: { seats: number; href: string | null }) {
  * Editable mirror of the enterprise + cost-center ai_credits budgets, with a
  * single "Apply changes" action that PATCHes the diffs in a rate-limited batch.
  * Mirrors CCC's BudgetPlanner pattern but reuses our card/button/input idiom
- * from UniversalUbbPage.
+ * from UniversalUlbPage.
  */
 export function BudgetPlanner() {
   const {
@@ -281,7 +281,7 @@ export function BudgetPlanner() {
     loginToCostCenter,
     budgets,
     seats,
-    universalUbb,
+    universalUlb,
     apiFetch,
     credentials,
     refresh,
@@ -324,7 +324,7 @@ export function BudgetPlanner() {
   const [applyError, setApplyError] = useState<string | null>(null)
   const [lastAppliedAt, setLastAppliedAt] = useState<number | null>(null)
 
-  // Required minimums — what each envelope would need to be to cover current UBBs.
+  // Required minimums — what each envelope would need to be to cover current ULBs.
   const constraintResult = useBudgetConstraints()
   const requiredMins = useMemo(() => computeRequiredMinimums(constraintResult), [constraintResult])
 
@@ -337,7 +337,7 @@ export function BudgetPlanner() {
     for (const b of budgets) {
       if (b.user) individualByLogin.set(b.user.toLowerCase(), b.budgetAmount)
     }
-    const universal = universalUbb?.budgetAmount ?? 0
+    const universal = universalUlb?.budgetAmount ?? 0
     const sums = new Map<string, number>()
     for (const seat of seats) {
       const login = seat.login.toLowerCase()
@@ -347,7 +347,7 @@ export function BudgetPlanner() {
       sums.set(r.cc.id, (sums.get(r.cc.id) ?? 0) + eff)
     }
     return sums
-  }, [budgets, seats, loginToCostCenter, universalUbb])
+  }, [budgets, seats, loginToCostCenter, universalUlb])
 
   // Which cost centers actually route Copilot today?
   const ccIdsAffectingCopilot = useMemo(() => {

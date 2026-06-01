@@ -207,17 +207,17 @@ describe('applyThreshold', () => {
     expect(result.suggestedPowerUserBudget).toBe(2500)
   })
 
-  it('suggests UBB from regular group upper range', () => {
+  it('suggests ULB from regular group upper range', () => {
     const result = applyThreshold(users, 1000)
-    expect(result.suggestedUBB).toBeGreaterThanOrEqual(400)
-    expect(result.suggestedUBB).toBeLessThanOrEqual(500)
+    expect(result.suggestedULB).toBeGreaterThanOrEqual(400)
+    expect(result.suggestedULB).toBeLessThanOrEqual(500)
   })
 
   it('handles threshold that includes all users', () => {
     const result = applyThreshold(users, 10)
     expect(result.powerUserCount).toBe(5)
     expect(result.regularUserCount).toBe(0)
-    expect(result.suggestedUBB).toBe(0)
+    expect(result.suggestedULB).toBe(0)
   })
 
   it('handles threshold that includes no users', () => {

@@ -2,12 +2,12 @@ import { useMemo } from 'react'
 import { CheckCircle, Warning, ArrowsClockwise, ArrowSquareOut } from '@phosphor-icons/react'
 import {
   computeBudgetConstraints,
-  previewConstraintsWithProposedUbb,
+  previewConstraintsWithProposedUlb,
   type BudgetCheck,
   type ComputeBudgetConstraintsInput,
   type PerCcCheck,
 } from '@/lib/budgetConstraints'
-import { proposeLowerUniversalUbb } from '@/lib/budgetAutoFix'
+import { proposeLowerUniversalUlb } from '@/lib/budgetAutoFix'
 import { formatCurrency, cn } from '@/lib/utils'
 import { NAV_TO_BUDGET_MODEL_EVENT } from '@/lib/navEvents'
 
@@ -25,7 +25,7 @@ interface Props {
 }
 
 /**
- * A leftover/perCc check counts as caused by the proposed UBB when the
+ * A leftover/perCc check counts as caused by the proposed ULB when the
  * proposed value made it strictly worse than baseline. Pure failures that
  * already existed (e.g. CC budgets > ent budget, or a CC overcommitted by
  * existing individual ULBs) belong to ConstraintsBanner on other tabs, not
@@ -49,7 +49,7 @@ function perCcWorsened(
 
 /**
  * Pre-flight envelope check rendered under Step 2 of the Universal-ULB
- * planner. Recomputes the constraint engine with the proposed UBB
+ * planner. Recomputes the constraint engine with the proposed ULB
  * substituted so the admin can see, before applying, whether the chosen
  * cap would breach the enterprise envelope or any per-cost-center budget.
  *
@@ -63,15 +63,15 @@ export function EnvelopeCheckCard({ proposedUsd, constraintsInput, onSnapToMaxSa
     [constraintsInput],
   )
   const preview = useMemo(
-    () => previewConstraintsWithProposedUbb(constraintsInput, proposedUsd),
+    () => previewConstraintsWithProposedUlb(constraintsInput, proposedUsd),
     [constraintsInput, proposedUsd],
   )
 
-  // Snap proposal is computed against the *proposed* UBB, then floored to a
+  // Snap proposal is computed against the *proposed* ULB, then floored to a
   // whole dollar so the displayed label matches what the apply path will
   // actually write (apply ceils AICs/100 → whole USD).
   const snap = useMemo(() => {
-    const proposal = proposeLowerUniversalUbb(preview, proposedUsd)
+    const proposal = proposeLowerUniversalUlb(preview, proposedUsd)
     if (!proposal) return null
     const wholeUsd = Math.floor(proposal.newValue)
     if (wholeUsd <= 0) return null
@@ -82,7 +82,7 @@ export function EnvelopeCheckCard({ proposedUsd, constraintsInput, onSnapToMaxSa
   const hasEnvelope = enterpriseBudget !== null || constraintsInput.ccBudgetsByName.size > 0
   if (!hasEnvelope) return null
 
-  // Only surface failures the proposed UBB introduced or worsened — pure
+  // Only surface failures the proposed ULB introduced or worsened — pure
   // pre-existing breaches are ConstraintsBanner's job on other tabs. Note
   // ccVsEnterprise doesn't depend on the universal ULB at all, so we never
   // attribute it to the proposal.
@@ -110,7 +110,7 @@ export function EnvelopeCheckCard({ proposedUsd, constraintsInput, onSnapToMaxSa
   // Raise-ent is only a useful remediation when the failure actually
   // involves the ent envelope (leftover check). For pure perCc failures,
   // raising ent doesn't fix the bound CC budget — admins should adjust the
-  // CC budget or lower the UBB for those CC's members instead.
+  // CC budget or lower the ULB for those CC's members instead.
   const showRaiseEnt = leftoverFail && enterpriseBudget !== null
 
   return (

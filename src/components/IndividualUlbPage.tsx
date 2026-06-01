@@ -54,7 +54,7 @@ interface Props {
   onTaskDismiss?: () => void
 }
 
-export function IndividualUbbPage({
+export function IndividualUlbPage({
   creating,
   onCreatingChange,
   onSnapshotChange,
@@ -141,7 +141,7 @@ export function IndividualUbbPage({
   }
 
   // Live recompute of the active task's progress so the contextual banner
-  // updates as the user lowers UBBs on this page. The banner itself now
+  // updates as the user lowers ULBs on this page. The banner itself now
   // lives in App.tsx so it persists above the page scroll; we keep just the
   // filter-mismatch dismiss effect below.
 

@@ -3,7 +3,7 @@ import { CheckCircle, Warning, XCircle, CaretDown, CaretUp } from '@phosphor-ico
 import { useCredentials } from '@/hooks/use-credentials'
 import { buildCostCenterIndex, budgetEditUrl } from '@/lib/api'
 import { computeBudgetConstraints } from '@/lib/budgetConstraints'
-import { computeRequiredMinimums, proposeLowerUniversalUbb } from '@/lib/budgetAutoFix'
+import { computeRequiredMinimums, proposeLowerUniversalUlb } from '@/lib/budgetAutoFix'
 import { formatCurrency, cn } from '@/lib/utils'
 import { EMPTY_FILTERS } from '@/components/BudgetsTable'
 import {
@@ -70,7 +70,7 @@ export function ConstraintsBanner() {
     budgets,
     seats,
     costCenters,
-    universalUbb,
+    universalUlb,
     enterpriseBudget,
     costCenterBudgetsByName,
     credentials,
@@ -81,19 +81,19 @@ export function ConstraintsBanner() {
     const index = buildCostCenterIndex(costCenters, costCenterBudgetsByName)
     return computeBudgetConstraints({
       enterpriseBudget,
-      universalUbb,
+      universalUlb,
       costCenters,
       costCenterIndex: index,
       ccBudgetsByName: costCenterBudgetsByName,
       seats,
       userBudgets: budgets,
     })
-  }, [enterpriseBudget, universalUbb, costCenters, costCenterBudgetsByName, seats, budgets])
+  }, [enterpriseBudget, universalUlb, costCenters, costCenterBudgetsByName, seats, budgets])
 
   const requiredMins = useMemo(() => computeRequiredMinimums(result), [result])
   const lowerUniversalProposal = useMemo(
-    () => proposeLowerUniversalUbb(result, universalUbb?.budgetAmount ?? null),
-    [result, universalUbb],
+    () => proposeLowerUniversalUlb(result, universalUlb?.budgetAmount ?? null),
+    [result, universalUlb],
   )
 
   // For the cc-vs-ent failing check, we don't suggest a specific cost center
@@ -117,7 +117,7 @@ export function ConstraintsBanner() {
   // Don't render anything if we have nothing to constrain against.
   // (e.g. demo mode, or a freshly connected enterprise before data loads)
   const hasAnyEnvelope =
-    enterpriseBudget !== null || costCenterBudgetsByName.size > 0 || universalUbb !== null
+    enterpriseBudget !== null || costCenterBudgetsByName.size > 0 || universalUlb !== null
 
   const failingChecks: FailingCheck[] = useMemo(() => {
     const arr: FailingCheck[] = []
@@ -143,7 +143,7 @@ export function ConstraintsBanner() {
               costCenterId: c.costCenterId,
               costCenterName: c.costCenterName,
               memberCount: c.memberCount,
-              actualUbbSum: c.check.actual,
+              actualUlbSum: c.check.actual,
               ccBudget: c.check.allowed,
               overBy: c.check.overBy,
             }
@@ -281,7 +281,7 @@ export function ConstraintsBanner() {
   // (Previously this also expanded to surface "Max safe universal ULB" in the
   // healthy state, but that wasn't a question users actually asked.) The
   // alt-fix line below is shown only when expanded for a failure that has a
-  // viable lower-UBB workaround, so it doesn't need its own trigger.
+  // viable lower-ULB workaround, so it doesn't need its own trigger.
   const canExpand = hasFailure || hasWarning
 
   return (
@@ -318,27 +318,27 @@ export function ConstraintsBanner() {
                   </ul>
                 </div>
               ) : null}
-              {result.maxSafeUniversalUbb !== Infinity ? (() => {
-                const safe = result.maxSafeUniversalUbb
-                const currentUbb = universalUbb?.budgetAmount ?? null
+              {result.maxSafeUniversalUlb !== Infinity ? (() => {
+                const safe = result.maxSafeUniversalUlb
+                const currentUlb = universalUlb?.budgetAmount ?? null
                 // When hasFailure && safe === 0, there's nothing useful to say
                 // here that isn't already in the failing-checks actions above.
                 // The previous "individual ULBs alone exceed per-CC budgets"
                 // message was wrong when the binding cap was actually the
                 // unassigned-leftover allowance, so we just suppress it.
                 if (hasFailure && safe === 0) return null
-                if (hasFailure && safe > 0 && currentUbb !== null && currentUbb > safe) {
+                if (hasFailure && safe > 0 && currentUlb !== null && currentUlb > safe) {
                   return (
                     <div className="text-xs opacity-90">
                       <span className="font-semibold">Alternative fix:</span>{' '}
-                      lowering the universal ULB from {formatCurrency(currentUbb)} to{' '}
+                      lowering the universal ULB from {formatCurrency(currentUlb)} to{' '}
                       {formatCurrency(safe)} would satisfy the per-cost-center budgets
                       (edit it on the Universal ULB tab).
                     </div>
                   )
                 }
                 // In the healthy state we deliberately don't surface the max
-                // safe UBB — that's an internal computation, not a question
+                // safe ULB — that's an internal computation, not a question
                 // users ask. The "How the budget model works" link below covers
                 // anyone who wants to dig into how the math is derived.
                 return null

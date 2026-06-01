@@ -11,7 +11,7 @@ import { useCredentials } from '@/hooks/use-credentials'
 export function useBudgetConstraints(): BudgetConstraintsResult {
   const {
     enterpriseBudget,
-    universalUbb,
+    universalUlb,
     costCenters,
     costCenterBudgetsByName,
     seats,
@@ -22,12 +22,12 @@ export function useBudgetConstraints(): BudgetConstraintsResult {
     const index = buildCostCenterIndex(costCenters, costCenterBudgetsByName)
     return computeBudgetConstraints({
       enterpriseBudget,
-      universalUbb,
+      universalUlb,
       costCenters,
       costCenterIndex: index,
       ccBudgetsByName: costCenterBudgetsByName,
       seats,
       userBudgets: budgets,
     })
-  }, [enterpriseBudget, universalUbb, costCenters, costCenterBudgetsByName, seats, budgets])
+  }, [enterpriseBudget, universalUlb, costCenters, costCenterBudgetsByName, seats, budgets])
 }

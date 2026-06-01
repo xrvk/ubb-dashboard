@@ -44,7 +44,7 @@ function formatCount(n: number): string {
  * Searchable dropdown for cost centers. Modeled after `UserCombobox` —
  * type-ahead filter, click-to-select, MAX_VISIBLE cap with a "keep typing"
  * hint when the list is truncated. Generic over the option list so the two
- * call sites (BudgetsTable filter, UniversalUbbPage outlier filter) can
+ * call sites (BudgetsTable filter, UniversalUlbPage outlier filter) can
  * each build their own option set (incl. their respective sentinels).
  */
 export function CostCenterCombobox({

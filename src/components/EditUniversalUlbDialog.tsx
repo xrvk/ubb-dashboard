@@ -3,21 +3,21 @@ import { Dialog, DialogContent, DialogTitle, DialogDescription, DialogClose } fr
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { formatCurrency } from '@/lib/utils'
-import type { UniversalUbb } from '@/lib/api'
+import type { UniversalUlb } from '@/lib/api'
 import { describeError } from '@/lib/errors'
 
 interface Props {
-  universalUbb: UniversalUbb | null
+  universalUlb: UniversalUlb | null
   open: boolean
   onOpenChange: (open: boolean) => void
   /**
-   * Called on submit with the new cap (USD). If `universalUbb` is null the
-   * page is expected to call `createUniversalUBB`; otherwise `patchUniversalUBB`.
+   * Called on submit with the new cap (USD). If `universalUlb` is null the
+   * page is expected to call `createUniversalULB`; otherwise `patchUniversalULB`.
    */
   onSubmit: (newAmount: number) => Promise<void>
 }
 
-export function EditUniversalUbbDialog({ universalUbb, open, onOpenChange, onSubmit }: Props) {
+export function EditUniversalUlbDialog({ universalUlb, open, onOpenChange, onSubmit }: Props) {
   const [amount, setAmount] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -26,7 +26,7 @@ export function EditUniversalUbbDialog({ universalUbb, open, onOpenChange, onSub
   // State-during-render: reset form when dialog opens.
   if (open && !prevOpen) {
     setPrevOpen(true)
-    setAmount(universalUbb ? String(universalUbb.budgetAmount) : '')
+    setAmount(universalUlb ? String(universalUlb.budgetAmount) : '')
     setError(null)
   } else if (!open && prevOpen) {
     setPrevOpen(false)
@@ -35,9 +35,9 @@ export function EditUniversalUbbDialog({ universalUbb, open, onOpenChange, onSub
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
-        <DialogTitle>{universalUbb ? 'Edit universal ULB' : 'Create universal ULB'}</DialogTitle>
+        <DialogTitle>{universalUlb ? 'Edit universal ULB' : 'Create universal ULB'}</DialogTitle>
         <DialogDescription>
-          {universalUbb
+          {universalUlb
             ? 'Update the enterprise-wide cap that applies to every user not covered by an individual or cost-center ULB. Hard stop is always enforced.'
             : 'Create the enterprise-wide cap that applies to every user not covered by an individual or cost-center ULB. Hard stop is always enforced.'}
         </DialogDescription>
@@ -55,7 +55,7 @@ export function EditUniversalUbbDialog({ universalUbb, open, onOpenChange, onSub
               await onSubmit(n)
               onOpenChange(false)
             } catch (err) {
-              setError(describeError(err, 'edit-universal-ubb').body)
+              setError(describeError(err, 'edit-universal-ulb').body)
             } finally {
               setSubmitting(false)
             }
@@ -73,9 +73,9 @@ export function EditUniversalUbbDialog({ universalUbb, open, onOpenChange, onSub
               autoFocus
             />
           </label>
-          {universalUbb ? (
+          {universalUlb ? (
             <div className="text-xs text-neutral-500 dark:text-neutral-400">
-              Current consumed: {formatCurrency(universalUbb.consumedAmount)}
+              Current consumed: {formatCurrency(universalUlb.consumedAmount)}
             </div>
           ) : null}
           {error ? <p className="text-sm text-red-600 dark:text-red-400">{error}</p> : null}

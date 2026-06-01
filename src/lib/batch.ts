@@ -7,7 +7,7 @@
  *     requests/hour ceiling.
  *   - GitHub's secondary "abuse detection" rate limit fires *within* the
  *     primary limit when requests arrive in rapid succession.
- *   - Bulk individual-UBB updates at scale (hundreds-to-thousands of users)
+ *   - Bulk individual-ULB updates at scale (hundreds-to-thousands of users)
  *     will trip the secondary limit if we Promise.all() the whole batch.
  *   - Transient 5xx and network blips happen, especially around GitHub
  *     deploys. Failing the whole item over a single hiccup is wasteful.
