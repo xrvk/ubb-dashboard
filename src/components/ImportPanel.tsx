@@ -52,9 +52,9 @@ export function ImportPanel() {
           </label>
           <label className="text-sm grid gap-1">
             <span className="flex items-center justify-between gap-2 text-neutral-600 dark:text-neutral-400">
-              <span>Personal access token</span>
+              <span>Personal access token (classic)</span>
               <a
-                href="https://github.com/settings/tokens"
+                href="https://github.com/settings/tokens/new?description=Enterprise+Copilot+Dashboard&scopes=manage_billing:enterprise,read:org"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-xs font-normal text-blue-600 hover:underline dark:text-blue-400"
@@ -75,9 +75,38 @@ export function ImportPanel() {
           </Button>
         </form>
         {error ? <p className="mt-3 text-sm text-red-600 dark:text-red-400">{error}</p> : null}
-        <p className="mt-3 text-xs text-neutral-500">
-          Credentials are kept in memory only. They are sent directly to GitHub's API.
-        </p>
+        <div className="mt-3 text-xs text-neutral-500 space-y-1">
+          <p>
+            Requires a{' '}
+            <a
+              href="https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens#personal-access-tokens-classic"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-600 hover:underline dark:text-blue-400"
+            >
+              classic personal access token
+            </a>{' '}
+            with these scopes:
+          </p>
+          <ul className="ml-4 list-disc space-y-0.5">
+            <li>
+              <code className="rounded bg-neutral-100 px-1 py-0.5 font-mono text-[11px] dark:bg-neutral-800">
+                manage_billing:enterprise
+              </code>{' '}
+              — budgets, usage, and cost centers
+            </li>
+            <li>
+              <code className="rounded bg-neutral-100 px-1 py-0.5 font-mono text-[11px] dark:bg-neutral-800">
+                read:org
+              </code>{' '}
+              — Copilot seat assignments
+            </li>
+          </ul>
+          <p>
+            Fine-grained PATs are not supported for enterprise billing endpoints. Credentials stay
+            in memory and are sent directly to GitHub's API.
+          </p>
+        </div>
         <div className="mt-4 pt-4 border-t border-neutral-200 dark:border-neutral-800 flex items-center justify-between gap-3 flex-wrap">
           <div className="text-xs text-neutral-500">
             No enterprise handy? Explore the dashboard with deterministic fake data.
