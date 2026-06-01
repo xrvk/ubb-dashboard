@@ -8,8 +8,16 @@ import type {
 } from './api'
 
 /**
- * Generate N synthetic user budgets for UI scale testing.
- * Distribution: ~10% over budget, ~15% near limit, ~75% ok.
+ * Generate N synthetic user budgets for UI scale testing. Distribution is
+ * weighted toward visible states that matter for the demo story:
+ *   - ~8%  capped/over (>=100% of budget) — blocked, needs intervention
+ *   - ~10% nearing limit (85-100%)        — likely to block this cycle
+ *   - ~14% mid-burn (60-85%)              — healthy but watch list
+ *   - ~22% moderate (30-60%)
+ *   - ~46% low (0-30%)
+ * Mirrors what an admin would see ~5 days before month end with the default
+ * demo asof: a meaningful tail of capped and about-to-cap users plus a
+ * background of healthy ones.
  */
 export function generateDemoBudgets(count: number, seed = 42): UserBudget[] {
   let s = seed
@@ -42,21 +50,22 @@ export function generateDemoBudgets(count: number, seed = 42): UserBudget[] {
     const budget = pickTier()
     const bucket = rand()
     let consumed: number
-    if (bucket < 0.03) {
-      // 100%+ (blocked / over): a small tail, mostly 100-115%
-      consumed = budget * (1 + rand() * 0.15)
-    } else if (bucket < 0.08) {
-      // 90-100% (about to block)
-      consumed = budget * (0.9 + rand() * 0.1)
-    } else if (bucket < 0.15) {
-      // 80-90% (getting close)
-      consumed = budget * (0.8 + rand() * 0.1)
-    } else if (bucket < 0.3) {
-      // 50-80% (moderate)
-      consumed = budget * (0.5 + rand() * 0.3)
+    if (bucket < 0.08) {
+      // 100-120% — capped / blocked (preventFurtherUsage is true on all
+      // demo users, so anything >= 100 surfaces as "already over").
+      consumed = budget * (1 + rand() * 0.2)
+    } else if (bucket < 0.18) {
+      // 85-100% — about to block this cycle
+      consumed = budget * (0.85 + rand() * 0.15)
+    } else if (bucket < 0.32) {
+      // 60-85% — watch list; projection at 5 days left often shows over
+      consumed = budget * (0.6 + rand() * 0.25)
+    } else if (bucket < 0.54) {
+      // 30-60% — moderate
+      consumed = budget * (0.3 + rand() * 0.3)
     } else {
-      // 0-50% (low)
-      consumed = budget * rand() * 0.5
+      // 0-30% — low
+      consumed = budget * rand() * 0.3
     }
     consumed = Math.round(consumed * 100) / 100
     out.push({
@@ -130,6 +139,25 @@ export function readDemoAsofFromUrl(): Date | null {
   const d = new Date(v + 'T12:00:00')
   if (Number.isNaN(d.getTime())) return null
   return d
+}
+
+/**
+ * Resolve the effective "as of" date for demo projections. Priority:
+ *   1. Explicit `?asof=YYYY-MM-DD` URL param.
+ *   2. When demo mode is active (`?demo=...` is set) but no asof was given,
+ *      default to "5 days before month end" so the hero, table, and CC
+ *      projections show a meaningful runway by default.
+ *   3. Otherwise null (real-mode callers continue to use `new Date()`).
+ */
+export function getEffectiveDemoAsof(): Date | null {
+  const fromUrl = readDemoAsofFromUrl()
+  if (fromUrl) return fromUrl
+  if (readDemoCountFromUrl() === null) return null
+  const now = new Date()
+  // Last day of current month at noon (noon avoids any DST/TZ edge weirdness).
+  const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0, 12, 0, 0)
+  lastDay.setDate(lastDay.getDate() - 5)
+  return lastDay
 }
 
 /**
@@ -211,11 +239,17 @@ export function generateDemoEnterpriseBudget(opts?: { excludeCostCenterUsage?: b
   }
 }
 
-export function generateDemoUniversalUlb(): UniversalUlb {
+export function generateDemoUniversalUlb(budgets?: UserBudget[]): UniversalUlb {
+  // Mirror the universal share assumed by generateDemoUsageSummary (18% of
+  // individual consumption). Without this, the Forecast Breakdown card
+  // shows Universal ULB at $0 in default demo mode, which contradicts the
+  // pool drawdown the usage summary reports.
+  const indivConsumed = (budgets ?? []).reduce((s, b) => s + b.consumedAmount, 0)
+  const consumed = Math.round(indivConsumed * 0.18 * 100) / 100
   return {
     id: 'demo-uulb',
     budgetAmount: 50,
-    consumedAmount: 0,
+    consumedAmount: consumed,
     preventFurtherUsage: true,
     willAlert: false,
     alertRecipients: [],

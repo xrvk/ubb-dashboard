@@ -13,6 +13,7 @@ import { BulkUnblockDialog } from '@/components/BulkUnblockDialog'
 import { RevertBulkDialog } from '@/components/RevertBulkDialog'
 import { Button } from '@/components/ui/button'
 import { summarize, forecastSummary } from '@/lib/status'
+import { getEffectiveDemoAsof } from '@/lib/demo'
 import { openExternal } from '@/lib/utils'
 import type { NavToIndividualTask } from '@/lib/navEvents'
 import {
@@ -83,7 +84,8 @@ export function IndividualUlbPage({
   const tableRef = useRef<HTMLDivElement | null>(null)
 
   const summary = useMemo(() => summarize(budgets), [budgets])
-  const forecast = useMemo(() => forecastSummary(budgets), [budgets])
+  const demoAsof = useMemo(() => getEffectiveDemoAsof() ?? undefined, [])
+  const forecast = useMemo(() => forecastSummary(budgets, demoAsof), [budgets, demoAsof])
   const existingUsernames = useMemo(() => new Set(budgets.map(b => b.user)), [budgets])
 
   // Load the most recent snapshot for the connected enterprise.

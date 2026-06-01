@@ -103,7 +103,10 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null)
 
   const apiFetch = useMemo(
-    () => (credentials ? createApiFetch(credentials) : null),
+    // Demo mode uses a sentinel base (`demo://`) and never makes real HTTP
+    // calls, so it must skip the host-allowlisted createApiFetch (which would
+    // (correctly) reject the sentinel as not-https).
+    () => (credentials && credentials.base !== 'demo://' ? createApiFetch(credentials) : null),
     [credentials],
   )
 
@@ -112,7 +115,7 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
       const demoCount = readDemoCountFromUrl() ?? 0
       const demoBudgets = generateDemoBudgets(demoCount, Math.floor(Math.random() * 100_000))
       const demoSeats = generateDemoSeats(demoCount)
-      const universal = generateDemoUniversalUlb()
+      const universal = generateDemoUniversalUlb(demoBudgets)
       const poolPct = readDemoPoolPctFromUrl()
       if (poolPct !== null) {
         const cost = seatCostBreakdown(demoSeats)
@@ -225,7 +228,7 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
         setCredentials({ base: 'demo://', ent: `demo-${demoCount}`, token: 'demo' })
         const demoBudgets = generateDemoBudgets(demoCount)
         const demoSeats = generateDemoSeats(demoCount)
-        const universal = generateDemoUniversalUlb()
+        const universal = generateDemoUniversalUlb(demoBudgets)
         const poolPct = readDemoPoolPctFromUrl()
         if (poolPct !== null) {
           const cost = seatCostBreakdown(demoSeats)
