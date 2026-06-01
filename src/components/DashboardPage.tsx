@@ -22,6 +22,16 @@ import { projectMonthlyBudget } from '@/lib/projection'
 import { getEffectiveDemoAsof } from '@/lib/demo'
 import { formatCurrency, formatCurrencyWhole, formatPercent, cn } from '@/lib/utils'
 import {
+  filterAndSortCcRows,
+  ccUtilization,
+  type CcSortOption,
+} from '@/lib/ccRowFilter'
+import { CcListToolbar } from '@/components/ui/cc-list-toolbar'
+import { CcListPagination } from '@/components/ui/cc-list-pagination'
+import { CcStatusChips } from '@/components/ui/cc-status-chips'
+import { DEFAULT_CC_PAGE_SIZE } from '@/lib/ccPagination'
+import { ccHealthStatus, countByHealth, type CcHealth } from '@/lib/ccStatus'
+import {
   NAV_TO_BUDGET_MODEL_EVENT,
   NAV_TO_INDIVIDUAL_EVENT,
   NAV_TO_UNIVERSAL_EVENT,
@@ -1209,6 +1219,148 @@ function CostCenterStatusCard({
     return rows
   }, [pool.costCenters, usageByCostCenterId])
 
+  // Toolbar state is local to the card so it doesn't survive remounts —
+  // intentional, mirrors the FailureList "showAll" decision in Phase 1.
+  const [query, setQuery] = useState('')
+  const [sort, setSort] = useState<string>('projected-desc')
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState<number>(DEFAULT_CC_PAGE_SIZE)
+  const [selectedHealth, setSelectedHealth] = useState<ReadonlySet<CcHealth>>(new Set())
+  // Bars are a nice-to-have at small CC counts but become noisy fast.
+  // Default-collapse when there are more than 20 CCs so the actionable
+  // table is the first thing in view; users can opt-in via the toggle.
+  const [showBars, setShowBars] = useState(() => pool.costCenters.length <= 20)
+
+  type EnrichedCc = (typeof pool)['costCenters'][number] & {
+    _mtd: number
+    _projected: number
+    _measured: boolean
+  }
+
+  const enrichedRows: EnrichedCc[] = useMemo(
+    () =>
+      pool.costCenters.map(cc => {
+        const data = perCc.get(cc.costCenterId)
+        return {
+          ...cc,
+          _mtd: data?.mtd ?? 0,
+          _projected: data?.projected ?? 0,
+          _measured: data?.measured ?? false,
+        }
+      }),
+    [pool.costCenters, perCc],
+  )
+
+  const sortOptions: CcSortOption<EnrichedCc>[] = useMemo(
+    () => [
+      {
+        id: 'util-desc',
+        label: 'Projected utilization (high → low)',
+        cmp: (a, b) => {
+          const ua = ccUtilization(a.budgetAmount, a._projected) ?? -Infinity
+          const ub = ccUtilization(b.budgetAmount, b._projected) ?? -Infinity
+          return ub - ua
+        },
+      },
+      { id: 'name', label: 'Cost center (A → Z)', cmp: (a, b) => a.name.localeCompare(b.name) },
+      { id: 'name-desc', label: 'Cost center (Z → A)', cmp: (a, b) => b.name.localeCompare(a.name) },
+      { id: 'seats-desc', label: 'Seats (high → low)', cmp: (a, b) => b.seatCount - a.seatCount },
+      { id: 'seats-asc', label: 'Seats (low → high)', cmp: (a, b) => a.seatCount - b.seatCount },
+      { id: 'mtd-desc', label: 'MTD (high → low)', cmp: (a, b) => b._mtd - a._mtd },
+      { id: 'mtd-asc', label: 'MTD (low → high)', cmp: (a, b) => a._mtd - b._mtd },
+      {
+        id: 'projected-desc',
+        label: 'Projected (high → low)',
+        cmp: (a, b) => b._projected - a._projected,
+      },
+      {
+        id: 'projected-asc',
+        label: 'Projected (low → high)',
+        cmp: (a, b) => a._projected - b._projected,
+      },
+      {
+        id: 'budget-desc',
+        label: 'Budget (high → low)',
+        cmp: (a, b) => (b.budgetAmount ?? 0) - (a.budgetAmount ?? 0),
+      },
+      {
+        id: 'budget-asc',
+        label: 'Budget (low → high)',
+        cmp: (a, b) => (a.budgetAmount ?? 0) - (b.budgetAmount ?? 0),
+      },
+    ],
+    [],
+  )
+
+  // Each column header toggles between desc → asc → desc; clicking a
+  // different column resets to desc. The toolbar dropdown stays in sync
+  // because both write to the same `sort` state.
+  const columnSortIds: Record<string, { asc: string; desc: string }> = useMemo(
+    () => ({
+      name: { asc: 'name', desc: 'name-desc' },
+      seats: { asc: 'seats-asc', desc: 'seats-desc' },
+      mtd: { asc: 'mtd-asc', desc: 'mtd-desc' },
+      projected: { asc: 'projected-asc', desc: 'projected-desc' },
+      budget: { asc: 'budget-asc', desc: 'budget-desc' },
+    }),
+    [],
+  )
+
+  const handleHeaderClick = (col: keyof typeof columnSortIds) => {
+    const ids = columnSortIds[col]
+    onSortChangeReset(sort === ids.desc ? ids.asc : ids.desc)
+  }
+
+  const headerArrow = (col: keyof typeof columnSortIds) => {
+    const ids = columnSortIds[col]
+    if (sort === ids.desc) return ' ↓'
+    if (sort === ids.asc) return ' ↑'
+    return ''
+  }
+
+  const classify = (r: EnrichedCc): CcHealth => ccHealthStatus(r.budgetAmount, r._projected)
+  const healthCounts = countByHealth(enrichedRows, classify)
+
+  // Status filter first (cheap), then text search + sort. Empty selection
+  // means "All" (no filter), matching the chip row default.
+  const statusFilteredRows =
+    selectedHealth.size === 0
+      ? enrichedRows
+      : enrichedRows.filter(r => selectedHealth.has(classify(r)))
+
+  const filteredRows = filterAndSortCcRows(
+    statusFilteredRows,
+    query,
+    sort,
+    sortOptions,
+    r => r.name,
+  )
+
+  // Reset to page 1 whenever search / sort / status filter / page size
+  // changes. Done in handlers (not in an effect) so React's
+  // set-state-in-effect rule stays satisfied. `safePage` below also
+  // clamps if the row count shrinks for any other reason.
+  const onQueryChangeReset = (q: string) => {
+    setQuery(q)
+    setPage(1)
+  }
+  const onSortChangeReset = (s: string) => {
+    setSort(s)
+    setPage(1)
+  }
+  const onPageSizeChangeReset = (n: number) => {
+    setPageSize(n)
+    setPage(1)
+  }
+  const onSelectedHealthChange = (next: Set<CcHealth>) => {
+    setSelectedHealth(next)
+    setPage(1)
+  }
+
+  const pageCount = Math.max(1, Math.ceil(filteredRows.length / pageSize))
+  const safePage = Math.min(page, pageCount)
+  const pagedRows = filteredRows.slice((safePage - 1) * pageSize, safePage * pageSize)
+
   if (pool.costCenters.length === 0) {
     return (
       <Card>
@@ -1227,43 +1379,138 @@ function CostCenterStatusCard({
       <CardHeader>
         <CardTitle>Cost centers</CardTitle>
         <p className="text-xs text-neutral-500 mt-1">
-          {pool.costCenters.length} Cost center{pool.costCenters.length === 1 ? '' : 's'} routing Copilot.
+          {pool.costCenters.length} Cost center{pool.costCenters.length === 1 ? '' : 's'} routing Copilot.{' '}
+          <button
+            type="button"
+            onClick={() => window.dispatchEvent(new Event(NAV_TO_BUDGET_MODEL_EVENT))}
+            className="underline hover:text-neutral-700 dark:hover:text-neutral-200"
+          >
+            How CCs affect Copilot billing →
+          </button>
         </p>
       </CardHeader>
       <CardContent className="space-y-4">
-        <CostCenterBulletList
-          rows={pool.costCenters.map(cc => {
-            const data = perCc.get(cc.costCenterId)
-            return {
+        {pool.costCenters.length > 8 ? (
+          <>
+            <CcListToolbar
+              query={query}
+              onQueryChange={onQueryChangeReset}
+              sort={sort}
+              onSortChange={onSortChangeReset}
+              sortOptions={sortOptions}
+              total={pool.costCenters.length}
+              visible={filteredRows.length}
+            />
+            <CcStatusChips
+              selected={selectedHealth}
+              onChange={onSelectedHealthChange}
+              counts={healthCounts}
+              total={pool.costCenters.length}
+            />
+          </>
+        ) : null}
+
+        {pool.costCenters.length > 20 ? (
+          <div className="flex items-center">
+            <button
+              type="button"
+              onClick={() => setShowBars(s => !s)}
+              className="text-[11px] text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200 inline-flex items-center gap-1"
+              aria-expanded={showBars}
+            >
+              <span aria-hidden>{showBars ? '▾' : '▸'}</span>
+              {showBars ? 'Hide bars' : 'Show bars'}
+              <span className="text-neutral-400">
+                · {pagedRows.length} on this page
+              </span>
+            </button>
+          </div>
+        ) : null}
+
+        {showBars ? (
+          <CostCenterBulletList
+            rows={pagedRows.map(cc => ({
               key: cc.costCenterId,
               name: cc.name,
               budget: cc.budgetAmount,
               ceiling: cc.ubbCeiling,
-              mtd: data?.mtd ?? 0,
-              projected: data?.projected ?? 0,
-              measured: data?.measured ?? false,
-            }
-          })}
-        />
+              mtd: cc._mtd,
+              projected: cc._projected,
+              measured: cc._measured,
+            }))}
+            emptyMessage={query ? `No cost centers match "${query}".` : undefined}
+          />
+        ) : null}
 
         <div className="rounded-md border border-neutral-200 dark:border-neutral-800 overflow-x-auto">
           <table className="w-full text-xs">
             <thead className="bg-neutral-50 dark:bg-neutral-900/40 text-neutral-500">
               <tr>
-                <th className="text-left font-medium px-3 py-2">Cost center</th>
-                <th className="text-right font-medium px-3 py-2">Seats</th>
-                <th className="text-right font-medium px-3 py-2">MTD</th>
-                <th className="text-right font-medium px-3 py-2">Projected</th>
-                <th className="text-right font-medium px-3 py-2">Budget</th>
+                <th className="text-left font-medium px-3 py-2">
+                  <button
+                    type="button"
+                    onClick={() => handleHeaderClick('name')}
+                    className="hover:text-neutral-700 dark:hover:text-neutral-200 cursor-pointer"
+                    aria-label="Sort by cost center"
+                  >
+                    Cost center{headerArrow('name')}
+                  </button>
+                </th>
+                <th className="text-right font-medium px-3 py-2">
+                  <button
+                    type="button"
+                    onClick={() => handleHeaderClick('seats')}
+                    className="hover:text-neutral-700 dark:hover:text-neutral-200 cursor-pointer"
+                    aria-label="Sort by seats"
+                  >
+                    Seats{headerArrow('seats')}
+                  </button>
+                </th>
+                <th className="text-right font-medium px-3 py-2">
+                  <button
+                    type="button"
+                    onClick={() => handleHeaderClick('mtd')}
+                    className="hover:text-neutral-700 dark:hover:text-neutral-200 cursor-pointer"
+                    aria-label="Sort by MTD"
+                  >
+                    MTD{headerArrow('mtd')}
+                  </button>
+                </th>
+                <th className="text-right font-medium px-3 py-2">
+                  <button
+                    type="button"
+                    onClick={() => handleHeaderClick('projected')}
+                    className="hover:text-neutral-700 dark:hover:text-neutral-200 cursor-pointer"
+                    aria-label="Sort by projected"
+                  >
+                    Projected{headerArrow('projected')}
+                  </button>
+                </th>
+                <th className="text-right font-medium px-3 py-2">
+                  <button
+                    type="button"
+                    onClick={() => handleHeaderClick('budget')}
+                    className="hover:text-neutral-700 dark:hover:text-neutral-200 cursor-pointer"
+                    aria-label="Sort by budget"
+                  >
+                    Budget{headerArrow('budget')}
+                  </button>
+                </th>
               </tr>
             </thead>
             <tbody>
-              {pool.costCenters.map(cc => {
-                const data = perCc.get(cc.costCenterId)
-                const measured = data?.measured ?? false
+              {pagedRows.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-3 py-6 text-center text-neutral-500">
+                    No cost centers match "{query}".
+                  </td>
+                </tr>
+              ) : null}
+              {pagedRows.map(cc => {
+                const measured = cc._measured
                 const hasBudget = cc.budgetAmount !== null && cc.budgetAmount > 0
                 const projPct = measured && hasBudget
-                  ? Math.round((data!.projected / cc.budgetAmount!) * 100)
+                  ? Math.round((cc._projected / cc.budgetAmount!) * 100)
                   : null
                 const projTone = projPct === null
                   ? ''
@@ -1281,12 +1528,12 @@ function CostCenterStatusCard({
                       {cc.seatCount.toLocaleString()}
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums">
-                      {measured ? formatCurrency(data!.mtd) : <span className="text-neutral-400">—</span>}
+                      {measured ? formatCurrency(cc._mtd) : <span className="text-neutral-400">—</span>}
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums">
                       {measured ? (
                         <span>
-                          {formatCurrency(data!.projected)}
+                          {formatCurrency(cc._projected)}
                           {projPct !== null && (
                             <span className={cn('ml-1.5 text-[10px] font-medium', projTone)}>
                               {projPct}%
@@ -1310,6 +1557,16 @@ function CostCenterStatusCard({
             </tbody>
           </table>
         </div>
+
+        {filteredRows.length > 0 ? (
+          <CcListPagination
+            page={safePage}
+            pageSize={pageSize}
+            total={filteredRows.length}
+            onPageChange={setPage}
+            onPageSizeChange={onPageSizeChangeReset}
+          />
+        ) : null}
       </CardContent>
     </Card>
   )
@@ -1332,13 +1589,15 @@ type CcBulletRow = {
  * and shows a "proj 112%" badge on the right. Uncapped CCs render as a
  * faint dashed bar with the raw MTD/projected text on the right.
  */
-function CostCenterBulletList({ rows }: { rows: CcBulletRow[] }) {
-  // Sort: budgeted CCs first (by budget desc), uncapped last.
-  const sorted = [...rows].sort((a, b) => {
-    if (a.budget === null && b.budget !== null) return 1
-    if (b.budget === null && a.budget !== null) return -1
-    return (b.budget ?? b.mtd) - (a.budget ?? a.mtd)
-  })
+function CostCenterBulletList({
+  rows,
+  emptyMessage,
+}: {
+  rows: CcBulletRow[]
+  emptyMessage?: string
+}) {
+  // Rows already filtered/sorted by parent (CostCenterStatusCard toolbar).
+  // We render as-is so search + sort in the parent drive this view too.
   return (
     <div className="rounded-md border border-neutral-200 dark:border-neutral-800 p-3 space-y-3">
       <div className="flex items-center gap-4 text-[10px] text-neutral-500">
@@ -1350,7 +1609,12 @@ function CostCenterBulletList({ rows }: { rows: CcBulletRow[] }) {
         </span>
         <span className="ml-auto">Each bar = 0 → cost center budget</span>
       </div>
-      {sorted.map(row => (
+      {rows.length === 0 ? (
+        <div className="py-6 text-center text-xs text-neutral-500">
+          {emptyMessage ?? 'No cost centers.'}
+        </div>
+      ) : null}
+      {rows.map(row => (
         <CcBulletRowView key={row.key} row={row} />
       ))}
     </div>

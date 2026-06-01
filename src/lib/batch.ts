@@ -33,6 +33,7 @@ import {
   isAborted,
   retryAfterSecondsFromError,
 } from '@/lib/errors'
+import { isPrimaryRateLimitExhausted } from '@/lib/api'
 
 const PRIMARY_LIMIT_PER_HOUR = 5000
 
@@ -63,6 +64,12 @@ export interface BatchProgress {
   inFlight: number
   retrying: number
   startedAt: number
+  /**
+   * Set when the batch aborted because the caller's primary 5,000 req/hr
+   * quota was exhausted (403 + x-ratelimit-remaining=0). `resetAt` is a
+   * unix-epoch ms timestamp from `x-ratelimit-reset`.
+   */
+  rateLimitExhausted: { resetAt: number } | null
 }
 
 export interface BatchOutcome<T> {
@@ -75,6 +82,21 @@ interface RetryableTask<T> {
   item: T
   attempts429: number
   attemptsTransient: number
+}
+
+/**
+ * Thrown internally to break out of the worker loop when GitHub's primary
+ * 5,000 req/hr ceiling has been exhausted. Continuing would just hammer
+ * 403s for up to an hour, so we surface this to the caller as a distinct
+ * stop condition with the reset timestamp.
+ */
+class PrimaryRateLimitExhaustedError extends Error {
+  resetAt: number
+  constructor(resetAt: number) {
+    super('Primary rate limit exhausted')
+    this.name = 'PrimaryRateLimitExhaustedError'
+    this.resetAt = resetAt
+  }
 }
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
@@ -134,6 +156,7 @@ export async function runBatch<T>(
     inFlight: 0,
     retrying: 0,
     startedAt,
+    rateLimitExhausted: null,
   }
   const results: BatchOutcome<T>[] = new Array(items.length)
   const emit = () => opts.onProgress?.({ ...state })
@@ -162,6 +185,18 @@ export async function runBatch<T>(
           state.succeeded += 1
           return
         } catch (err) {
+          // Primary 5,000/hr ceiling exhausted: bail the whole batch. Don't
+          // sleep for an hour, don't retry — let the caller decide whether to
+          // wait for reset and resume.
+          if (isPrimaryRateLimitExhausted(err)) {
+            const resetHeader = err.headers['x-ratelimit-reset']
+            const resetAt = resetHeader
+              ? Math.round(Number(resetHeader) * 1000)
+              : Date.now() + 60 * 60 * 1000
+            results[index] = { ok: false, item: task.item, error: err }
+            state.failed += 1
+            throw new PrimaryRateLimitExhaustedError(resetAt)
+          }
           const kind = classifyTransient(err)
           if (kind === 'aborted') {
             results[index] = { ok: false, item: task.item, error: err }
@@ -223,6 +258,7 @@ export async function runBatch<T>(
         await processOne(next.task, next.index)
       } catch (err) {
         if (isAborted(err)) throw err
+        if (err instanceof PrimaryRateLimitExhaustedError) throw err
         // Other errors already recorded; keep going.
       }
       if (perTaskDelayMs > 0 && queue.length > 0) {
@@ -238,7 +274,12 @@ export async function runBatch<T>(
   try {
     await Promise.all(Array.from({ length: concurrency }, () => workerLoop()))
   } catch (err) {
-    if (!isAborted(err)) throw err
+    if (!isAborted(err) && !(err instanceof PrimaryRateLimitExhaustedError)) {
+      throw err
+    }
+    if (err instanceof PrimaryRateLimitExhaustedError) {
+      state.rateLimitExhausted = { resetAt: err.resetAt }
+    }
     // Mark any remaining queue entries as failed/aborted.
     for (const q of queue) {
       results[q.index] = { ok: false, item: q.task.item, error: err }
