@@ -127,6 +127,66 @@ export function BudgetConstraintsHelpPage({ onBack }: Props) {
             </ul>
           </Section>
 
+          <Section title="Cost centers and Copilot billing">
+            <p>
+              A cost center groups users and/or organizations so their
+              Copilot spend can be tracked and capped separately from the
+              enterprise pool. Each cost center has its own ai_credits
+              budget; users routed through a CC draw from the CC's budget
+              before falling back to the enterprise budget (subject to{' '}
+              <Term>cost center exclusion</Term> above).
+            </p>
+            <p>How CCs interact with each GitHub Copilot product:</p>
+            <ul className="list-disc pl-6 space-y-1">
+              <li>
+                <Term>Copilot Business / Enterprise seat licenses</Term> are
+                billed per seat regardless of CC assignment. The CC budget
+                does <em>not</em> cap license cost; it caps metered AI Credit
+                consumption (premium requests, coding-agent units, etc.).
+              </li>
+              <li>
+                <Term>AI Credit metered spend</Term> (premium requests,
+                coding agent, model overages) is what CC budgets actually
+                gate. When a CC user's effective UBB is exhausted or the CC
+                budget hits its cap, further metered usage is blocked or
+                alerted per budget config.
+              </li>
+              <li>
+                <Term>Users not assigned to a CC</Term> draw from the
+                enterprise budget directly. If the enterprise budget is
+                missing or undersized, those users can be blocked even when
+                CC users still have headroom.
+              </li>
+            </ul>
+            <p className="text-xs opacity-75">
+              The Dashboard's "Cost centers" card and the "Budget filter"
+              dropdowns elsewhere in the app show CCs that have at least
+              one Copilot seat. CCs with zero Copilot seats are filtered
+              out automatically since they don't draw from the pool.
+            </p>
+            <p className="text-xs">
+              GitHub Docs:{' '}
+              <a
+                href="https://docs.github.com/en/enterprise-cloud@latest/billing/managing-billing/about-cost-centers"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline hover:opacity-80"
+              >
+                About cost centers
+              </a>
+              {', '}
+              <a
+                href="https://docs.github.com/en/enterprise-cloud@latest/copilot/managing-copilot/managing-copilot-as-an-administrator/managing-your-companys-spending-on-github-copilot"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline hover:opacity-80"
+              >
+                Managing Copilot spending
+              </a>
+              .
+            </p>
+          </Section>
+
           <Section title="The three coherence checks">
             <p>
               The red banner appears when any check fails. This means your
@@ -215,6 +275,35 @@ export function BudgetConstraintsHelpPage({ onBack }: Props) {
               Alerts and limits are separate. Alerts notify. Blocking only
               happens when <Term>Stop usage when budget limit is reached</Term>{' '}
               is enabled.
+            </p>
+          </Section>
+
+          <Section title="API rate limits at scale">
+            <p>
+              Setting per-user UBBs in bulk hits one PATCH per user. With a
+              classic PAT the primary ceiling is{' '}
+              <Term>5,000 requests per hour</Term> for the entire token, and a
+              secondary "abuse" limit fires inside that window when traffic
+              bursts. At 4,500 users a single bulk apply consumes nearly the
+              full hourly quota, leaving little room for the dashboard's own
+              reads.
+            </p>
+            <p>
+              The bulk-unblock dialog throttles to 5 in-flight requests with
+              50ms spacing and backs off on 429s automatically. When the
+              hourly 5,000 ceiling is exhausted (GitHub returns 403 with{' '}
+              <code>x-ratelimit-remaining: 0</code>) the runner stops cleanly
+              and surfaces the reset time, so you can resume from where it
+              left off rather than waiting blind. See{' '}
+              <a
+                href="https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline hover:opacity-80"
+              >
+                GitHub Docs: Rate limits for the REST API
+              </a>{' '}
+              for the authoritative limits.
             </p>
           </Section>
 

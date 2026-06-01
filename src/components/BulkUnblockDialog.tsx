@@ -8,7 +8,8 @@ import { projectMonthlyBudget } from '@/lib/projection'
 import { getEffectiveDemoAsof } from '@/lib/demo'
 import { estimateBatchDurationMs, PRIMARY_LIMIT_PER_HOUR, type BatchProgress } from '@/lib/batch'
 import { daysUntilCycleReset } from '@/lib/snapshot'
-import type { UserBudget } from '@/lib/api'
+import { describeError } from '@/lib/errors'
+import { getLastKnownRateLimit, type UserBudget } from '@/lib/api'
 
 interface Props {
   open: boolean
@@ -92,6 +93,24 @@ export function BulkUnblockDialog({ open, onOpenChange, selected, onApply }: Pro
   const estimatedMs = estimateBatchDurationMs(rows.length)
   const daysToReset = daysUntilCycleReset()
 
+  // Read the cached x-ratelimit-* headers captured from prior responses.
+  // useMemo keyed on `open` re-evaluates each time the dialog opens so the
+  // displayed counts reflect the most recent API response. Absolute reset
+  // time is shown instead of a relative "in Xm" so render stays pure.
+  const rateLimit = useMemo(() => (open ? getLastKnownRateLimit() : null), [open])
+  // Headroom: leave ~50 requests for the dashboard's own reads after the batch.
+  const RATE_LIMIT_HEADROOM = 50
+  const exceedsRemainingQuota =
+    rateLimit !== null &&
+    rateLimit.remaining > 0 &&
+    rows.length > Math.max(0, rateLimit.remaining - RATE_LIMIT_HEADROOM)
+  const resetAtClock = rateLimit
+    ? new Date(rateLimit.resetAt).toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    : null
+
   const handleCancel = () => {
     abortRef.current?.abort()
   }
@@ -108,6 +127,7 @@ export function BulkUnblockDialog({ open, onOpenChange, selected, onApply }: Pro
       inFlight: 0,
       retrying: 0,
       startedAt: Date.now(),
+      rateLimitExhausted: null,
     })
     setNowTick(Date.now())
     const controller = new AbortController()
@@ -123,7 +143,7 @@ export function BulkUnblockDialog({ open, onOpenChange, selected, onApply }: Pro
       )
       onOpenChange(false)
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      setError(describeError(e, 'bulk-unblock').body)
     } finally {
       abortRef.current = null
       setSubmitting(false)
@@ -196,15 +216,40 @@ export function BulkUnblockDialog({ open, onOpenChange, selected, onApply }: Pro
                 limit.
               </strong>
               <p className="text-amber-800 dark:text-amber-200 mt-1">
-                The batch will pause for 60s when it hits a 429 and resume automatically. Plan
-                for this taking at least an hour.
+                The batch will stop automatically when the hourly quota runs out.
+                Resume after the reset window — see{' '}
+                <a
+                  href="https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="underline"
+                >
+                  GitHub's rate-limit docs
+                </a>.
+              </p>
+            </div>
+          </div>
+        ) : exceedsRemainingQuota && rateLimit ? (
+          <div className="flex items-start gap-2 text-xs mb-3 p-3 rounded-md border border-amber-300 dark:border-amber-700/60 bg-amber-50 dark:bg-amber-950/40">
+            <Warning size={16} weight="duotone" className="text-amber-600 mt-0.5 shrink-0" />
+            <div>
+              <strong className="text-amber-900 dark:text-amber-100">
+                Only {rateLimit.remaining.toLocaleString()} of {rateLimit.limit.toLocaleString()}{' '}
+                requests left this hour
+                {resetAtClock ? `, resets at ${resetAtClock}` : ''}.
+              </strong>
+              <p className="text-amber-800 dark:text-amber-200 mt-1">
+                Applying {rows.length.toLocaleString()} updates will likely exhaust your quota
+                before completing. The batch will stop cleanly if that happens; you can resume
+                after reset.
               </p>
             </div>
           </div>
         ) : rows.length >= 100 ? (
           <div className="text-xs mb-3 px-3 py-2 rounded-md border border-neutral-200 dark:border-neutral-800 text-neutral-600 dark:text-neutral-300">
             Estimated time: <strong>{formatDuration(estimatedMs)}</strong> at 5 in flight, 50ms
-            spacing. The runner backs off automatically on 429s.
+            spacing. The runner backs off automatically on 429s
+            {rateLimit ? `; ${rateLimit.remaining.toLocaleString()} of ${rateLimit.limit.toLocaleString()} requests remain this hour.` : '.'}
           </div>
         ) : null}
 
@@ -248,6 +293,16 @@ export function BulkUnblockDialog({ open, onOpenChange, selected, onApply }: Pro
             {progress.retrying > 0 ? (
               <p className="text-xs text-amber-700 dark:text-amber-300 mt-2">
                 Paused for rate limit. Waiting for GitHub to lift the throttle…
+              </p>
+            ) : null}
+            {progress.rateLimitExhausted ? (
+              <p className="text-xs text-red-700 dark:text-red-300 mt-2">
+                Stopped — hourly 5,000-request quota exhausted. Resets{' '}
+                {new Date(progress.rateLimitExhausted.resetAt).toLocaleTimeString([], {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}
+                . Reopen this dialog after that to retry the remaining users.
               </p>
             ) : null}
           </div>

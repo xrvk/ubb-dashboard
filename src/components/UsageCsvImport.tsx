@@ -8,6 +8,7 @@ import {
   type CachedReport,
 } from '@/lib/reportCache'
 import { aggregateAicByUser, parseUsageCsv } from '@/lib/usageReport'
+import { describeError } from '@/lib/errors'
 
 interface Props {
   enterprise: string
@@ -65,7 +66,8 @@ export function UsageCsvImport({ enterprise, months, onChanged }: Props) {
         })
         imported += 1
       } catch (err) {
-        skipped.push(`${file.name}: ${err instanceof Error ? err.message : String(err)}`)
+        const desc = describeError(err, 'usage-csv-import')
+        skipped.push(`${file.name}: ${desc.body}`)
       }
     }
     if (imported > 0) {
@@ -117,7 +119,7 @@ export function UsageCsvImport({ enterprise, months, onChanged }: Props) {
         ) : null}
         <span className="text-xs text-neutral-500 dark:text-neutral-400">
           {months.length === 0
-            ? 'Select one or more monthly detailed billing reports to ingest.'
+            ? 'Pick one or more monthly billing reports (e.g. gh_copilot_premium_requests_usage_YYYY-MM.csv).'
             : `${months.length} month${months.length === 1 ? '' : 's'} loaded — total users sized off per-user max month.`}
         </span>
       </div>

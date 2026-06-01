@@ -6,6 +6,7 @@ import {
   TrendUp,
 } from '@phosphor-icons/react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { useCredentials } from '@/hooks/use-credentials'
 import { computePoolSplit } from '@/lib/poolSplit'
 import {
@@ -21,11 +22,22 @@ import { projectMonthlyBudget } from '@/lib/projection'
 import { getEffectiveDemoAsof } from '@/lib/demo'
 import { formatCurrency, formatCurrencyWhole, formatPercent, cn } from '@/lib/utils'
 import {
+  filterAndSortCcRows,
+  ccUtilization,
+  type CcSortOption,
+} from '@/lib/ccRowFilter'
+import { CcListToolbar } from '@/components/ui/cc-list-toolbar'
+import { CcListPagination } from '@/components/ui/cc-list-pagination'
+import { CcStatusChips } from '@/components/ui/cc-status-chips'
+import { DEFAULT_CC_PAGE_SIZE } from '@/lib/ccPagination'
+import { ccHealthStatus, countByHealth, type CcHealth } from '@/lib/ccStatus'
+import {
   NAV_TO_BUDGET_MODEL_EVENT,
   NAV_TO_INDIVIDUAL_EVENT,
   NAV_TO_UNIVERSAL_EVENT,
 } from '@/lib/navEvents'
 import { DebugBadge, type DebugInfo } from './DebugBadge'
+import { BudgetStructureDiagram } from '@/components/BudgetStructureDiagram'
 
 /**
  * Top-level Dashboard. Single-screen rollup of the enterprise's AI credit
@@ -197,6 +209,14 @@ export function DashboardPage() {
         credits={credits}
       />
 
+      {/* § 1b — Budget structure: how the enterprise budget and per-CC
+          budgets relate. Same diagram used on the Enterprise Budgets tab;
+          the actionable-items banner is suppressed here because it's
+          surfaced next to the editable cost-center list on that tab and
+          would just be noise on the Dashboard. */}
+      <SectionHeader title="Budget structure" />
+      <BudgetStructureDiagram hideActionableItems />
+
       {/* § 2 — Spend so far + forecast. Numbers are gross AI credit
           drawdown (consumption from the pool plus any post-pool metered
           overflow), which reconciles with the per-scope breakdown below
@@ -310,7 +330,6 @@ export function DashboardPage() {
       <BudgetAllocationCard
         enterpriseBudget={enterpriseBudget}
         pool={pool}
-        usageByCostCenterId={usageByCostCenterId}
       />
 
       {/* § 4 — Cost centers today: per-CC budget, MTD, projected. */}
@@ -836,63 +855,40 @@ function LicenseContribRow({
 }
 
 /**
- * § 3 — Budget allocation. Stacked bar showing how the enterprise budget
- * and CC budgets partition the org's commit. Two layouts:
- *   - Independent (excludeCostCenterUsage=true): enterprise and each CC
- *     are disjoint pools. Bar = [Ent | CC1 | CC2 | ...] proportional to
- *     each budget.
+ * § 3 — Budget allocation. Shows how the enterprise budget and CC
+ * budgets partition the org's commit. Two layouts:
+ *   - Independent (excludeCostCenterUsage=true): enterprise and CC
+ *     budgets are disjoint pools. Two parallel bars on a shared scale
+ *     — the enterprise pool and a stacked CC pool — so it's visually
+ *     obvious they don't combine into a single whole.
  *   - Rolled-up (excludeCostCenterUsage=false): CC budgets are
  *     sub-allocations inside the ent cap. Bar = ent container with CCs
- *     nested + unallocated tail. If ΣCC > ent, the bar extends past the
- *     ent line with an over-allocation warning.
+ *     nested + unallocated tail. If ΣCC > ent, the CC bar extends past
+ *     the ent line with an over-allocation warning.
  *
- * Each CC segment is tone-coded by its own projected-vs-budget %
- * (safe/near/over). Uncapped CCs are omitted from the bar and reported
- * as a footnote.
+ * Allocation only — projected spend per CC lives in the Cost centers
+ * section below, so segments here are purely budget shares. Uncapped
+ * CCs are omitted from the bar and reported as a footnote.
  */
 function BudgetAllocationCard({
   enterpriseBudget,
   pool,
-  usageByCostCenterId,
 }: {
   enterpriseBudget: import('@/lib/api').EnterpriseBudget | null
   pool: ReturnType<typeof computePoolSplit>
-  usageByCostCenterId: ReturnType<typeof useCredentials>['usageByCostCenterId']
 }) {
   const independent = enterpriseBudget?.excludeCostCenterUsage ?? false
   const entBudget = pool.enterpriseBudget
 
   const segments = useMemo(() => {
-    const asof = getEffectiveDemoAsof() ?? undefined
     return pool.costCenters
       .filter(cc => cc.budgetAmount !== null && cc.budgetAmount > 0)
-      .map(cc => {
-        const usage = usageByCostCenterId.get(cc.costCenterId)
-        const mtd = usage?.aiCreditsGross ?? 0
-        const projected = usage
-          ? projectMonthlyBudget(mtd, 0, asof).projectedMonthTotal
-          : 0
-        const measured = !!usage
-        const budget = cc.budgetAmount!
-        const pct = measured && budget > 0 ? projected / budget : 0
-        const tone: AllocTone = !measured
-          ? 'neutral'
-          : pct >= 1
-            ? 'over'
-            : pct >= 0.8
-              ? 'near'
-              : 'safe'
-        return {
-          id: cc.costCenterId,
-          name: cc.name,
-          budget,
-          projected,
-          measured,
-          tone,
-          pct: measured ? Math.round(pct * 100) : null,
-        }
-      })
-  }, [pool.costCenters, usageByCostCenterId])
+      .map(cc => ({
+        id: cc.costCenterId,
+        name: cc.name,
+        budget: cc.budgetAmount!,
+      }))
+  }, [pool.costCenters])
 
   const ccBudgetTotal = segments.reduce((s, c) => s + c.budget, 0)
   const uncappedCount = pool.costCenters.length - segments.length
@@ -910,23 +906,26 @@ function BudgetAllocationCard({
   return (
     <Card>
       <CardContent className="space-y-4 pt-6">
-        {independent
-          ? (
-            <IndependentAllocationView
-              entBudget={entBudget}
-              ccBudgetTotal={ccBudgetTotal}
-              segments={segments}
-            />
-          )
-          : (
-            <RolledUpAllocationView
-              entBudget={entBudget}
-              ccBudgetTotal={ccBudgetTotal}
-              segments={segments}
-            />
-          )}
+        <TooltipProvider delayDuration={150}>
+          {independent
+            ? (
+              <IndependentAllocationView
+                entBudget={entBudget}
+                ccBudgetTotal={ccBudgetTotal}
+                segments={segments}
+              />
+            )
+            : (
+              <RolledUpAllocationView
+                entBudget={entBudget}
+                ccBudgetTotal={ccBudgetTotal}
+                segments={segments}
+              />
+            )}
+        </TooltipProvider>
 
-        {/* Legend */}
+        {/* Legend — totals only; per-CC enumeration lives in the
+            Cost centers section below to avoid duplication. */}
         <div className="grid gap-1.5 text-[11px] grid-cols-1 sm:grid-cols-2">
           {entBudget !== null && entBudget > 0 ? (
             <LegendRow
@@ -935,38 +934,36 @@ function BudgetAllocationCard({
               value={formatCurrency(entBudget)}
             />
           ) : null}
-          {segments.map(s => (
+          {segments.length > 0 ? (
             <LegendRow
-              key={s.id}
-              swatch={ALLOC_TONE_CLASS[s.tone]}
-              label={s.name}
-              value={
-                s.measured
-                  ? `${formatCurrency(s.budget)} · projected ${s.pct}%`
-                  : `${formatCurrency(s.budget)} · no usage data`
-              }
+              swatch={ALLOC_CC_AGG_CLASS}
+              label={`${segments.length} Cost center Copilot budget${segments.length === 1 ? '' : 's'}`}
+              value={formatCurrency(ccBudgetTotal)}
             />
-          ))}
+          ) : null}
         </div>
 
         {uncappedCount > 0 ? (
           <div className="text-[11px] text-neutral-500">
-            {uncappedCount} uncapped cost center{uncappedCount === 1 ? '' : 's'}{' '}
-            not shown (no budget set).
+            {uncappedCount} cost center{uncappedCount === 1 ? '' : 's'} with
+            Copilot seats but no ai_credits budget not shown. Cost centers with no
+            Copilot seats, or with budgets for other GitHub products only,
+            are excluded entirely.
           </div>
-        ) : null}
+        ) : (
+          <div className="text-[11px] text-neutral-500">
+            Scoped to Copilot ai_credits budgets only. Cost center budgets for other
+            GitHub products (Actions, Packages, etc.) are not shown here.
+          </div>
+        )}
       </CardContent>
     </Card>
   )
 }
 
-type AllocTone = 'safe' | 'near' | 'over' | 'neutral'
-const ALLOC_TONE_CLASS: Record<AllocTone, string> = {
-  safe: 'bg-emerald-500',
-  near: 'bg-amber-500',
-  over: 'bg-red-500',
-  neutral: 'bg-neutral-300 dark:bg-neutral-700',
-}
+// Single aggregate color for the CC pool bar. Per-CC breakdown lives
+// in the Cost centers section below; this card is about totals only.
+const ALLOC_CC_AGG_CLASS = 'bg-amber-400 dark:bg-amber-500/70'
 
 function IndependentAllocationView({
   entBudget,
@@ -975,41 +972,57 @@ function IndependentAllocationView({
 }: {
   entBudget: number | null
   ccBudgetTotal: number
-  segments: ReadonlyArray<{ id: string; name: string; budget: number; tone: AllocTone; pct: number | null; measured: boolean }>
+  segments: ReadonlyArray<{ id: string; name: string; budget: number }>
 }) {
-  const totalCommit = (entBudget ?? 0) + ccBudgetTotal
-  if (totalCommit === 0) {
+  if (entBudget === null && ccBudgetTotal === 0) {
     return <div className="text-sm text-neutral-500">Nothing to allocate yet.</div>
   }
+
+  // Two parallel bars, shared scale = max(ent, ccTotal). Reinforces
+  // that these are disjoint pools — not parts of one whole — by giving
+  // each its own row instead of stacking them end-to-end.
+  const denom = Math.max(entBudget ?? 0, ccBudgetTotal) || 1
+  const totalCommit = (entBudget ?? 0) + ccBudgetTotal
+
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
       <div className="flex items-baseline justify-between gap-3 flex-wrap">
         <div className="text-xs text-neutral-500">
-          Independent pools · {formatCurrency(totalCommit)} total org commitment
+          Independent pools · enterprise and cost center budgets draw from separate buckets
         </div>
-        {entBudget !== null ? (
-          <div className="text-[11px] text-neutral-500 tabular-nums">
-            Enterprise {formatCurrency(entBudget)} + {segments.length} CC
-            {segments.length === 1 ? '' : 's'} {formatCurrency(ccBudgetTotal)}
-          </div>
-        ) : null}
+        <div className="text-[11px] text-neutral-500 tabular-nums">
+          {formatCurrency(totalCommit)} total org commitment
+        </div>
       </div>
-      <div className="flex h-7 w-full rounded-md overflow-hidden border border-neutral-200 dark:border-neutral-800">
+
+      <div className="space-y-2">
         {entBudget !== null && entBudget > 0 ? (
-          <AllocSegment
-            widthPct={(entBudget / totalCommit) * 100}
-            className="bg-amber-700"
-            title={`Enterprise · ${formatCurrency(entBudget)}`}
-          />
+          <AllocBarRow
+            label="Enterprise pool"
+            amountText={formatCurrency(entBudget)}
+            barWidthPct={(entBudget / denom) * 100}
+          >
+            <AllocSegment
+              widthPct={100}
+              className="bg-amber-700"
+              title={`Enterprise pool · ${formatCurrency(entBudget)}`}
+            />
+          </AllocBarRow>
         ) : null}
-        {segments.map(s => (
-          <AllocSegment
-            key={s.id}
-            widthPct={(s.budget / totalCommit) * 100}
-            className={ALLOC_TONE_CLASS[s.tone]}
-            title={`${s.name} · ${formatCurrency(s.budget)}${s.pct !== null ? ` · projected ${s.pct}%` : ''}`}
-          />
-        ))}
+
+        {segments.length > 0 ? (
+          <AllocBarRow
+            label={`${segments.length} Cost center pool${segments.length === 1 ? '' : 's'}`}
+            amountText={formatCurrency(ccBudgetTotal)}
+            barWidthPct={(ccBudgetTotal / denom) * 100}
+          >
+            <AllocSegment
+              widthPct={100}
+              className={ALLOC_CC_AGG_CLASS}
+              title={`${segments.length} Cost center budget${segments.length === 1 ? '' : 's'} · ${formatCurrency(ccBudgetTotal)}`}
+            />
+          </AllocBarRow>
+        ) : null}
       </div>
     </div>
   )
@@ -1022,7 +1035,7 @@ function RolledUpAllocationView({
 }: {
   entBudget: number | null
   ccBudgetTotal: number
-  segments: ReadonlyArray<{ id: string; name: string; budget: number; tone: AllocTone; pct: number | null; measured: boolean }>
+  segments: ReadonlyArray<{ id: string; name: string; budget: number }>
 }) {
   if (entBudget === null || entBudget === 0) {
     // No ent cap to nest into — degrade to a CC-only stacked bar.
@@ -1032,17 +1045,14 @@ function RolledUpAllocationView({
     return (
       <div className="space-y-2">
         <div className="text-xs text-neutral-500">
-          No enterprise budget · {formatCurrency(ccBudgetTotal)} committed across {segments.length} CC{segments.length === 1 ? '' : 's'}
+          No enterprise budget · {formatCurrency(ccBudgetTotal)} committed across {segments.length} cost center{segments.length === 1 ? '' : 's'}
         </div>
         <div className="flex h-7 w-full rounded-md overflow-hidden border border-neutral-200 dark:border-neutral-800">
-          {segments.map(s => (
-            <AllocSegment
-              key={s.id}
-              widthPct={(s.budget / ccBudgetTotal) * 100}
-              className={ALLOC_TONE_CLASS[s.tone]}
-              title={`${s.name} · ${formatCurrency(s.budget)}`}
-            />
-          ))}
+          <AllocSegment
+            widthPct={100}
+            className={ALLOC_CC_AGG_CLASS}
+            title={`${segments.length} Cost center budget${segments.length === 1 ? '' : 's'} · ${formatCurrency(ccBudgetTotal)}`}
+          />
         </div>
       </div>
     )
@@ -1060,7 +1070,7 @@ function RolledUpAllocationView({
     <div className="space-y-3">
       <div className="flex items-baseline justify-between gap-3 flex-wrap">
         <div className="text-xs text-neutral-500">
-          {segments.length} CC budget{segments.length === 1 ? '' : 's'} inside the{' '}
+          {segments.length} Cost center budget{segments.length === 1 ? '' : 's'} inside the{' '}
           {formatCurrency(entBudget)} enterprise cap
         </div>
         <div
@@ -1070,7 +1080,7 @@ function RolledUpAllocationView({
           )}
         >
           {overAlloc
-            ? `${formatCurrency(ccBudgetTotal - entBudget)} over-allocated · CC commitments exceed enterprise cap`
+            ? `${formatCurrency(ccBudgetTotal - entBudget)} over-allocated · Cost center commitments exceed enterprise cap`
             : `${formatCurrency(unallocated)} unallocated`}
         </div>
       </div>
@@ -1095,19 +1105,16 @@ function RolledUpAllocationView({
         </AllocBarRow>
 
         <AllocBarRow
-          label="CC allocations"
+          label="Cost center allocations"
           amountText={formatCurrency(ccBudgetTotal)}
           warn={overAlloc}
           barWidthPct={(ccBudgetTotal / denom) * 100}
         >
-          {segments.map(s => (
-            <AllocSegment
-              key={s.id}
-              widthPct={(s.budget / ccBudgetTotal) * 100}
-              className={ALLOC_TONE_CLASS[s.tone]}
-              title={`${s.name} · ${formatCurrency(s.budget)}${s.pct !== null ? ` · projected ${s.pct}%` : ''}`}
-            />
-          ))}
+          <AllocSegment
+            widthPct={100}
+            className={ALLOC_CC_AGG_CLASS}
+            title={`${segments.length} Cost center budget${segments.length === 1 ? '' : 's'} · ${formatCurrency(ccBudgetTotal)}`}
+          />
         </AllocBarRow>
       </div>
     </div>
@@ -1152,18 +1159,26 @@ function AllocSegment({
   widthPct,
   className,
   title,
+  tooltip,
 }: {
   widthPct: number
   className: string
   title: string
+  tooltip?: ReactNode
 }) {
   if (widthPct <= 0) return null
+  const content = tooltip ?? title
   return (
-    <div
-      className={cn('h-full', className)}
-      style={{ width: `${widthPct}%` }}
-      title={title}
-    />
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <div
+          className={cn('h-full cursor-help', className)}
+          style={{ width: `${widthPct}%` }}
+          title={title}
+        />
+      </TooltipTrigger>
+      <TooltipContent>{content}</TooltipContent>
+    </Tooltip>
   )
 }
 
@@ -1213,6 +1228,148 @@ function CostCenterStatusCard({
     return rows
   }, [pool.costCenters, usageByCostCenterId])
 
+  // Toolbar state is local to the card so it doesn't survive remounts —
+  // intentional, mirrors the FailureList "showAll" decision in Phase 1.
+  const [query, setQuery] = useState('')
+  const [sort, setSort] = useState<string>('projected-desc')
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState<number>(DEFAULT_CC_PAGE_SIZE)
+  const [selectedHealth, setSelectedHealth] = useState<ReadonlySet<CcHealth>>(new Set())
+  // Bars are a nice-to-have at small CC counts but become noisy fast.
+  // Default-collapse when there are more than 20 CCs so the actionable
+  // table is the first thing in view; users can opt-in via the toggle.
+  const [showBars, setShowBars] = useState(() => pool.costCenters.length <= 20)
+
+  type EnrichedCc = (typeof pool)['costCenters'][number] & {
+    _mtd: number
+    _projected: number
+    _measured: boolean
+  }
+
+  const enrichedRows: EnrichedCc[] = useMemo(
+    () =>
+      pool.costCenters.map(cc => {
+        const data = perCc.get(cc.costCenterId)
+        return {
+          ...cc,
+          _mtd: data?.mtd ?? 0,
+          _projected: data?.projected ?? 0,
+          _measured: data?.measured ?? false,
+        }
+      }),
+    [pool.costCenters, perCc],
+  )
+
+  const sortOptions: CcSortOption<EnrichedCc>[] = useMemo(
+    () => [
+      {
+        id: 'util-desc',
+        label: 'Projected utilization (high → low)',
+        cmp: (a, b) => {
+          const ua = ccUtilization(a.budgetAmount, a._projected) ?? -Infinity
+          const ub = ccUtilization(b.budgetAmount, b._projected) ?? -Infinity
+          return ub - ua
+        },
+      },
+      { id: 'name', label: 'Cost center (A → Z)', cmp: (a, b) => a.name.localeCompare(b.name) },
+      { id: 'name-desc', label: 'Cost center (Z → A)', cmp: (a, b) => b.name.localeCompare(a.name) },
+      { id: 'seats-desc', label: 'Seats (high → low)', cmp: (a, b) => b.seatCount - a.seatCount },
+      { id: 'seats-asc', label: 'Seats (low → high)', cmp: (a, b) => a.seatCount - b.seatCount },
+      { id: 'mtd-desc', label: 'MTD (high → low)', cmp: (a, b) => b._mtd - a._mtd },
+      { id: 'mtd-asc', label: 'MTD (low → high)', cmp: (a, b) => a._mtd - b._mtd },
+      {
+        id: 'projected-desc',
+        label: 'Projected (high → low)',
+        cmp: (a, b) => b._projected - a._projected,
+      },
+      {
+        id: 'projected-asc',
+        label: 'Projected (low → high)',
+        cmp: (a, b) => a._projected - b._projected,
+      },
+      {
+        id: 'budget-desc',
+        label: 'Budget (high → low)',
+        cmp: (a, b) => (b.budgetAmount ?? 0) - (a.budgetAmount ?? 0),
+      },
+      {
+        id: 'budget-asc',
+        label: 'Budget (low → high)',
+        cmp: (a, b) => (a.budgetAmount ?? 0) - (b.budgetAmount ?? 0),
+      },
+    ],
+    [],
+  )
+
+  // Each column header toggles between desc → asc → desc; clicking a
+  // different column resets to desc. The toolbar dropdown stays in sync
+  // because both write to the same `sort` state.
+  const columnSortIds: Record<string, { asc: string; desc: string }> = useMemo(
+    () => ({
+      name: { asc: 'name', desc: 'name-desc' },
+      seats: { asc: 'seats-asc', desc: 'seats-desc' },
+      mtd: { asc: 'mtd-asc', desc: 'mtd-desc' },
+      projected: { asc: 'projected-asc', desc: 'projected-desc' },
+      budget: { asc: 'budget-asc', desc: 'budget-desc' },
+    }),
+    [],
+  )
+
+  const handleHeaderClick = (col: keyof typeof columnSortIds) => {
+    const ids = columnSortIds[col]
+    onSortChangeReset(sort === ids.desc ? ids.asc : ids.desc)
+  }
+
+  const headerArrow = (col: keyof typeof columnSortIds) => {
+    const ids = columnSortIds[col]
+    if (sort === ids.desc) return ' ↓'
+    if (sort === ids.asc) return ' ↑'
+    return ''
+  }
+
+  const classify = (r: EnrichedCc): CcHealth => ccHealthStatus(r.budgetAmount, r._projected)
+  const healthCounts = countByHealth(enrichedRows, classify)
+
+  // Status filter first (cheap), then text search + sort. Empty selection
+  // means "All" (no filter), matching the chip row default.
+  const statusFilteredRows =
+    selectedHealth.size === 0
+      ? enrichedRows
+      : enrichedRows.filter(r => selectedHealth.has(classify(r)))
+
+  const filteredRows = filterAndSortCcRows(
+    statusFilteredRows,
+    query,
+    sort,
+    sortOptions,
+    r => r.name,
+  )
+
+  // Reset to page 1 whenever search / sort / status filter / page size
+  // changes. Done in handlers (not in an effect) so React's
+  // set-state-in-effect rule stays satisfied. `safePage` below also
+  // clamps if the row count shrinks for any other reason.
+  const onQueryChangeReset = (q: string) => {
+    setQuery(q)
+    setPage(1)
+  }
+  const onSortChangeReset = (s: string) => {
+    setSort(s)
+    setPage(1)
+  }
+  const onPageSizeChangeReset = (n: number) => {
+    setPageSize(n)
+    setPage(1)
+  }
+  const onSelectedHealthChange = (next: Set<CcHealth>) => {
+    setSelectedHealth(next)
+    setPage(1)
+  }
+
+  const pageCount = Math.max(1, Math.ceil(filteredRows.length / pageSize))
+  const safePage = Math.min(page, pageCount)
+  const pagedRows = filteredRows.slice((safePage - 1) * pageSize, safePage * pageSize)
+
   if (pool.costCenters.length === 0) {
     return (
       <Card>
@@ -1231,43 +1388,138 @@ function CostCenterStatusCard({
       <CardHeader>
         <CardTitle>Cost centers</CardTitle>
         <p className="text-xs text-neutral-500 mt-1">
-          {pool.costCenters.length} CC{pool.costCenters.length === 1 ? '' : 's'} routing Copilot.
+          {pool.costCenters.length} Cost center{pool.costCenters.length === 1 ? '' : 's'} routing Copilot.{' '}
+          <button
+            type="button"
+            onClick={() => window.dispatchEvent(new Event(NAV_TO_BUDGET_MODEL_EVENT))}
+            className="underline hover:text-neutral-700 dark:hover:text-neutral-200"
+          >
+            How CCs affect Copilot billing →
+          </button>
         </p>
       </CardHeader>
       <CardContent className="space-y-4">
-        <CostCenterBulletList
-          rows={pool.costCenters.map(cc => {
-            const data = perCc.get(cc.costCenterId)
-            return {
+        {pool.costCenters.length > 8 ? (
+          <>
+            <CcListToolbar
+              query={query}
+              onQueryChange={onQueryChangeReset}
+              sort={sort}
+              onSortChange={onSortChangeReset}
+              sortOptions={sortOptions}
+              total={pool.costCenters.length}
+              visible={filteredRows.length}
+            />
+            <CcStatusChips
+              selected={selectedHealth}
+              onChange={onSelectedHealthChange}
+              counts={healthCounts}
+              total={pool.costCenters.length}
+            />
+          </>
+        ) : null}
+
+        {pool.costCenters.length > 20 ? (
+          <div className="flex items-center">
+            <button
+              type="button"
+              onClick={() => setShowBars(s => !s)}
+              className="text-[11px] text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200 inline-flex items-center gap-1"
+              aria-expanded={showBars}
+            >
+              <span aria-hidden>{showBars ? '▾' : '▸'}</span>
+              {showBars ? 'Hide bars' : 'Show bars'}
+              <span className="text-neutral-400">
+                · {pagedRows.length} on this page
+              </span>
+            </button>
+          </div>
+        ) : null}
+
+        {showBars ? (
+          <CostCenterBulletList
+            rows={pagedRows.map(cc => ({
               key: cc.costCenterId,
               name: cc.name,
               budget: cc.budgetAmount,
               ceiling: cc.ubbCeiling,
-              mtd: data?.mtd ?? 0,
-              projected: data?.projected ?? 0,
-              measured: data?.measured ?? false,
-            }
-          })}
-        />
+              mtd: cc._mtd,
+              projected: cc._projected,
+              measured: cc._measured,
+            }))}
+            emptyMessage={query ? `No cost centers match "${query}".` : undefined}
+          />
+        ) : null}
 
         <div className="rounded-md border border-neutral-200 dark:border-neutral-800 overflow-x-auto">
           <table className="w-full text-xs">
             <thead className="bg-neutral-50 dark:bg-neutral-900/40 text-neutral-500">
               <tr>
-                <th className="text-left font-medium px-3 py-2">Cost center</th>
-                <th className="text-right font-medium px-3 py-2">Seats</th>
-                <th className="text-right font-medium px-3 py-2">MTD</th>
-                <th className="text-right font-medium px-3 py-2">Projected</th>
-                <th className="text-right font-medium px-3 py-2">Budget</th>
+                <th className="text-left font-medium px-3 py-2">
+                  <button
+                    type="button"
+                    onClick={() => handleHeaderClick('name')}
+                    className="hover:text-neutral-700 dark:hover:text-neutral-200 cursor-pointer"
+                    aria-label="Sort by cost center"
+                  >
+                    Cost center{headerArrow('name')}
+                  </button>
+                </th>
+                <th className="text-right font-medium px-3 py-2">
+                  <button
+                    type="button"
+                    onClick={() => handleHeaderClick('seats')}
+                    className="hover:text-neutral-700 dark:hover:text-neutral-200 cursor-pointer"
+                    aria-label="Sort by seats"
+                  >
+                    Seats{headerArrow('seats')}
+                  </button>
+                </th>
+                <th className="text-right font-medium px-3 py-2">
+                  <button
+                    type="button"
+                    onClick={() => handleHeaderClick('mtd')}
+                    className="hover:text-neutral-700 dark:hover:text-neutral-200 cursor-pointer"
+                    aria-label="Sort by MTD"
+                  >
+                    MTD{headerArrow('mtd')}
+                  </button>
+                </th>
+                <th className="text-right font-medium px-3 py-2">
+                  <button
+                    type="button"
+                    onClick={() => handleHeaderClick('projected')}
+                    className="hover:text-neutral-700 dark:hover:text-neutral-200 cursor-pointer"
+                    aria-label="Sort by projected"
+                  >
+                    Projected{headerArrow('projected')}
+                  </button>
+                </th>
+                <th className="text-right font-medium px-3 py-2">
+                  <button
+                    type="button"
+                    onClick={() => handleHeaderClick('budget')}
+                    className="hover:text-neutral-700 dark:hover:text-neutral-200 cursor-pointer"
+                    aria-label="Sort by budget"
+                  >
+                    Budget{headerArrow('budget')}
+                  </button>
+                </th>
               </tr>
             </thead>
             <tbody>
-              {pool.costCenters.map(cc => {
-                const data = perCc.get(cc.costCenterId)
-                const measured = data?.measured ?? false
+              {pagedRows.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-3 py-6 text-center text-neutral-500">
+                    No cost centers match "{query}".
+                  </td>
+                </tr>
+              ) : null}
+              {pagedRows.map(cc => {
+                const measured = cc._measured
                 const hasBudget = cc.budgetAmount !== null && cc.budgetAmount > 0
                 const projPct = measured && hasBudget
-                  ? Math.round((data!.projected / cc.budgetAmount!) * 100)
+                  ? Math.round((cc._projected / cc.budgetAmount!) * 100)
                   : null
                 const projTone = projPct === null
                   ? ''
@@ -1285,12 +1537,12 @@ function CostCenterStatusCard({
                       {cc.seatCount.toLocaleString()}
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums">
-                      {measured ? formatCurrency(data!.mtd) : <span className="text-neutral-400">—</span>}
+                      {measured ? formatCurrency(cc._mtd) : <span className="text-neutral-400">—</span>}
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums">
                       {measured ? (
                         <span>
-                          {formatCurrency(data!.projected)}
+                          {formatCurrency(cc._projected)}
                           {projPct !== null && (
                             <span className={cn('ml-1.5 text-[10px] font-medium', projTone)}>
                               {projPct}%
@@ -1314,6 +1566,16 @@ function CostCenterStatusCard({
             </tbody>
           </table>
         </div>
+
+        {filteredRows.length > 0 ? (
+          <CcListPagination
+            page={safePage}
+            pageSize={pageSize}
+            total={filteredRows.length}
+            onPageChange={setPage}
+            onPageSizeChange={onPageSizeChangeReset}
+          />
+        ) : null}
       </CardContent>
     </Card>
   )
@@ -1336,13 +1598,15 @@ type CcBulletRow = {
  * and shows a "proj 112%" badge on the right. Uncapped CCs render as a
  * faint dashed bar with the raw MTD/projected text on the right.
  */
-function CostCenterBulletList({ rows }: { rows: CcBulletRow[] }) {
-  // Sort: budgeted CCs first (by budget desc), uncapped last.
-  const sorted = [...rows].sort((a, b) => {
-    if (a.budget === null && b.budget !== null) return 1
-    if (b.budget === null && a.budget !== null) return -1
-    return (b.budget ?? b.mtd) - (a.budget ?? a.mtd)
-  })
+function CostCenterBulletList({
+  rows,
+  emptyMessage,
+}: {
+  rows: CcBulletRow[]
+  emptyMessage?: string
+}) {
+  // Rows already filtered/sorted by parent (CostCenterStatusCard toolbar).
+  // We render as-is so search + sort in the parent drive this view too.
   return (
     <div className="rounded-md border border-neutral-200 dark:border-neutral-800 p-3 space-y-3">
       <div className="flex items-center gap-4 text-[10px] text-neutral-500">
@@ -1352,9 +1616,14 @@ function CostCenterBulletList({ rows }: { rows: CcBulletRow[] }) {
         <span className="inline-flex items-center gap-1.5">
           <span className="inline-block w-3 h-2 rounded-sm bg-emerald-300 dark:bg-emerald-500/40" />Projected
         </span>
-        <span className="ml-auto">Each bar = 0 → CC budget</span>
+        <span className="ml-auto">Each bar = 0 → cost center budget</span>
       </div>
-      {sorted.map(row => (
+      {rows.length === 0 ? (
+        <div className="py-6 text-center text-xs text-neutral-500">
+          {emptyMessage ?? 'No cost centers.'}
+        </div>
+      ) : null}
+      {rows.map(row => (
         <CcBulletRowView key={row.key} row={row} />
       ))}
     </div>
@@ -1532,8 +1801,8 @@ function ActionItemsCard({
     items.push({
       id: 'over-alloc',
       severity: 'high',
-      title: `CC commitments exceed enterprise budget by ${formatCurrency(overshoot)}`,
-      hint: 'CC commitments exceed the enterprise cap.',
+      title: `Cost center commitments exceed enterprise budget by ${formatCurrency(overshoot)}`,
+      hint: 'Cost center commitments exceed the enterprise cap.',
       ctaLabel: 'Open budgets',
       onCta: () => window.dispatchEvent(new CustomEvent(NAV_TO_BUDGET_MODEL_EVENT)),
     })
@@ -1573,8 +1842,8 @@ function ActionItemsCard({
     items.push({
       id: 'uncapped-risky',
       severity: 'medium',
-      title: `${uncappedRiskyCcs.length} uncapped CC${uncappedRiskyCcs.length === 1 ? '' : 's'} have seats without UBB fallback`,
-      hint: 'No CC budget and no user cap after pool exhaustion.',
+      title: `${uncappedRiskyCcs.length} uncapped cost center${uncappedRiskyCcs.length === 1 ? '' : 's'} have seats without UBB fallback`,
+      hint: 'No cost center budget and no user cap after pool exhaustion.',
       ctaLabel: 'Open budgets',
       onCta: () => window.dispatchEvent(new CustomEvent(NAV_TO_BUDGET_MODEL_EVENT)),
     })

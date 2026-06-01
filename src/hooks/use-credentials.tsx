@@ -1,5 +1,6 @@
+import { mapWithConcurrency } from '@/lib/concurrency'
 /* eslint-disable react-refresh/only-export-components */
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react'
 import {
   buildCostCenterIndex,
   createApiFetch,
@@ -22,6 +23,7 @@ import {
 } from '@/lib/api'
 import {
   generateDemoBudgets,
+  generateDemoCachedReports,
   generateDemoCostCenterBudgets,
   generateDemoCostCenters,
   generateDemoEnterpriseBudget,
@@ -29,12 +31,56 @@ import {
   generateDemoUniversalUbb,
   generateDemoUsageByCostCenter,
   generateDemoUsageSummary,
+  readDemoCcCountFromUrl,
   readDemoCountFromUrl,
   readDemoExcludeCcFromUrl,
   readDemoPoolPctFromUrl,
   scaleDemoConsumptionTo,
 } from '@/lib/demo'
+import { saveCachedReport } from '@/lib/reportCache'
 import { includedAiCredits, seatCostBreakdown } from '@/lib/pricing'
+import { describeError, isAborted } from '@/lib/errors'
+
+export type PartialLoadFeature = 'cost-centers' | 'seats' | 'usage-summary'
+
+export interface PartialLoadWarning {
+  feature: PartialLoadFeature
+  /** Short label suitable for a banner heading. */
+  label: string
+  /** Human-readable explanation from describeError. */
+  reason: string
+  /** Optional suggested action (e.g. "Add manage_billing:enterprise scope"). */
+  suggestedAction?: string
+}
+
+const FEATURE_LABEL: Record<PartialLoadFeature, string> = {
+  'cost-centers': 'Cost center attribution',
+  seats: 'Copilot seats',
+  'usage-summary': 'Billing usage summary',
+}
+
+/** Run a secondary fetch; on failure return [fallback, warning]. */
+async function loadWithWarning<T>(
+  feature: PartialLoadFeature,
+  fallback: T,
+  fetch: () => Promise<T>,
+): Promise<[T, PartialLoadWarning | null]> {
+  try {
+    return [await fetch(), null]
+  } catch (e) {
+    if (isAborted(e)) return [fallback, null]
+    const desc = describeError(e, `load:${feature}`)
+    return [
+      fallback,
+      {
+        feature,
+        label: FEATURE_LABEL[feature],
+        reason: desc.body,
+        suggestedAction: desc.suggestedAction,
+      },
+    ]
+  }
+}
 
 interface CredentialsContextValue {
   credentials: Credentials | null
@@ -45,6 +91,13 @@ interface CredentialsContextValue {
   /** Universal UBB (multi_user_customer scope) or null if not configured. */
   universalUbb: UniversalUbb | null
   setUniversalUbb: (u: UniversalUbb | null) => void
+  /**
+   * Local mutation of the budgets array. Exposed so demo-mode "apply" actions
+   * can mirror real API mutations into the in-memory store without hitting
+   * github.com. Real (non-demo) callers should keep using the API + refresh()
+   * cycle; this setter exists for sandbox flows only.
+   */
+  setBudgets: Dispatch<SetStateAction<UserBudget[]>>
   /** Enterprise-scope ai_credits budget or null if not configured. */
   enterpriseBudget: EnterpriseBudget | null
   /** Cost-center-scope ai_credits budgets, keyed by lowercased CC name. */
@@ -75,6 +128,15 @@ interface CredentialsContextValue {
   loading: boolean
   loadProgress: { loaded: number; total: number | undefined } | null
   error: string | null
+  /**
+   * Non-fatal warnings from the most recent connect/refresh. Each entry
+   * represents a secondary feature that failed to load (e.g. cost centers).
+   * The dashboard renders a collapsible banner from this. Empty array means
+   * the load was fully successful.
+   */
+  partialLoadWarnings: PartialLoadWarning[]
+  /** Dismiss a single partial-load warning. */
+  dismissPartialLoadWarning: (feature: PartialLoadFeature) => void
   apiFetch: ApiFetch | null
   connect: (enterpriseUrl: string, token: string) => Promise<void>
   disconnect: () => void
@@ -106,6 +168,22 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
   const [loadProgress, setLoadProgress] = useState<{ loaded: number; total: number | undefined } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [devProfiles, setDevProfiles] = useState<ReadonlyArray<{ name: string; url: string; token: string }>>([])
+  const [partialLoadWarnings, setPartialLoadWarnings] = useState<PartialLoadWarning[]>([])
+  // Features the user has explicitly dismissed. Persists across `refresh()`
+  // so a permanent condition (e.g. missing scope) doesn't keep re-surfacing
+  // the same banner after every reload. Cleared on `connect`/`disconnect`
+  // when the underlying credentials change.
+  const dismissedFeaturesRef = useRef<Set<PartialLoadFeature>>(new Set())
+
+  const dismissPartialLoadWarning = useCallback((feature: PartialLoadFeature) => {
+    dismissedFeaturesRef.current.add(feature)
+    setPartialLoadWarnings(prev => prev.filter(w => w.feature !== feature))
+  }, [])
+
+  /** Filter out warnings the user has already dismissed this session. */
+  const applyWarnings = useCallback((warnings: PartialLoadWarning[]) => {
+    setPartialLoadWarnings(warnings.filter(w => !dismissedFeaturesRef.current.has(w.feature)))
+  }, [])
 
   // Fetch dev profiles from the Vite middleware. Only attempted in dev
   // (the endpoint doesn't exist in production builds). Failures are
@@ -141,7 +219,8 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
     if (credentials?.base === 'demo://') {
       const demoCount = readDemoCountFromUrl() ?? 0
       const demoBudgets = generateDemoBudgets(demoCount, Math.floor(Math.random() * 100_000))
-      const demoSeats = generateDemoSeats(demoCount)
+      const demoCcCount = readDemoCcCountFromUrl() ?? undefined
+      const demoSeats = generateDemoSeats(demoCount, demoCcCount)
       const universal = generateDemoUniversalUbb(demoBudgets)
       const poolPct = readDemoPoolPctFromUrl()
       if (poolPct !== null) {
@@ -152,45 +231,57 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
       setBudgets(demoBudgets)
       setTotalBudgetCount(demoBudgets.length)
       setSeats(demoSeats)
-      setCostCenters(generateDemoCostCenters(demoCount))
+      const demoCcs = generateDemoCostCenters(demoCount, demoCcCount)
+      setCostCenters(demoCcs)
       setUniversalUbb(universal)
       setEnterpriseBudget(generateDemoEnterpriseBudget())
-      setCostCenterBudgetsByName(generateDemoCostCenterBudgets())
+      setCostCenterBudgetsByName(generateDemoCostCenterBudgets(demoCcs))
       setUsageSummary(
         generateDemoUsageSummary(demoBudgets, {
           poolExhausted: poolPct === null ? true : poolPct >= 100,
         }),
       )
+      for (const report of generateDemoCachedReports(credentials.ent, demoSeats)) {
+        saveCachedReport(report)
+      }
       return
     }
     if (!apiFetch) return
     setLoading(true)
     setLoadProgress({ loaded: 0, total: undefined })
     setError(null)
+    setPartialLoadWarnings([])
     try {
-      const [allBudgets, seatList, ccList, summary] = await Promise.all([
+      const [allBudgets, seatResult, ccResult, summaryResult] = await Promise.all([
         fetchAllAiCreditsBudgets(apiFetch, (loaded, total) =>
           setLoadProgress({ loaded, total }),
         ),
-        fetchAllCopilotSeats(apiFetch).catch(() => [] as CopilotSeat[]),
-        fetchCostCenters(apiFetch).catch(() => [] as CostCenter[]),
-        fetchCopilotUsageSummary(apiFetch).catch(() => null),
+        loadWithWarning<CopilotSeat[]>('seats', [], () => fetchAllCopilotSeats(apiFetch)),
+        loadWithWarning<CostCenter[]>('cost-centers', [], () => fetchCostCenters(apiFetch)),
+        loadWithWarning<CopilotUsageSummary | null>('usage-summary', null, () =>
+          fetchCopilotUsageSummary(apiFetch),
+        ),
       ])
       setBudgets(allBudgets.userBudgets)
       setTotalBudgetCount(allBudgets.totalBudgetCount)
-      setSeats(seatList)
-      setCostCenters(ccList)
+      setSeats(seatResult[0])
+      setCostCenters(ccResult[0])
       setUniversalUbb(allBudgets.universal)
       setEnterpriseBudget(allBudgets.enterprise)
       setCostCenterBudgetsByName(allBudgets.costCenterBudgetsByName)
-      setUsageSummary(summary)
+      setUsageSummary(summaryResult[0])
+      applyWarnings(
+        [seatResult[1], ccResult[1], summaryResult[1]].filter(
+          (w): w is PartialLoadWarning => w !== null,
+        ),
+      )
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      setError(describeError(e, 'refresh').body)
     } finally {
       setLoading(false)
       setLoadProgress(null)
     }
-  }, [apiFetch, credentials])
+  }, [apiFetch, credentials, applyWarnings])
 
   const connect = useCallback(async (enterpriseUrl: string, token: string) => {
     const parsed = parseEnterpriseUrl(enterpriseUrl)
@@ -202,32 +293,42 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
     setLoading(true)
     setLoadProgress({ loaded: 0, total: undefined })
     setError(null)
+    // Fresh credentials = fresh dismissals.
+    dismissedFeaturesRef.current = new Set()
+    setPartialLoadWarnings([])
     try {
       const fetcher = createApiFetch(creds)
-      const [allBudgets, seatList, ccList, summary] = await Promise.all([
+      const [allBudgets, seatResult, ccResult, summaryResult] = await Promise.all([
         fetchAllAiCreditsBudgets(fetcher, (loaded, total) =>
           setLoadProgress({ loaded, total }),
         ),
-        fetchAllCopilotSeats(fetcher).catch(() => [] as CopilotSeat[]),
-        fetchCostCenters(fetcher).catch(() => [] as CostCenter[]),
-        fetchCopilotUsageSummary(fetcher).catch(() => null),
+        loadWithWarning<CopilotSeat[]>('seats', [], () => fetchAllCopilotSeats(fetcher)),
+        loadWithWarning<CostCenter[]>('cost-centers', [], () => fetchCostCenters(fetcher)),
+        loadWithWarning<CopilotUsageSummary | null>('usage-summary', null, () =>
+          fetchCopilotUsageSummary(fetcher),
+        ),
       ])
       setCredentials(creds)
       setBudgets(allBudgets.userBudgets)
       setTotalBudgetCount(allBudgets.totalBudgetCount)
-      setSeats(seatList)
-      setCostCenters(ccList)
+      setSeats(seatResult[0])
+      setCostCenters(ccResult[0])
       setUniversalUbb(allBudgets.universal)
       setEnterpriseBudget(allBudgets.enterprise)
       setCostCenterBudgetsByName(allBudgets.costCenterBudgetsByName)
-      setUsageSummary(summary)
+      setUsageSummary(summaryResult[0])
+      applyWarnings(
+        [seatResult[1], ccResult[1], summaryResult[1]].filter(
+          (w): w is PartialLoadWarning => w !== null,
+        ),
+      )
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      setError(describeError(e, 'connect').body)
     } finally {
       setLoading(false)
       setLoadProgress(null)
     }
-  }, [])
+  }, [applyWarnings])
 
   const disconnect = useCallback(() => {
     setCredentials(null)
@@ -241,6 +342,8 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
     setUsageSummary(null)
     setUsageByCostCenterId(new Map())
     setError(null)
+    dismissedFeaturesRef.current = new Set()
+    setPartialLoadWarnings([])
   }, [])
 
   const switchProfile = useCallback(async (profile: { url: string; token: string }) => {
@@ -259,7 +362,8 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
       void Promise.resolve().then(() => {
         setCredentials({ base: 'demo://', ent: `demo-${demoCount}`, token: 'demo' })
         const demoBudgets = generateDemoBudgets(demoCount)
-        const demoSeats = generateDemoSeats(demoCount)
+        const demoCcCount = readDemoCcCountFromUrl() ?? undefined
+        const demoSeats = generateDemoSeats(demoCount, demoCcCount)
         const universal = generateDemoUniversalUbb(demoBudgets)
         const poolPct = readDemoPoolPctFromUrl()
         if (poolPct !== null) {
@@ -270,15 +374,19 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
         setBudgets(demoBudgets)
         setTotalBudgetCount(demoBudgets.length)
         setSeats(demoSeats)
-        setCostCenters(generateDemoCostCenters(demoCount))
+        const demoCcs = generateDemoCostCenters(demoCount, demoCcCount)
+        setCostCenters(demoCcs)
         setUniversalUbb(universal)
         setEnterpriseBudget(generateDemoEnterpriseBudget({ excludeCostCenterUsage: readDemoExcludeCcFromUrl() }))
-        setCostCenterBudgetsByName(generateDemoCostCenterBudgets())
+        setCostCenterBudgetsByName(generateDemoCostCenterBudgets(demoCcs))
         setUsageSummary(
           generateDemoUsageSummary(demoBudgets, {
             poolExhausted: poolPct === null ? true : poolPct >= 100,
           }),
         )
+        for (const report of generateDemoCachedReports(`demo-${demoCount}`, demoSeats)) {
+          saveCachedReport(report)
+        }
       })
       return
     }
@@ -350,12 +458,14 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
       return
     }
     let cancelled = false
-    void Promise.all(
-      costCenters.map(cc =>
-        fetchCopilotUsageSummary(apiFetch, { costCenterId: cc.id })
-          .then(s => [cc.id, s] as const)
-          .catch(() => null),
-      ),
+    // Bounded fan-out: one /usage/summary call per CC. At 1k CCs an
+    // unbounded `Promise.all` would issue 1,000 parallel reads and trip
+    // GitHub's secondary rate limits — we cap at 8 concurrent (same as
+    // `fetchPagesInParallel` for paged endpoints).
+    void mapWithConcurrency(costCenters, 8, cc =>
+      fetchCopilotUsageSummary(apiFetch, { costCenterId: cc.id })
+        .then(s => [cc.id, s] as const)
+        .catch(() => null),
     ).then(results => {
       if (cancelled) return
       const map = new Map<string, CopilotUsageSummary>()
@@ -377,6 +487,7 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
     loginToCostCenter,
     universalUbb,
     setUniversalUbb,
+    setBudgets,
     enterpriseBudget,
     costCenterBudgetsByName,
     usageSummary,
@@ -384,6 +495,8 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
     loading,
     loadProgress,
     error,
+    partialLoadWarnings,
+    dismissPartialLoadWarning,
     apiFetch,
     connect,
     disconnect,

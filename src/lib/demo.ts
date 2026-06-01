@@ -6,6 +6,9 @@ import type {
   UniversalUbb,
   UserBudget,
 } from './api'
+import { fillerBudgetFor, rollFillerHealth, rollFillerSeatCount } from './demoRng'
+import type { CachedReport } from './reportCache'
+import type { UserAicAggregate } from './usageReport'
 
 /**
  * Generate N synthetic user budgets for UI scale testing. Distribution is
@@ -92,6 +95,26 @@ export function readDemoCountFromUrl(): number | null {
 }
 
 /**
+ * Optional `?cc=N` query param. Generates N total cost centers in demo
+ * mode (clamped to 1..5000). The first 4 remain the "story" CCs
+ * (platform-eng / data-platform / devx / security) so the constraint
+ * banner still demonstrates per_cc + cc_vs_enterprise breaches; any
+ * additional CCs are generic `team-NNN` Org resources with no seats and
+ * a small budget, intended for stress-testing CC list rendering. Returns
+ * null when the param is absent — callers fall back to the default 4-CC
+ * layout.
+ */
+export function readDemoCcCountFromUrl(): number | null {
+  if (typeof window === 'undefined') return null
+  const params = new URLSearchParams(window.location.search)
+  const v = params.get('cc')
+  if (!v) return null
+  const n = Number(v)
+  if (!Number.isFinite(n) || n <= 0) return null
+  return Math.min(Math.floor(n), 5000)
+}
+
+/**
  * Toggle for the "cost center exclusion" mode in demo. When set
  * (`?exclude=1`), the demo enterprise budget is created with
  * excludeCostCenterUsage=true so CCs become independent pools instead of
@@ -166,7 +189,7 @@ export function getEffectiveDemoAsof(): Date | null {
  * mirrors the CC layout in generateDemoCostCenters so seats line up cleanly
  * with the User and Org based CC resources.
  */
-export function generateDemoSeats(count: number) {
+export function generateDemoSeats(count: number, ccCount?: number) {
   const totalSeats = Math.ceil(count * 1.5)
   // Match the split used by generateDemoCostCenters: platform-eng (User-based,
   // override-bearing), then data-platform / devx / security (Org-based).
@@ -188,6 +211,32 @@ export function generateDemoSeats(count: number) {
       lastActivityAt: null,
       planType: 'business',
     })
+  }
+  // Filler seats for `team-NNN` CCs (when ?cc=N>4). Each filler CC needs at
+  // least one seat to appear in pool-split surfaces (`computePoolSplit`
+  // skips zero-seat CCs in poolSplit.ts), and on the Dashboard "CCs
+  // routing Copilot" list. Logins are namespaced so they don't collide
+  // with `demo-user-NNNN` — they have no individual UBB, so their
+  // effective cap falls back to the universal UBB amount. Seat counts
+  // are rolled deterministically from the CC name via `rollFillerSeatCount`
+  // so a) every reload renders the same demo, and b) the Dashboard sort
+  // dropdown has a meaningful spread of CC sizes to sort by (5–50 seats,
+  // biased toward small teams ~ log-uniform).
+  const baseCcCount = 4
+  if (ccCount && ccCount > baseCcCount) {
+    const extras = ccCount - baseCcCount
+    for (let i = 1; i <= extras; i += 1) {
+      const orgName = `team-${String(i).padStart(3, '0')}`
+      const seats = rollFillerSeatCount(orgName)
+      for (let s = 0; s < seats; s += 1) {
+        out.push({
+          login: `${orgName}-user-${s + 1}`,
+          orgLogin: orgName,
+          lastActivityAt: null,
+          planType: 'business',
+        })
+      }
+    }
   }
   return out
 }
@@ -211,7 +260,7 @@ export function generateDemoSeats(count: number) {
  * All seats land in exactly one CC so the unassignedLeftover check stays
  * vacuous and doesn't surface as a third banner item.
  */
-export function generateDemoCostCenters(count: number): CostCenter[] {
+export function generateDemoCostCenters(count: number, ccCount?: number): CostCenter[] {
   const totalSeats = Math.ceil(count * 1.5)
   const peSize = Math.min(Math.round(totalSeats * 0.44), totalSeats)
 
@@ -220,12 +269,29 @@ export function generateDemoCostCenters(count: number): CostCenter[] {
     name: `demo-user-${String(i + 1).padStart(4, '0')}`,
   }))
 
-  return [
+  const baseCcs: CostCenter[] = [
     { id: 'demo-cc-pe', name: 'platform-eng', state: 'active', resources: platformEngUsers },
     { id: 'demo-cc-dp', name: 'data-platform', state: 'active', resources: [{ type: 'Org', name: 'data-platform' }] },
     { id: 'demo-cc-dx', name: 'devx', state: 'active', resources: [{ type: 'Org', name: 'devx' }] },
     { id: 'demo-cc-sec', name: 'security', state: 'active', resources: [{ type: 'Org', name: 'security' }] },
   ]
+  if (!ccCount || ccCount <= baseCcs.length) return baseCcs
+
+  // Generic `team-NNN` filler CCs to stress-test the CC list / structure
+  // diagram. They bind to Orgs that no demo seat is in, so they show 0
+  // seats and don't perturb the per_cc breach math on platform-eng.
+  const extras: CostCenter[] = []
+  for (let i = baseCcs.length; i < ccCount; i += 1) {
+    const idx = i - baseCcs.length + 1
+    const name = `team-${String(idx).padStart(3, '0')}`
+    extras.push({
+      id: `demo-cc-${name}`,
+      name,
+      state: 'active',
+      resources: [{ type: 'Org', name }],
+    })
+  }
+  return [...baseCcs, ...extras]
 }
 
 export function generateDemoEnterpriseBudget(opts?: { excludeCostCenterUsage?: boolean }): EnterpriseBudget {
@@ -304,7 +370,7 @@ export function scaleDemoConsumptionTo(
  * breach. platform-eng's $5k cap is intentionally below the effective UBB
  * sum of its ~100 override-bearing members, which trips per_cc on it alone.
  */
-export function generateDemoCostCenterBudgets(): Map<string, CostCenterBudget> {
+export function generateDemoCostCenterBudgets(extraCcs?: CostCenter[]): Map<string, CostCenterBudget> {
   const out = new Map<string, CostCenterBudget>()
   const add = (name: string, amount: number, hard: boolean, alert: boolean) => {
     out.set(name.toLowerCase(), {
@@ -320,6 +386,22 @@ export function generateDemoCostCenterBudgets(): Map<string, CostCenterBudget> {
   add('data-platform', 7000, true, false)
   add('devx', 5000, true, false)
   add('security', 3000, true, false)
+  // Stamp a varied, deterministic budget on every additional CC (e.g. when
+  // ?cc=N>4) so the dashboard / planner / structure diagram have meaningful
+  // signal to render — ~10% "over", ~15% "near", ~75% "healthy" rolled
+  // from the CC name (see demoRng.ts). The 4 named "story" CCs above
+  // remain intentionally undersized to keep the constraint banner's
+  // narrative working; filler over-CCs trip per_cc with tiny overshoots
+  // ($15–$150 each) so the Phase 1 top-N cap surfaces the story CCs first.
+  if (extraCcs) {
+    for (const cc of extraCcs) {
+      const lname = cc.name.toLowerCase()
+      if (out.has(lname)) continue
+      const seats = rollFillerSeatCount(cc.name)
+      const health = rollFillerHealth(cc.name)
+      add(cc.name, fillerBudgetFor(seats, health), true, false)
+    }
+  }
   return out
 }
 
@@ -418,4 +500,84 @@ export function generateDemoUsageSummary(
     ceLicenseNet: Math.round(ceSeats * 39 * 100) / 100,
     raw: [],
   }
+}
+
+/**
+ * Build 2 months of synthetic per-user AIC aggregates so demo mode lands on
+ * the Universal UBB planner with usable data. Without this, the planner is
+ * empty until the user manually uploads a CSV.
+ *
+ * The distribution mirrors the budget tiers used elsewhere in demo:
+ *   ~5% heavy ($80-$200/mo), ~10% high ($30-$80), ~25% mid ($5-$30),
+ *   ~35% low ($0-$5), ~25% idle. With ~75 universal-only seats (demo=150),
+ *   the Top 5% threshold lands a proposed UBB in the $80-$200 band, which
+ *   collides with the small demo enterprise envelope ($9k) and exercises
+ *   the new pre-flight envelope check end-to-end.
+ *
+ * The second month is jittered down so aggregateMaxMonth has a meaningful
+ * choice to make per user.
+ */
+export function generateDemoCachedReports(
+  enterprise: string,
+  seats: Array<{ login: string }>,
+  seed = 99,
+): CachedReport[] {
+  let s = seed
+  const rand = () => {
+    s = (s * 1103515245 + 12345) & 0x7fffffff
+    return s / 0x7fffffff
+  }
+  const lastUsedFor = (monthKey: string): string =>
+    `${monthKey}-${String(1 + Math.floor(rand() * 27)).padStart(2, '0')}`
+
+  const monthRows = (monthKey: string, scale: number): UserAicAggregate[] => {
+    const out: UserAicAggregate[] = []
+    for (const seat of seats) {
+      const bucket = rand()
+      let dollars: number
+      if (bucket < 0.05) dollars = 80 + rand() * 120
+      else if (bucket < 0.15) dollars = 30 + rand() * 50
+      else if (bucket < 0.4) dollars = 5 + rand() * 25
+      else if (bucket < 0.75) dollars = rand() * 5
+      else dollars = 0
+      dollars = Math.round(dollars * scale * 100) / 100
+      if (dollars <= 0) continue
+      const aic = Math.round(dollars * 100)
+      out.push({
+        username: seat.login,
+        aicConsumed: aic,
+        grossAmount: dollars,
+        lastUsedDate: lastUsedFor(monthKey),
+        codingAgentAic: Math.round(aic * 0.15),
+      })
+    }
+    return out
+  }
+
+  const now = new Date()
+  const monthKeyAt = (offset: number) => {
+    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - offset, 1))
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`
+  }
+  const last = monthKeyAt(1)
+  const prior = monthKeyAt(2)
+  const ingestedAt = Date.now()
+  return [
+    {
+      enterprise,
+      monthKey: prior,
+      reportId: null,
+      ingestedAt,
+      source: 'generated',
+      rows: monthRows(prior, 0.7),
+    },
+    {
+      enterprise,
+      monthKey: last,
+      reportId: null,
+      ingestedAt,
+      source: 'generated',
+      rows: monthRows(last, 1.0),
+    },
+  ]
 }

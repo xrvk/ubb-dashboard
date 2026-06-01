@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import {
   calcConsumptionStats,
   applyThreshold,
@@ -6,6 +6,119 @@ import {
   detectLicenseMix,
   type CsvUserUsage,
 } from '../lib/consumptionAnalysis'
+
+// Mutation-resistance suite. Without these, single-character mutations
+// (`>=` ↔ `>`, percentile interpolation swaps, off-by-one in `Math.ceil`
+// vs `Math.floor`) silently pass the existing approximate assertions.
+describe('mutation-resistance: applyThreshold equality boundary', () => {
+  function u(login: string, totalAICs: number): CsvUserUsage {
+    return { login, totalAICs, grossAmount: 0, costCenter: null, organization: null }
+  }
+
+  it('classifies users exactly AT the threshold as power users (>=, not >)', () => {
+    // If anyone flips `>=` to `>` in applyThreshold, the two users at
+    // exactly 1000 quietly fall into `regularUsers` and the recommended
+    // universal UBB shifts.
+    const r = applyThreshold([u('a', 1000), u('b', 999), u('c', 1000)], 1000)
+    expect(r.powerUserCount).toBe(2)
+    expect(r.regularUserCount).toBe(1)
+    expect(r.powerUsers.map(x => x.login).sort()).toEqual(['a', 'c'])
+  })
+
+  it('classifies users just under the threshold as regular (no float-bleed)', () => {
+    const r = applyThreshold([u('a', 999.99), u('b', 1000)], 1000)
+    expect(r.powerUserCount).toBe(1)
+    expect(r.regularUserCount).toBe(1)
+  })
+})
+
+describe('mutation-resistance: percentile interpolation', () => {
+  // calcConsumptionStats uses linear interpolation. Exact-value assertions
+  // catch wrong algorithms (nearest-rank, R-7 vs R-8, ceil-on-index).
+  function u(i: number, v: number): CsvUserUsage {
+    return { login: `u${i}`, totalAICs: v, grossAmount: 0, costCenter: null, organization: null }
+  }
+
+  it('returns exact linear-interpolation values for [0, 10, 20, 30]', () => {
+    // Linear interpolation with idx = p/100 * (n-1):
+    //   p50 → idx 1.5 → 10 + 0.5*(20-10) = 15
+    //   p75 → idx 2.25 → 20 + 0.25*(30-20) = 22.5
+    //   p90 → idx 2.7 → 20 + 0.7*(30-20) = 27
+    const stats = calcConsumptionStats([u(0, 0), u(1, 10), u(2, 20), u(3, 30)])
+    expect(stats.median).toBeCloseTo(15, 10)
+    expect(stats.p75).toBeCloseTo(22.5, 10)
+    expect(stats.p90).toBeCloseTo(27, 10)
+    expect(stats.max).toBe(30)
+  })
+
+  it('returns the only value for single-user input (no NaN from division)', () => {
+    const stats = calcConsumptionStats([u(0, 42)])
+    expect(stats.median).toBe(42)
+    expect(stats.p75).toBe(42)
+    expect(stats.p90).toBe(42)
+  })
+})
+
+describe('mutation-resistance: calcThreshold count math', () => {
+  // calcThreshold uses Math.max(1, Math.ceil(N * pct)). Off-by-one in the
+  // index lookup or a swap of ceil↔floor changes the threshold cutoff.
+  function users(n: number): CsvUserUsage[] {
+    return Array.from({ length: n }, (_, i) => ({
+      login: `u${i}`,
+      totalAICs: (i + 1) * 100, // 100, 200, ..., n*100
+      grossAmount: 0,
+      costCenter: null,
+      organization: null,
+    }))
+  }
+
+  it('top-5 over 10 users picks the single top user (ceil(10*0.05)=1)', () => {
+    const r = calcThreshold(users(10), 'top-5')
+    expect(r.powerUserCount).toBe(1)
+    expect(r.powerUsers[0].totalAICs).toBe(1000)
+  })
+
+  it('top-10 over 10 users picks exactly the single top user (ceil(10*0.1)=1)', () => {
+    const r = calcThreshold(users(10), 'top-10')
+    expect(r.powerUserCount).toBe(1)
+  })
+
+  it('top-15 over 10 users picks the top 2 users (ceil(10*0.15)=2)', () => {
+    const r = calcThreshold(users(10), 'top-15')
+    expect(r.powerUserCount).toBe(2)
+    expect(r.powerUsers.map(u => u.totalAICs).sort((a, b) => a - b)).toEqual([900, 1000])
+  })
+
+  it('custom 0% picks nobody (threshold above the max)', () => {
+    const r = calcThreshold(users(10), 'custom', 0)
+    expect(r.powerUserCount).toBe(0)
+    expect(r.regularUserCount).toBe(10)
+  })
+
+  it('custom 100% picks everyone', () => {
+    const r = calcThreshold(users(10), 'custom', 100)
+    expect(r.powerUserCount).toBe(10)
+    expect(r.regularUserCount).toBe(0)
+  })
+
+  it('custom 50% over 10 users picks the top 5 (ceil(10*0.5)=5)', () => {
+    const r = calcThreshold(users(10), 'custom', 50)
+    expect(r.powerUserCount).toBe(5)
+  })
+
+  it('clamps negative customPct to 0 (picks nobody, not everybody)', () => {
+    const r = calcThreshold(users(10), 'custom', -10)
+    expect(r.powerUserCount).toBe(0)
+  })
+
+  it('clamps customPct > 100 to 100 (picks everybody, no crash)', () => {
+    const r = calcThreshold(users(10), 'custom', 250)
+    expect(r.powerUserCount).toBe(10)
+  })
+})
+
+// Keep the parser bag happy.
+void detectLicenseMix
 
 function makeUser(login: string, totalAICs: number, quota?: number): CsvUserUsage {
   return {

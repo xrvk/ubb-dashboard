@@ -5,6 +5,16 @@
  * apiFetch automatically adds Authorization, Accept, and X-GitHub-Api-Version headers.
  */
 
+import {
+  ApiError,
+  AbortedError,
+  NetworkError,
+  apiErrorFromResponse,
+  isAborted,
+  isRetryable,
+  retryAfterSecondsFromError,
+} from '@/lib/errors'
+
 const API_VERSION = '2026-03-10'
 
 export interface Credentials {
@@ -13,14 +23,63 @@ export interface Credentials {
   token: string
 }
 
-export class ApiError extends Error {
-  status: number
-  body: string
-  constructor(status: number, body: string, message?: string) {
-    super(message ?? `API error ${status}: ${body.slice(0, 200)}`)
-    this.status = status
-    this.body = body
+// Re-export the typed error surface so existing callers that import from
+// `@/lib/api` keep working. New code should import from `@/lib/errors`.
+export { ApiError } from '@/lib/errors'
+export type { ErrorKind, ErrorDescription } from '@/lib/errors'
+import { ApiError as _ApiError } from '@/lib/errors'
+
+/**
+ * Snapshot of the GitHub primary rate limit at the time of a response.
+ * Parsed from `x-ratelimit-*` headers. `resetAt` is a unix-epoch ms timestamp.
+ */
+export interface RateLimitSnapshot {
+  limit: number
+  remaining: number
+  resetAt: number
+  resource: string | null
+}
+
+/**
+ * GitHub returns `403 Forbidden` (not 429) when the primary 5,000 req/hr
+ * limit is exhausted, with `x-ratelimit-remaining: 0`. Distinguishing this
+ * from a permission 403 lets the batch runner abort cleanly instead of
+ * retrying or sleeping for up to an hour.
+ */
+export function isPrimaryRateLimitExhausted(err: unknown): err is _ApiError {
+  if (!(err instanceof _ApiError)) return false
+  if (err.status !== 403) return false
+  return err.headers['x-ratelimit-remaining'] === '0'
+}
+
+function parseRateLimitHeaders(headers: Headers): RateLimitSnapshot | null {
+  const limit = headers.get('x-ratelimit-limit')
+  const remaining = headers.get('x-ratelimit-remaining')
+  const reset = headers.get('x-ratelimit-reset')
+  if (!limit || !remaining || !reset) return null
+  const limitNum = Number(limit)
+  const remainingNum = Number(remaining)
+  const resetSec = Number(reset)
+  if (!Number.isFinite(limitNum) || !Number.isFinite(remainingNum) || !Number.isFinite(resetSec)) {
+    return null
   }
+  return {
+    limit: limitNum,
+    remaining: remainingNum,
+    resetAt: Math.round(resetSec * 1000),
+    resource: headers.get('x-ratelimit-resource'),
+  }
+}
+
+let lastRateLimit: RateLimitSnapshot | null = null
+
+export function getLastKnownRateLimit(): RateLimitSnapshot | null {
+  return lastRateLimit
+}
+
+/** Test-only: reset module state between tests. */
+export function _resetRateLimitCache(): void {
+  lastRateLimit = null
 }
 
 export type ApiFetch = (path: string, init?: RequestInit) => Promise<unknown>
@@ -63,6 +122,62 @@ function assertTrustedApiBase(base: string): string {
   return `${protocol}//${host}`
 }
 
+/**
+ * Headers we care about on errors and rate-limit decisions. Captured into
+ * the thrown error so the batch runner can read `Retry-After` without
+ * needing the original Response.
+ */
+const CAPTURED_HEADERS = [
+  'retry-after',
+  'x-ratelimit-limit',
+  'x-ratelimit-remaining',
+  'x-ratelimit-reset',
+  'x-ratelimit-used',
+  'x-ratelimit-resource',
+  'x-github-request-id',
+] as const
+
+function captureHeaders(res: Response): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const name of CAPTURED_HEADERS) {
+    const v = res.headers.get(name)
+    if (v != null) out[name] = v
+  }
+  return out
+}
+
+/**
+ * Bounded exponential backoff with jitter, capped so the UI thread is never
+ * blocked on a single request for more than ~30s of retries. Used for GETs
+ * only (writes are routed through the batch runner).
+ */
+const GET_RETRY_DEFAULTS = {
+  maxRetries: 2,
+  baseDelayMs: 500,
+  maxDelayMs: 8_000,
+  totalBudgetMs: 30_000,
+}
+
+function jitter(ms: number): number {
+  // Full jitter: random in [0, ms]
+  return Math.round(Math.random() * ms)
+}
+
+function delayWithAbort(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(new AbortedError())
+    const t = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort)
+      resolve()
+    }, ms)
+    const onAbort = () => {
+      clearTimeout(t)
+      reject(new AbortedError())
+    }
+    signal?.addEventListener('abort', onAbort, { once: true })
+  })
+}
+
 export function createApiFetch(creds: Credentials): ApiFetch {
   const safeBase = assertTrustedApiBase(creds.base)
   const safeEnt = encodeURIComponent(creds.ent)
@@ -75,22 +190,97 @@ export function createApiFetch(creds: Credentials): ApiFetch {
     const url = useEnterpriseRoot
       ? `${safeBase}/enterprises/${safeEnt}${cleanPath}`
       : `${safeBase}/enterprises/${safeEnt}/settings/billing${cleanPath}`
-    const res = await fetch(url, {
-      ...init,
-      headers: {
-        Authorization: `Bearer ${safeToken}`,
-        Accept: 'application/vnd.github+json',
-        'X-GitHub-Api-Version': API_VERSION,
-        ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
-        ...(init?.headers ?? {}),
-      },
-    })
-    const text = await res.text()
-    if (!res.ok) {
-      throw new ApiError(res.status, text)
+    const method = (init?.method ?? 'GET').toUpperCase()
+    const isIdempotent = method === 'GET' || method === 'HEAD'
+
+    const doOnce = async (): Promise<unknown> => {
+      let res: Response
+      try {
+        res = await fetch(url, {
+          ...init,
+          headers: {
+            Authorization: `Bearer ${safeToken}`,
+            Accept: 'application/vnd.github+json',
+            'X-GitHub-Api-Version': API_VERSION,
+            ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
+            ...(init?.headers ?? {}),
+          },
+        })
+      } catch (cause) {
+        // fetch rejected outright — offline, DNS, TLS, CORS, etc.
+        if (isAborted(cause)) throw new AbortedError()
+        throw new NetworkError(cause)
+      }
+      const text = await res.text()
+      const snapshot = parseRateLimitHeaders(res.headers)
+      if (snapshot) lastRateLimit = snapshot
+      if (!res.ok) {
+        throw apiErrorFromResponse(res.status, text, captureHeaders(res))
+      }
+      return text ? JSON.parse(text) : null
     }
-    return text ? JSON.parse(text) : null
+
+    // Mutations are single-shot at the transport layer. The batch runner
+    // owns retry policy for writes (it has dedupe context and per-item
+    // failure tracking that the transport does not).
+    if (!isIdempotent) {
+      return doOnce()
+    }
+
+    const { maxRetries, baseDelayMs, maxDelayMs, totalBudgetMs } = GET_RETRY_DEFAULTS
+    const startedAt = Date.now()
+    let attempt = 0
+    let lastErr: unknown
+    while (attempt <= maxRetries) {
+      try {
+        return await doOnce()
+      } catch (err) {
+        lastErr = err
+        if (isAborted(err)) throw err
+        if (!isRetryable(err) || attempt >= maxRetries) throw err
+        // Budget guards the *total* elapsed wallclock, including request
+        // execution time — not just the sleep delays. A slow flaky request
+        // (e.g. 25s 5xx) followed by even a small backoff could otherwise
+        // sail past the cap.
+        const elapsed = Date.now() - startedAt
+        if (elapsed >= totalBudgetMs) throw err
+        // For 429, honor Retry-After if it fits in our remaining budget.
+        let waitMs: number
+        if (err instanceof ApiError && err.kind === 'rate_limit') {
+          const ra = retryAfterSecondsFromError(err)
+          waitMs = ra != null ? ra * 1000 : Math.min(maxDelayMs, baseDelayMs * 2 ** attempt)
+        } else {
+          waitMs = Math.min(maxDelayMs, baseDelayMs * 2 ** attempt)
+        }
+        waitMs += jitter(Math.min(500, waitMs))
+        if (elapsed + waitMs > totalBudgetMs) throw err
+        await delayWithAbort(waitMs, init?.signal ?? undefined)
+        attempt += 1
+      }
+    }
+    throw lastErr
   }
+}
+
+/**
+ * Free pre-flight lookup of the caller's current rate-limit window. The
+ * `/rate_limit` endpoint does not itself count against the limit, so it's
+ * safe to poll before launching a large batch.
+ */
+export async function fetchRateLimit(creds: Credentials): Promise<RateLimitSnapshot | null> {
+  const safeBase = assertTrustedApiBase(creds.base)
+  const safeToken = String(creds.token)
+  const res = await fetch(`${safeBase}/rate_limit`, {
+    headers: {
+      Authorization: `Bearer ${safeToken}`,
+      Accept: 'application/vnd.github+json',
+      'X-GitHub-Api-Version': API_VERSION,
+    },
+  })
+  if (!res.ok) return null
+  const snapshot = parseRateLimitHeaders(res.headers)
+  if (snapshot) lastRateLimit = snapshot
+  return snapshot
 }
 
 /**
@@ -182,42 +372,127 @@ export function toUserBudget(b: RawBudget): UserBudget {
 }
 
 /**
+ * Internal: fetch pages 2..N concurrently with a small concurrency cap.
+ *
+ * Used by paginated endpoints where page 1 already tells us the grand
+ * total (so we know exactly how many more pages exist) and the upstream
+ * API doesn't punish parallel reads. Replaces the previous
+ * await-each-page loop, which was the dominant connect-time cost on
+ * large enterprises (e.g. 14 seat pages × ~1s sequential).
+ *
+ * Concurrency is capped at 8 — well below GitHub's secondary rate-limit
+ * threshold for read-only billing endpoints, and enough to hide all but
+ * the first round-trip's latency for any realistic page count.
+ *
+ * Errors propagate: any rejected page rejects the whole batch (same
+ * behavior as the old sequential loop, which would throw on the first
+ * failure).
+ */
+const PARALLEL_PAGE_CONCURRENCY = 8
+
+async function fetchPagesInParallel<T>(
+  fetchPage: (page: number) => Promise<T[]>,
+  pageNumbers: number[],
+): Promise<T[][]> {
+  const results: T[][] = new Array(pageNumbers.length)
+  for (let i = 0; i < pageNumbers.length; i += PARALLEL_PAGE_CONCURRENCY) {
+    const chunkStart = i
+    const chunk = pageNumbers.slice(i, i + PARALLEL_PAGE_CONCURRENCY)
+    await Promise.all(
+      chunk.map(async (page, j) => {
+        results[chunkStart + j] = await fetchPage(page)
+      }),
+    )
+  }
+  return results
+}
+
+/**
  * Internal: page through ALL budgets across the enterprise account (every
  * scope, type, and SKU). Used by every higher-level fetcher to avoid making
  * multiple full scans of the budgets endpoint.
  *
+ * Strategy: fetch page 1, then if `total_count` and the page-1 length tell
+ * us more pages remain, fetch them all in parallel via
+ * `fetchPagesInParallel`. Falls back to sequential when `total_count` is
+ * missing (defensive — the budgets endpoint always returns it today, but
+ * a server change shouldn't quietly truncate our results).
+ *
  * Note: the enterprise billing budgets endpoint historically ignored
  * `per_page` and returned ~10 items per page; recent versions honor it.
- * Either way the safety loop handles both. We cap at 1500 pages to support
- * enterprises at the platform cap (~10k budgets).
+ * Either path handles both — parallel just uses the page-1 length as the
+ * effective page size, so a 10/page response just means we issue more
+ * (still-parallel) requests. Capped at 1500 pages to support enterprises
+ * at the platform cap (~10k budgets).
  */
+// Shared safety limit for paginators. Picked to comfortably cover the platform
+// caps (~10k budgets at 100/page, ~250–1k cost centers, large seat counts)
+// without ever spinning forever on a bug where the server keeps returning
+// non-empty pages. Hitting it is a signal something is wrong and produces a
+// console.warn (caller never sees more than this many pages of data).
+const PAGE_SAFETY_LIMIT = 1500
+
 async function paginateAllBudgets(
   apiFetch: ApiFetch,
   onProgress?: (loaded: number, totalCount: number | undefined) => void,
 ): Promise<{ budgets: RawBudget[]; totalCount: number }> {
-  const PAGE_SAFETY_LIMIT = 1500
-  const all: RawBudget[] = []
-  let page = 1
-  let totalCount: number | undefined
-  while (page <= PAGE_SAFETY_LIMIT) {
+  const fetchBudgetPage = async (page: number): Promise<{ list: RawBudget[]; totalCount: number | undefined }> => {
     const data = (await apiFetch(`/budgets?per_page=100&page=${page}`)) as BudgetsResponse | RawBudget[]
     const list = Array.isArray(data) ? data : (data?.budgets ?? [])
-    if (!Array.isArray(data) && typeof data?.total_count === 'number') {
-      totalCount = data.total_count
+    const totalCount = !Array.isArray(data) && typeof data?.total_count === 'number' ? data.total_count : undefined
+    return { list, totalCount }
+  }
+
+  const first = await fetchBudgetPage(1)
+  const all: RawBudget[] = [...first.list]
+  const totalCount = first.totalCount
+  onProgress?.(all.length, totalCount)
+
+  // Stop early when page 1 already has everything (or we got nothing).
+  if (first.list.length === 0 || (totalCount !== undefined && all.length >= totalCount)) {
+    return { budgets: all, totalCount: totalCount ?? all.length }
+  }
+
+  if (totalCount !== undefined) {
+    const pageSize = first.list.length
+    const remaining = Math.ceil((totalCount - all.length) / pageSize)
+    const capped = Math.min(remaining, PAGE_SAFETY_LIMIT - 1)
+    if (capped < remaining) {
+      console.warn(
+        `[ubb-dashboard] Pagination safety limit hit at ${PAGE_SAFETY_LIMIT} pages; ` +
+          `would have loaded ${remaining + 1} pages for total_count=${totalCount}.`,
+      )
     }
+    const pages = Array.from({ length: capped }, (_, i) => i + 2)
+    const fetched = await fetchPagesInParallel(
+      async page => (await fetchBudgetPage(page)).list,
+      pages,
+    )
+    // Append in page order (results[i] is for pages[i]) so callers that
+    // rely on a stable order see the same shape as the old sequential loop.
+    for (const list of fetched) {
+      all.push(...list)
+    }
+    onProgress?.(all.length, totalCount)
+    return { budgets: all, totalCount }
+  }
+
+  // Defensive sequential fallback when total_count is missing.
+  let page = 2
+  while (page <= PAGE_SAFETY_LIMIT) {
+    const { list } = await fetchBudgetPage(page)
     if (list.length === 0) break
     all.push(...list)
-    onProgress?.(all.length, totalCount)
-    if (totalCount !== undefined && all.length >= totalCount) break
+    onProgress?.(all.length, undefined)
     page += 1
   }
   if (page > PAGE_SAFETY_LIMIT) {
     console.warn(
-      `[ubb-dashboard] Pagination safety limit hit at ${PAGE_SAFETY_LIMIT} pages; ` +
-        `loaded ${all.length} budgets but total_count was ${totalCount ?? 'unknown'}.`,
+      `[ubb-dashboard] Pagination safety limit hit at ${PAGE_SAFETY_LIMIT} pages (no total_count); ` +
+        `loaded ${all.length} budgets.`,
     )
   }
-  return { budgets: all, totalCount: totalCount ?? all.length }
+  return { budgets: all, totalCount: all.length }
 }
 
 export interface FetchUserBudgetsResult {
@@ -772,11 +1047,14 @@ interface CostCentersResponse {
  * about live attribution.
  */
 export async function fetchCostCenters(apiFetch: ApiFetch): Promise<CostCenter[]> {
-  const PAGE_SAFETY_LIMIT = 200
+  // Cost-center cap is 250 standard / ~1k for sweetheart customers. 200 pages
+  // at 100/page = 20k headroom; named separately from PAGE_SAFETY_LIMIT
+  // (budgets) since the underlying scale is different.
+  const CC_PAGE_SAFETY_LIMIT = 200
   const PER_PAGE = 100
   const all: CostCenter[] = []
   let page = 1
-  while (page <= PAGE_SAFETY_LIMIT) {
+  while (page <= CC_PAGE_SAFETY_LIMIT) {
     // Note: we intentionally omit `state=active` from the query — the GitHub
     // billing API has been observed to hang (>75s timeout on at least one
     // enterprise) when that filter is applied to enterprises with many cost
@@ -799,9 +1077,9 @@ export async function fetchCostCenters(apiFetch: ApiFetch): Promise<CostCenter[]
     if (list.length !== PER_PAGE) break
     page += 1
   }
-  if (page > PAGE_SAFETY_LIMIT) {
+  if (page > CC_PAGE_SAFETY_LIMIT) {
     console.warn(
-      `[ubb-dashboard] Cost-center pagination safety limit hit at ${PAGE_SAFETY_LIMIT} pages; loaded ${all.length}.`,
+      `[ubb-dashboard] Cost-center pagination safety limit hit at ${CC_PAGE_SAFETY_LIMIT} pages; loaded ${all.length}.`,
     )
   }
   return all.filter(cc => cc.state === 'active')
@@ -900,18 +1178,50 @@ export function resolveCostCenter(
  * GitHub handles.
  */
 export async function fetchAllCopilotSeats(apiFetch: ApiFetch): Promise<CopilotSeat[]> {
-  const all: RawSeat[] = []
-  let page = 1
-  let totalSeats: number | undefined
-  while (page <= 1500) {
-    const data = (await apiFetch(`enterprise:/copilot/billing/seats?per_page=100&page=${page}`)) as SeatsResponse
+  const fetchSeatPage = async (page: number): Promise<{ list: RawSeat[]; totalSeats: number | undefined }> => {
+    const data = (await apiFetch(
+      `enterprise:/copilot/billing/seats?per_page=100&page=${page}`,
+    )) as SeatsResponse
     const list = data?.seats ?? []
-    if (typeof data?.total_seats === 'number') totalSeats = data.total_seats
-    if (list.length === 0) break
-    all.push(...list)
-    if (totalSeats !== undefined && all.length >= totalSeats) break
-    page += 1
+    const totalSeats = typeof data?.total_seats === 'number' ? data.total_seats : undefined
+    return { list, totalSeats }
   }
+
+  const first = await fetchSeatPage(1)
+  const all: RawSeat[] = [...first.list]
+  const totalSeats = first.totalSeats
+
+  // When page 1 already has everything, or total_seats says we're done.
+  const needsMore =
+    first.list.length > 0 && (totalSeats === undefined || all.length < totalSeats)
+
+  if (needsMore) {
+    if (totalSeats !== undefined) {
+      // Known total → fan out pages 2..N in parallel.
+      const pageSize = first.list.length
+      const remaining = Math.ceil((totalSeats - all.length) / pageSize)
+      const capped = Math.min(remaining, PAGE_SAFETY_LIMIT - 1)
+      const pages = Array.from({ length: capped }, (_, i) => i + 2)
+      const fetched = await fetchPagesInParallel(
+        async page => (await fetchSeatPage(page)).list,
+        pages,
+      )
+      // Append in page order to keep the post-dedupe set stable.
+      for (const list of fetched) {
+        all.push(...list)
+      }
+    } else {
+      // Defensive sequential fallback when total_seats is missing.
+      let page = 2
+      while (page <= PAGE_SAFETY_LIMIT) {
+        const { list } = await fetchSeatPage(page)
+        if (list.length === 0) break
+        all.push(...list)
+        page += 1
+      }
+    }
+  }
+
   // Dedupe by login (the API can return the same user across multiple orgs)
   const seen = new Set<string>()
   const out: CopilotSeat[] = []

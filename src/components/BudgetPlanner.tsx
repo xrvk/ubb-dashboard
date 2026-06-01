@@ -28,6 +28,20 @@ import {
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { useCredentials } from '@/hooks/use-credentials'
 import { useBudgetConstraints } from '@/hooks/use-budget-constraints'
+import { describeError } from '@/lib/errors'
+import {
+  filterAndSortCcRows,
+  type CcSortOption,
+} from '@/lib/ccRowFilter'
+import { CcListToolbar } from '@/components/ui/cc-list-toolbar'
+import { CcListPagination } from '@/components/ui/cc-list-pagination'
+import { DEFAULT_CC_PAGE_SIZE } from '@/lib/ccPagination'
+import {
+  countByPlannerHealth,
+  plannerCcHealth,
+  PLANNER_HEALTH_LABEL,
+  type PlannerCcHealth,
+} from '@/lib/plannerCcStatus'
 import { computeRequiredMinimums } from '@/lib/budgetAutoFix'
 import { formatCurrency, formatCurrencyShort, cn, openExternal } from '@/lib/utils'
 import {
@@ -298,6 +312,13 @@ export function BudgetPlanner() {
   }
 
   const [showAll, setShowAll] = useState(false)
+  const [ccQuery, setCcQuery] = useState('')
+  const [ccSort, setCcSort] = useState<string>('default')
+  const [selectedHealth, setSelectedHealth] = useState<Set<PlannerCcHealth>>(new Set())
+  const [minBudgetText, setMinBudgetText] = useState('')
+  const [maxBudgetText, setMaxBudgetText] = useState('')
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(DEFAULT_CC_PAGE_SIZE)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [applying, setApplying] = useState(false)
   const [applyError, setApplyError] = useState<string | null>(null)
@@ -390,7 +411,102 @@ export function BudgetPlanner() {
     () => rows.filter(r => r.affectsCopilot && r.budgetId === null),
     [rows],
   )
-  const visibleRows = showAll ? rows : rows.filter(r => r.affectsCopilot)
+
+  const ccSortOptions: CcSortOption<Row>[] = useMemo(
+    () => [
+      {
+        id: 'default',
+        label: 'Default (affecting · budgeted · $ desc)',
+        cmp: (a, b) => {
+          if (a.affectsCopilot !== b.affectsCopilot) return a.affectsCopilot ? -1 : 1
+          if (!!a.budgetId !== !!b.budgetId) return a.budgetId ? -1 : 1
+          return b.apiAmount - a.apiAmount
+        },
+      },
+      { id: 'name-asc', label: 'Name (A → Z)', cmp: (a, b) => a.name.localeCompare(b.name) },
+      { id: 'name-desc', label: 'Name (Z → A)', cmp: (a, b) => b.name.localeCompare(a.name) },
+      { id: 'seats-desc', label: 'Seats (high → low)', cmp: (a, b) => b.seatCount - a.seatCount },
+      { id: 'seats-asc', label: 'Seats (low → high)', cmp: (a, b) => a.seatCount - b.seatCount },
+      { id: 'budget-desc', label: 'Budget (high → low)', cmp: (a, b) => b.apiAmount - a.apiAmount },
+      { id: 'budget-asc', label: 'Budget (low → high)', cmp: (a, b) => a.apiAmount - b.apiAmount },
+    ],
+    [],
+  )
+
+  const baseVisibleRows = showAll ? rows : rows.filter(r => r.affectsCopilot)
+
+  // Classify each visible row by Planner action priority (uncapped / under-min / ok).
+  // Drafts factor in so toggling a chip reflects what the user is about to apply.
+  const classified = useMemo(() => {
+    return baseVisibleRows.map(r => {
+      const draft = drafts.get(r.key)
+      const draftAmount = draft !== undefined ? Number(draft) : null
+      const draftFinite = draftAmount !== null && Number.isFinite(draftAmount) ? draftAmount : null
+      const min = requiredMins.perCc.get(r.ccId) ?? null
+      return plannerCcHealth(r, min, draftFinite)
+    })
+  }, [baseVisibleRows, drafts, requiredMins])
+  const healthCounts = useMemo(() => countByPlannerHealth(classified), [classified])
+
+  const minBudget = (() => {
+    if (minBudgetText.trim() === '') return null
+    const n = Number(minBudgetText)
+    return Number.isFinite(n) && n >= 0 ? n : null
+  })()
+  const maxBudget = (() => {
+    if (maxBudgetText.trim() === '') return null
+    const n = Number(maxBudgetText)
+    return Number.isFinite(n) && n >= 0 ? n : null
+  })()
+
+  // Apply health-chip + budget-range filters before search/sort/paginate.
+  const filteredRows = useMemo(() => {
+    return baseVisibleRows.filter((r, i) => {
+      if (selectedHealth.size > 0 && !selectedHealth.has(classified[i])) return false
+      if (minBudget !== null && r.apiAmount < minBudget) return false
+      if (maxBudget !== null && r.apiAmount > maxBudget) return false
+      return true
+    })
+  }, [baseVisibleRows, classified, selectedHealth, minBudget, maxBudget])
+
+  const visibleRows = useMemo(
+    () => filterAndSortCcRows(filteredRows, ccQuery, ccSort, ccSortOptions, r => r.name),
+    [filteredRows, ccQuery, ccSort, ccSortOptions],
+  )
+
+  const totalPages = Math.max(1, Math.ceil(visibleRows.length / pageSize))
+  const safePage = Math.min(Math.max(1, page), totalPages)
+  const pagedRows = useMemo(
+    () => visibleRows.slice((safePage - 1) * pageSize, safePage * pageSize),
+    [visibleRows, safePage, pageSize],
+  )
+
+  // Reset to page 1 on any filter / search / sort / page-size change so
+  // the user doesn't end up on an empty page that no longer exists.
+  const resetPage = () => setPage(1)
+  const onQueryChangeReset = (q: string) => { setCcQuery(q); resetPage() }
+  const onSortChangeReset = (s: string) => { setCcSort(s); resetPage() }
+  const onPageSizeChangeReset = (n: number) => { setPageSize(n); resetPage() }
+  const onHealthChange = (next: Set<PlannerCcHealth>) => { setSelectedHealth(next); resetPage() }
+  const onMinBudgetChange = (s: string) => { setMinBudgetText(s); resetPage() }
+  const onMaxBudgetChange = (s: string) => { setMaxBudgetText(s); resetPage() }
+
+  // Column-header sort toggle: same column twice flips asc/desc.
+  const headerColumns: Array<{ col: 'name' | 'seats' | 'budget'; asc: string; desc: string }> = [
+    { col: 'name', asc: 'name-asc', desc: 'name-desc' },
+    { col: 'seats', asc: 'seats-asc', desc: 'seats-desc' },
+    { col: 'budget', asc: 'budget-asc', desc: 'budget-desc' },
+  ]
+  const handleHeaderClick = (col: 'name' | 'seats' | 'budget') => {
+    const map = headerColumns.find(c => c.col === col)!
+    onSortChangeReset(ccSort === map.desc ? map.asc : map.desc)
+  }
+  const headerArrow = (col: 'name' | 'seats' | 'budget') => {
+    const map = headerColumns.find(c => c.col === col)!
+    if (ccSort === map.desc) return ' ↓'
+    if (ccSort === map.asc) return ' ↑'
+    return ''
+  }
 
   // --- Diff calculation ---
   const pending: PendingChange[] = useMemo(() => {
@@ -606,7 +722,7 @@ export function BudgetPlanner() {
       await refresh()
       setConfirmOpen(false)
     } catch (err) {
-      setApplyError(err instanceof Error ? err.message : String(err))
+      setApplyError(describeError(err, 'budget-planner').body)
     } finally {
       setApplying(false)
     }
@@ -765,23 +881,41 @@ export function BudgetPlanner() {
                       <button
                         type="button"
                         onClick={() => {
-                          const el = document.getElementById(`bp-cc-${r.ccId}`)
-                          if (!el) return
-                          el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-                          // bg flash because ring doesn't render on <tr> in
-                          // collapsed tables; keep ring too for non-tr targets.
-                          const cls = [
-                            'ring-2',
-                            'ring-amber-400',
-                            'ring-offset-2',
-                            'dark:ring-offset-neutral-950',
-                            'bg-amber-100',
-                            'dark:bg-amber-900/40',
-                          ]
-                          el.classList.add(...cls)
-                          window.setTimeout(() => {
-                            el.classList.remove(...cls)
-                          }, 2000)
+                          // Clear any filter / search that could hide this row,
+                          // jump to the page it lands on under the current sort,
+                          // then scroll and flash.
+                          setSelectedHealth(new Set())
+                          setMinBudgetText('')
+                          setMaxBudgetText('')
+                          setCcQuery('')
+                          setShowAll(true)
+                          const allRows = filterAndSortCcRows(
+                            rows,
+                            '',
+                            ccSort,
+                            ccSortOptions,
+                            x => x.name,
+                          )
+                          const idx = allRows.findIndex(x => x.ccId === r.ccId)
+                          if (idx >= 0) setPage(Math.floor(idx / pageSize) + 1)
+                          // Defer scroll one frame so the new page renders.
+                          window.requestAnimationFrame(() => {
+                            const el = document.getElementById(`bp-cc-${r.ccId}`)
+                            if (!el) return
+                            el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                            const cls = [
+                              'ring-2',
+                              'ring-amber-400',
+                              'ring-offset-2',
+                              'dark:ring-offset-neutral-950',
+                              'bg-amber-100',
+                              'dark:bg-amber-900/40',
+                            ]
+                            el.classList.add(...cls)
+                            window.setTimeout(() => {
+                              el.classList.remove(...cls)
+                            }, 2000)
+                          })
                         }}
                         className="underline-offset-2 hover:underline font-medium"
                       >
@@ -818,17 +952,135 @@ export function BudgetPlanner() {
                   ) : null}
                 </div>
 
+                {baseVisibleRows.length > 12 ? (
+                  <CcListToolbar
+                    query={ccQuery}
+                    onQueryChange={onQueryChangeReset}
+                    sort={ccSort}
+                    onSortChange={onSortChangeReset}
+                    sortOptions={ccSortOptions}
+                    total={baseVisibleRows.length}
+                    visible={visibleRows.length}
+                    hideSort
+                  />
+                ) : null}
+
+                {/* Action-item filter chips + budget range */}
+                {baseVisibleRows.length > 12 ? (
+                  <div className="flex items-center gap-2 flex-wrap text-xs">
+                    {(['uncapped', 'under-min', 'ok'] as const).map(h => {
+                      const active = selectedHealth.has(h)
+                      const count = healthCounts[h]
+                      const tone =
+                        h === 'uncapped'
+                          ? 'border-amber-400/60 text-amber-800 dark:text-amber-200 bg-amber-500/10'
+                          : h === 'under-min'
+                            ? 'border-red-400/60 text-red-800 dark:text-red-200 bg-red-500/10'
+                            : 'border-emerald-400/60 text-emerald-800 dark:text-emerald-200 bg-emerald-500/10'
+                      return (
+                        <button
+                          key={h}
+                          type="button"
+                          onClick={() => {
+                            const next = new Set(selectedHealth)
+                            if (active) next.delete(h)
+                            else next.add(h)
+                            onHealthChange(next)
+                          }}
+                          className={cn(
+                            'inline-flex items-center gap-1 rounded px-2 py-0.5 border transition-colors',
+                            active
+                              ? tone
+                              : 'border-neutral-300 dark:border-neutral-700 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100/60 dark:hover:bg-neutral-800/60',
+                          )}
+                          aria-pressed={active}
+                        >
+                          {PLANNER_HEALTH_LABEL[h]}
+                          <span className="tabular-nums opacity-75">{count.toLocaleString()}</span>
+                        </button>
+                      )
+                    })}
+                    {selectedHealth.size > 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => onHealthChange(new Set())}
+                        className="text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200 underline"
+                      >
+                        Clear
+                      </button>
+                    ) : null}
+
+                    <span className="ml-2 inline-flex items-center gap-1.5 text-neutral-500">
+                      <span>Budget $</span>
+                      <Input
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        value={minBudgetText}
+                        onChange={e => onMinBudgetChange(e.target.value.replace(/[^0-9]/g, ''))}
+                        placeholder="min"
+                        aria-label="Minimum budget"
+                        className="h-7 w-20 text-xs text-right font-mono px-2"
+                      />
+                      <span>–</span>
+                      <Input
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        value={maxBudgetText}
+                        onChange={e => onMaxBudgetChange(e.target.value.replace(/[^0-9]/g, ''))}
+                        placeholder="max"
+                        aria-label="Maximum budget"
+                        className="h-7 w-20 text-xs text-right font-mono px-2"
+                      />
+                      {(minBudgetText || maxBudgetText) ? (
+                        <button
+                          type="button"
+                          onClick={() => { onMinBudgetChange(''); onMaxBudgetChange('') }}
+                          className="text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200 underline"
+                        >
+                          Clear
+                        </button>
+                      ) : null}
+                    </span>
+                  </div>
+                ) : null}
+
                 <div className="overflow-hidden rounded-md border border-neutral-200 dark:border-neutral-800">
                   <table className="w-full text-xs">
                     <thead className="bg-neutral-100/60 dark:bg-neutral-900/60">
                       <tr className="text-left text-[10px] uppercase tracking-wide text-neutral-500">
-                        <th className="px-3 py-1.5 font-medium">Cost center</th>
-                        <th className="px-3 py-1.5 font-medium text-center" style={{ width: '5.5rem' }}>Seats</th>
-                        <th className="px-3 py-1.5 font-medium text-right" style={{ width: '23rem' }}>Budget ($)</th>
+                        <th className="px-3 py-1.5 font-medium">
+                          <button
+                            type="button"
+                            onClick={() => handleHeaderClick('name')}
+                            className="inline-flex items-center gap-0.5 hover:text-neutral-800 dark:hover:text-neutral-200"
+                          >
+                            Cost center<span className="tabular-nums">{headerArrow('name')}</span>
+                          </button>
+                        </th>
+                        <th className="px-3 py-1.5 font-medium text-center" style={{ width: '5.5rem' }}>
+                          <button
+                            type="button"
+                            onClick={() => handleHeaderClick('seats')}
+                            className="inline-flex items-center gap-0.5 hover:text-neutral-800 dark:hover:text-neutral-200"
+                          >
+                            Seats<span className="tabular-nums">{headerArrow('seats')}</span>
+                          </button>
+                        </th>
+                        <th className="px-3 py-1.5 font-medium text-right" style={{ width: '23rem' }}>
+                          <button
+                            type="button"
+                            onClick={() => handleHeaderClick('budget')}
+                            className="inline-flex items-center gap-0.5 hover:text-neutral-800 dark:hover:text-neutral-200 ml-auto"
+                          >
+                            Budget ($)<span className="tabular-nums">{headerArrow('budget')}</span>
+                          </button>
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
-                      {visibleRows.map(row => {
+                      {pagedRows.map(row => {
                         const state = row.budgetId ? inputState(row.key, row.apiAmount) : 'clean'
                         const draftVal = drafts.get(row.key)
                         const isCreating = creating.has(row.key)
@@ -970,46 +1222,76 @@ export function BudgetPlanner() {
                       })}
                     </tbody>
                     {(() => {
-                      let cappedTotal = 0
-                      let uncappedFloor = 0
-                      let uncappedCount = 0
-                      for (const row of visibleRows) {
-                        const draftVal = drafts.get(row.key)
-                        const isCreating = creating.has(row.key)
-                        const editable = !!row.budgetId || isCreating
-                        if (editable) {
-                          const n = Number(draftVal ?? row.apiAmount)
-                          if (Number.isFinite(n) && n >= 0) cappedTotal += n
-                        } else if (row.affectsCopilot) {
-                          uncappedFloor += row.floor
-                          uncappedCount += 1
+                      const computeTotals = (rowSet: typeof visibleRows) => {
+                        let cappedTotal = 0
+                        let uncappedFloor = 0
+                        let uncappedCount = 0
+                        for (const row of rowSet) {
+                          const draftVal = drafts.get(row.key)
+                          const isCreating = creating.has(row.key)
+                          const editable = !!row.budgetId || isCreating
+                          if (editable) {
+                            const n = Number(draftVal ?? row.apiAmount)
+                            if (Number.isFinite(n) && n >= 0) cappedTotal += n
+                          } else if (row.affectsCopilot) {
+                            uncappedFloor += row.floor
+                            uncappedCount += 1
+                          }
                         }
+                        return { cappedTotal, uncappedFloor, uncappedCount }
                       }
-                      if (cappedTotal === 0 && uncappedCount === 0) return null
+                      const allTotals = computeTotals(baseVisibleRows)
+                      const isFiltered = visibleRows.length !== baseVisibleRows.length
+                      const filteredTotals = isFiltered ? computeTotals(visibleRows) : null
+                      if (allTotals.cappedTotal === 0 && allTotals.uncappedCount === 0) return null
+                      const allRowsLabel = showAll
+                        ? `all ${baseVisibleRows.length}`
+                        : `${baseVisibleRows.length} affecting Copilot`
                       return (
                         <tfoot className="bg-neutral-50 dark:bg-neutral-900/40 border-t border-neutral-200 dark:border-neutral-800">
+                          {filteredTotals ? (
+                            <tr className="text-[11px] border-b border-neutral-200/60 dark:border-neutral-800/60">
+                              <td className="px-3 py-1.5 text-neutral-500">
+                                Filtered subtotal
+                                <span className="ml-1.5 text-neutral-400">
+                                  · {visibleRows.length.toLocaleString()} of {baseVisibleRows.length.toLocaleString()} shown
+                                </span>
+                              </td>
+                              <td className="px-3 py-1.5" />
+                              <td className="px-3 py-1.5 text-right font-mono">
+                                <div className="flex items-center justify-end gap-1.5 pr-[18px]">
+                                  {filteredTotals.uncappedCount > 0 ? (
+                                    <span className="text-neutral-400">up to</span>
+                                  ) : null}
+                                  <span className="text-neutral-500">
+                                    {formatCurrency(filteredTotals.cappedTotal + filteredTotals.uncappedFloor)}
+                                  </span>
+                                </div>
+                              </td>
+                            </tr>
+                          ) : null}
                           <tr className="text-[11px]">
                             <td className="px-3 py-1.5 font-medium text-neutral-600 dark:text-neutral-400">
-                              Total
-                              {uncappedCount > 0 && (
+                              Total ({allRowsLabel})
+                              {allTotals.uncappedCount > 0 && (
                                 <span className="ml-1.5 text-neutral-500">
-                                  · {uncappedCount} uncapped
+                                  · {allTotals.uncappedCount} uncapped
                                 </span>
                               )}
-                              {uncappedCount > 0 && uncappedFloor > 0 ? (
+                              {allTotals.uncappedCount > 0 && allTotals.uncappedFloor > 0 ? (
                                 <span className="ml-1.5 text-neutral-500">
-                                  · Includes {formatCurrency(uncappedFloor)} UBB ceiling from uncapped cost centers
+                                  · Includes {formatCurrency(allTotals.uncappedFloor)} UBB ceiling from uncapped cost centers
                                 </span>
                               ) : null}
                             </td>
                             <td className="px-3 py-1.5" />
                             <td className="px-3 py-1.5 text-right font-mono">
                               <div className="flex items-center justify-end gap-1.5 pr-[18px]">
-                                {uncappedCount > 0 ? (
+                                {allTotals.uncappedCount > 0 ? (
                                   <span className="text-neutral-500">up to</span>
                                 ) : null}
                                 <span className="font-semibold text-neutral-700 dark:text-neutral-200">
-                                  {formatCurrency(cappedTotal + uncappedFloor)}
+                                  {formatCurrency(allTotals.cappedTotal + allTotals.uncappedFloor)}
                                 </span>
                               </div>
                             </td>
@@ -1019,6 +1301,16 @@ export function BudgetPlanner() {
                     })()}
                   </table>
                 </div>
+
+                {visibleRows.length > pageSize ? (
+                  <CcListPagination
+                    page={safePage}
+                    pageSize={pageSize}
+                    total={visibleRows.length}
+                    onPageChange={setPage}
+                    onPageSizeChange={onPageSizeChangeReset}
+                  />
+                ) : null}
               </div>
             )}
 

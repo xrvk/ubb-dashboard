@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Dialog, DialogContent, DialogTitle, DialogDescription, DialogClose } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import type { UserBudget } from '@/lib/api'
+import { describeError } from '@/lib/errors'
 
 interface Props {
   budget: UserBudget | null
@@ -40,7 +41,7 @@ export function DeleteConfirmDialog({ budget, open, onOpenChange, onConfirm }: P
                 await onConfirm()
                 onOpenChange(false)
               } catch (err) {
-                setError(err instanceof Error ? err.message : String(err))
+                setError(describeError(err, 'delete-budget').body)
               } finally {
                 setSubmitting(false)
               }

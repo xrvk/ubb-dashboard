@@ -1,9 +1,23 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import {
+  ApiError,
+  AuthError,
+  ScopeError,
+  NotFoundError,
+  ValidationError,
+  ServerError,
+  NetworkError,
+  AbortedError,
+} from '@/lib/errors'
+import {
+  _resetRateLimitCache,
   buildCostCenterIndex,
   createApiFetch,
+  fetchAllCopilotSeats,
   fetchCostCenters,
   fetchUserBudgets,
+  getLastKnownRateLimit,
+  isPrimaryRateLimitExhausted,
   resolveCostCenter,
   type ApiFetch,
   type CostCenter,
@@ -35,7 +49,7 @@ describe('fetchUserBudgets pagination', () => {
       all.push(fakeBudget(i, i % 10 === 0 ? 'enterprise' : 'user'))
     }
     const fetchMock: ApiFetch = vi.fn(async path => {
-      const m = String(path).match(/page=(\d+)/)
+      const m = String(path).match(/[?&]page=(\d+)/)
       const page = m ? Number(m[1]) : 1
       const start = (page - 1) * PAGE_SIZE
       return {
@@ -68,7 +82,47 @@ describe('fetchUserBudgets pagination', () => {
     expect(result.totalBudgetCount).toBe(5)
   })
 
-  it('stops on an empty page when total_count is missing', async () => {
+  it('preserves page order when pages 2..N return out of order (parallel fetch)', async () => {
+    const TOTAL = 50
+    const PAGE_SIZE = 10
+    // Simulate variable per-page latency so page 5 lands before page 2.
+    const delays: Record<number, number> = { 1: 0, 2: 50, 3: 30, 4: 10, 5: 0 }
+    const fetchMock: ApiFetch = vi.fn(async path => {
+      const m = String(path).match(/[?&]page=(\d+)/)
+      const page = m ? Number(m[1]) : 1
+      const start = (page - 1) * PAGE_SIZE
+      await new Promise(r => setTimeout(r, delays[page] ?? 0))
+      const slice = Array.from({ length: PAGE_SIZE }, (_, i) => fakeBudget(start + i, 'user'))
+      return { total_count: TOTAL, budgets: slice }
+    })
+
+    const result = await fetchUserBudgets(fetchMock)
+    expect(result.userBudgets).toHaveLength(TOTAL)
+    // IDs must come out in original ascending order even when later pages
+    // resolve first — guards against accidentally concatenating in resolution
+    // order instead of page order.
+    expect(result.userBudgets.map(b => b.id)).toEqual(
+      Array.from({ length: TOTAL }, (_, i) => `b${i}`),
+    )
+  })
+
+  it('rejects when a later parallel page fails', async () => {
+    const TOTAL = 30
+    const PAGE_SIZE = 10
+    const fetchMock: ApiFetch = vi.fn(async path => {
+      const m = String(path).match(/[?&]page=(\d+)/)
+      const page = m ? Number(m[1]) : 1
+      if (page === 3) throw new Error('500: boom')
+      const start = (page - 1) * PAGE_SIZE
+      return {
+        total_count: TOTAL,
+        budgets: Array.from({ length: PAGE_SIZE }, (_, i) => fakeBudget(start + i, 'user')),
+      }
+    })
+    await expect(fetchUserBudgets(fetchMock)).rejects.toThrow(/500: boom/)
+  })
+
+  it('stops on an empty page when total_count is missing (sequential fallback)', async () => {
     let calls = 0
     const fetchMock: ApiFetch = vi.fn(async () => {
       calls += 1
@@ -77,9 +131,79 @@ describe('fetchUserBudgets pagination', () => {
     })
     const result = await fetchUserBudgets(fetchMock)
     expect(result.userBudgets).toHaveLength(2)
-    // Falls back to the number of raw budgets paginated through
     expect(result.totalBudgetCount).toBe(2)
     expect(calls).toBe(2)
+  })
+})
+
+describe('fetchAllCopilotSeats pagination', () => {
+  function fakeSeatPage(start: number, count: number, totalSeats: number) {
+    return {
+      total_seats: totalSeats,
+      seats: Array.from({ length: count }, (_, i) => ({
+        assignee: { login: `user${start + i}` },
+        organization: { login: `org${(start + i) % 3}` },
+        last_activity_at: null,
+        plan_type: 'business',
+      })),
+    }
+  }
+
+  it('paginates a large enterprise (1320 seats / 14 pages) and dedupes', async () => {
+    const TOTAL = 1320
+    const PAGE_SIZE = 100
+    const fetchMock: ApiFetch = vi.fn(async (path: string) => {
+      const m = path.match(/[?&]page=(\d+)/)
+      const page = m ? Number(m[1]) : 1
+      const start = (page - 1) * PAGE_SIZE
+      const count = Math.min(PAGE_SIZE, TOTAL - start)
+      return fakeSeatPage(start, count, TOTAL)
+    })
+    const result = await fetchAllCopilotSeats(fetchMock)
+    // ceil(1320/100) = 14
+    expect(fetchMock).toHaveBeenCalledTimes(14)
+    expect(result).toHaveLength(TOTAL)
+    expect(result[0].login).toBe('user0')
+    expect(result[TOTAL - 1].login).toBe('user1319')
+  })
+
+  it('returns page 1 only when total_seats is already satisfied', async () => {
+    const fetchMock: ApiFetch = vi.fn(async () => fakeSeatPage(0, 3, 3))
+    const result = await fetchAllCopilotSeats(fetchMock)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(result).toHaveLength(3)
+  })
+
+  it('falls back to sequential when total_seats is missing', async () => {
+    let calls = 0
+    const fetchMock: ApiFetch = vi.fn(async () => {
+      calls += 1
+      if (calls <= 2) {
+        return {
+          // total_seats intentionally omitted
+          seats: Array.from({ length: 100 }, (_, i) => ({
+            assignee: { login: `user${(calls - 1) * 100 + i}` },
+          })),
+        }
+      }
+      return { seats: [] }
+    })
+    const result = await fetchAllCopilotSeats(fetchMock)
+    expect(result).toHaveLength(200)
+    expect(calls).toBe(3)
+  })
+
+  it('dedupes seats that appear in multiple orgs', async () => {
+    const fetchMock: ApiFetch = vi.fn(async () => ({
+      total_seats: 3,
+      seats: [
+        { assignee: { login: 'alice' }, organization: { login: 'org-a' } },
+        { assignee: { login: 'alice' }, organization: { login: 'org-b' } },
+        { assignee: { login: 'bob' }, organization: { login: 'org-a' } },
+      ],
+    }))
+    const result = await fetchAllCopilotSeats(fetchMock)
+    expect(result.map(s => s.login).sort()).toEqual(['alice', 'bob'])
   })
 })
 
@@ -197,6 +321,266 @@ describe('createApiFetch host allowlist', () => {
     expect(() =>
       createApiFetch({ base: 'https://api.evil.com.ghe.example', ent: 'x', token: 't' }),
     ).toThrow(/untrusted host/)
+  })
+})
+
+// --- createApiFetch HTTP transport ---
+//
+// These tests stub global.fetch and exercise the typed-error mapping,
+// GET retry policy, and write-shot semantics. Backoff durations are
+// asserted as *bounds*, not exact values, so future tuning of the
+// retry constants doesn't break the suite. Math.random is pinned so
+// the jitter contribution is deterministic.
+
+interface MockResponseSpec {
+  status: number
+  body?: string
+  headers?: Record<string, string>
+}
+
+function mockFetchResponse(spec: MockResponseSpec): Response {
+  return {
+    ok: spec.status >= 200 && spec.status < 300,
+    status: spec.status,
+    headers: {
+      get: (name: string) => spec.headers?.[name.toLowerCase()] ?? null,
+    },
+    text: async () => spec.body ?? '',
+  } as unknown as Response
+}
+
+describe('createApiFetch typed-error mapping', () => {
+  let fetchSpy: ReturnType<typeof vi.spyOn>
+  const fetcher = createApiFetch({ base: 'https://api.github.com', ent: 'acme', token: 't' })
+
+  beforeEach(() => {
+    fetchSpy = vi.spyOn(globalThis, 'fetch')
+  })
+  afterEach(() => {
+    fetchSpy.mockRestore()
+  })
+
+  it.each([
+    [401, AuthError, 'auth'],
+    [403, ScopeError, 'scope'],
+    [404, NotFoundError, 'not_found'],
+    [422, ValidationError, 'validation'],
+  ])('maps %i to the right typed error (kind=%s)', async (status, ctor, kind) => {
+    fetchSpy.mockResolvedValue(mockFetchResponse({ status, body: '{"message":"nope"}' }))
+    let caught: unknown
+    try {
+      await fetcher('/budgets', { method: 'PATCH' })
+    } catch (err) {
+      caught = err
+    }
+    expect(caught).toBeInstanceOf(ctor)
+    expect(caught).toBeInstanceOf(ApiError)
+    expect((caught as ApiError).kind).toBe(kind)
+    expect((caught as ApiError).status).toBe(status)
+  })
+
+  it('captures Retry-After and x-github-request-id on 429', async () => {
+    fetchSpy.mockResolvedValue(
+      mockFetchResponse({
+        status: 429,
+        body: 'slow down',
+        headers: { 'retry-after': '7', 'x-github-request-id': 'abc-123' },
+      }),
+    )
+    // Use a non-idempotent method to skip the GET retry path (we just want
+    // to assert the captured-headers shape from a single failed call).
+    await expect(fetcher('/budgets', { method: 'PATCH' })).rejects.toMatchObject({
+      status: 429,
+      kind: 'rate_limit',
+      headers: { 'retry-after': '7', 'x-github-request-id': 'abc-123' },
+    })
+  })
+
+  it('maps 5xx to ServerError (transient)', async () => {
+    fetchSpy.mockResolvedValueOnce(mockFetchResponse({ status: 503, body: 'down' }))
+    await expect(fetcher('/budgets', { method: 'PATCH' })).rejects.toBeInstanceOf(ServerError)
+  })
+
+  it('wraps fetch rejection (offline/DNS/TLS) as NetworkError', async () => {
+    fetchSpy.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+    await expect(fetcher('/budgets', { method: 'PATCH' })).rejects.toBeInstanceOf(NetworkError)
+  })
+
+  it('maps an AbortError from fetch to AbortedError (no retry)', async () => {
+    const abortErr = new Error('aborted')
+    abortErr.name = 'AbortError'
+    fetchSpy.mockRejectedValue(abortErr)
+    // Use GET to prove the retry loop also short-circuits on abort.
+    await expect(fetcher('/budgets')).rejects.toBeInstanceOf(AbortedError)
+    // One attempt only — retry must not fire on abort.
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('sends Authorization, Accept, and X-GitHub-Api-Version headers', async () => {
+    fetchSpy.mockResolvedValueOnce(mockFetchResponse({ status: 200, body: '{}' }))
+    await fetcher('/budgets')
+    const init = fetchSpy.mock.calls[0][1] as RequestInit
+    const headers = init.headers as Record<string, string>
+    expect(headers.Authorization).toBe('Bearer t')
+    expect(headers.Accept).toBe('application/vnd.github+json')
+    expect(headers['X-GitHub-Api-Version']).toBeDefined()
+  })
+
+  it('adds Content-Type only when a body is supplied', async () => {
+    fetchSpy.mockResolvedValueOnce(mockFetchResponse({ status: 200, body: '{}' }))
+    await fetcher('/budgets', { method: 'PATCH', body: '{"foo":1}' })
+    const init = fetchSpy.mock.calls[0][1] as RequestInit
+    expect((init.headers as Record<string, string>)['Content-Type']).toBe('application/json')
+  })
+})
+
+describe('createApiFetch GET retry policy', () => {
+  let fetchSpy: ReturnType<typeof vi.spyOn>
+  let randomSpy: ReturnType<typeof vi.spyOn>
+  const fetcher = createApiFetch({ base: 'https://api.github.com', ent: 'acme', token: 't' })
+
+  beforeEach(() => {
+    fetchSpy = vi.spyOn(globalThis, 'fetch')
+    // Pin jitter to 0 so backoff durations are predictable for bound assertions.
+    randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0)
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    randomSpy.mockRestore()
+    fetchSpy.mockRestore()
+  })
+
+  it('retries a GET on 502 and succeeds on the 3rd attempt', async () => {
+    fetchSpy
+      .mockResolvedValueOnce(mockFetchResponse({ status: 502, body: 'gateway' }))
+      .mockResolvedValueOnce(mockFetchResponse({ status: 502, body: 'gateway' }))
+      .mockResolvedValueOnce(mockFetchResponse({ status: 200, body: '{"ok":true}' }))
+    const promise = fetcher('/budgets')
+    await vi.runAllTimersAsync()
+    await expect(promise).resolves.toEqual({ ok: true })
+    expect(fetchSpy).toHaveBeenCalledTimes(3)
+  })
+
+  it('does NOT retry a non-idempotent PATCH on 502 (single shot)', async () => {
+    fetchSpy.mockResolvedValue(mockFetchResponse({ status: 502, body: 'gateway' }))
+    await expect(fetcher('/budgets', { method: 'PATCH' })).rejects.toBeInstanceOf(ServerError)
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('does NOT retry a POST on 5xx (single shot)', async () => {
+    fetchSpy.mockResolvedValue(mockFetchResponse({ status: 503, body: 'down' }))
+    await expect(fetcher('/budgets', { method: 'POST', body: '{}' })).rejects.toBeInstanceOf(ServerError)
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('does NOT retry a GET on 401/403/404/422 (non-retryable)', async () => {
+    for (const status of [401, 403, 404, 422]) {
+      fetchSpy.mockResolvedValueOnce(mockFetchResponse({ status, body: '{}' }))
+    }
+    await expect(fetcher('/a')).rejects.toBeInstanceOf(AuthError)
+    await expect(fetcher('/b')).rejects.toBeInstanceOf(ScopeError)
+    await expect(fetcher('/c')).rejects.toBeInstanceOf(NotFoundError)
+    await expect(fetcher('/d')).rejects.toBeInstanceOf(ValidationError)
+    // 4 calls, one per request — no retries.
+    expect(fetchSpy).toHaveBeenCalledTimes(4)
+  })
+
+  it('gives up after the retry budget is exhausted', async () => {
+    // GET_RETRY_DEFAULTS.maxRetries = 2 → 1 initial + 2 retries = 3 attempts.
+    fetchSpy.mockResolvedValue(mockFetchResponse({ status: 502, body: 'gateway' }))
+    const promise = fetcher('/budgets')
+    // Catch the rejection upfront so unhandled-rejection warnings don't fire
+    // while we tick the fake timers.
+    const settled = promise.catch(err => err)
+    await vi.runAllTimersAsync()
+    const err = await settled
+    expect(err).toBeInstanceOf(ServerError)
+    expect(fetchSpy).toHaveBeenCalledTimes(3)
+  })
+
+  it('honors Retry-After on 429 (uses header value, not the default backoff)', async () => {
+    fetchSpy
+      .mockResolvedValueOnce(
+        mockFetchResponse({ status: 429, body: 'slow', headers: { 'retry-after': '3' } }),
+      )
+      .mockResolvedValueOnce(mockFetchResponse({ status: 200, body: '{"ok":true}' }))
+    const promise = fetcher('/budgets')
+    // Advance just under the Retry-After window — the second fetch must
+    // not have fired yet.
+    await vi.advanceTimersByTimeAsync(2_000)
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(2_000)
+    await expect(promise).resolves.toEqual({ ok: true })
+    expect(fetchSpy).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('rate limit header capture', () => {
+  it('parses x-ratelimit-* headers and updates the cache on success', async () => {
+    _resetRateLimitCache()
+    const resetSec = Math.floor(Date.now() / 1000) + 1800
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(JSON.stringify([]), {
+        status: 200,
+        headers: {
+          'x-ratelimit-limit': '5000',
+          'x-ratelimit-remaining': '4200',
+          'x-ratelimit-reset': String(resetSec),
+          'x-ratelimit-resource': 'core',
+        },
+      }),
+    )
+    const apiFetch = createApiFetch({ base: 'https://api.github.com', ent: 'x', token: 't' })
+    await apiFetch('/budgets')
+    const snap = getLastKnownRateLimit()
+    expect(snap?.remaining).toBe(4200)
+    expect(snap?.limit).toBe(5000)
+    expect(snap?.resetAt).toBe(resetSec * 1000)
+    expect(snap?.resource).toBe('core')
+    fetchSpy.mockRestore()
+  })
+
+  it('captures rate-limit headers on ApiError so isPrimaryRateLimitExhausted detects exhaustion', async () => {
+    _resetRateLimitCache()
+    const resetSec = Math.floor(Date.now() / 1000) + 600
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response('{"message":"API rate limit exceeded"}', {
+        status: 403,
+        headers: {
+          'x-ratelimit-limit': '5000',
+          'x-ratelimit-remaining': '0',
+          'x-ratelimit-reset': String(resetSec),
+        },
+      }),
+    )
+    const apiFetch = createApiFetch({ base: 'https://api.github.com', ent: 'x', token: 't' })
+    try {
+      await apiFetch('/budgets')
+      throw new Error('should have thrown')
+    } catch (e) {
+      expect(e).toBeInstanceOf(ApiError)
+      const err = e as ApiError
+      expect(err.status).toBe(403)
+      expect(err.headers['x-ratelimit-remaining']).toBe('0')
+      expect(isPrimaryRateLimitExhausted(err)).toBe(true)
+    }
+    fetchSpy.mockRestore()
+  })
+
+  it('isPrimaryRateLimitExhausted is false for 403 with remaining > 0', () => {
+    const err = new ApiError(403, 'forbidden', {
+      headers: { 'x-ratelimit-remaining': '4000' },
+    })
+    expect(isPrimaryRateLimitExhausted(err)).toBe(false)
+  })
+
+  it('isPrimaryRateLimitExhausted is false for 429', () => {
+    const err = new ApiError(429, 'slow down', {
+      headers: { 'x-ratelimit-remaining': '0' },
+    })
+    // 429 = secondary; the retry path handles it. Primary check is 403-only.
+    expect(isPrimaryRateLimitExhausted(err)).toBe(false)
   })
 })
 

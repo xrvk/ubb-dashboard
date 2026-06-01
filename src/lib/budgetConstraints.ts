@@ -329,3 +329,37 @@ export function computeBudgetConstraints(
     maxSafeUniversalUbb,
   }
 }
+
+// --- Preview helper ---
+
+/**
+ * Recompute the constraint report as if a different universal UBB were in
+ * effect. Used by the Universal-UBB planner to show admins, before they
+ * apply, whether the proposed cap would breach the enterprise envelope or a
+ * per-CC budget. Pure — same inputs always yield same outputs.
+ *
+ * `proposedBudgetAmount` is in dollars (the same unit as `UniversalUbb.budgetAmount`).
+ * Forces `preventFurtherUsage=true` on the proposed UBB regardless of the
+ * caller-supplied value because `patchUniversalUBB` / `createUniversalUBB`
+ * both apply with that flag, so the preview should reflect the post-apply
+ * state instead of carrying over a stale `prevent_further_usage_off` warning.
+ */
+export function previewConstraintsWithProposedUbb(
+  input: ComputeBudgetConstraintsInput,
+  proposedBudgetAmount: number,
+): BudgetConstraintsResult {
+  const base: UniversalUbb = input.universalUbb ?? {
+    id: '__preview_universal_ubb__',
+    budgetAmount: 0,
+    consumedAmount: 0,
+    preventFurtherUsage: true,
+    willAlert: false,
+    alertRecipients: [],
+  }
+  const proposed: UniversalUbb = {
+    ...base,
+    budgetAmount: proposedBudgetAmount,
+    preventFurtherUsage: true,
+  }
+  return computeBudgetConstraints({ ...input, universalUbb: proposed })
+}
