@@ -22,6 +22,12 @@ import { projectMonthlyBudget } from '@/lib/projection'
 import { getEffectiveDemoAsof } from '@/lib/demo'
 import { formatCurrency, formatCurrencyWhole, formatPercent, cn } from '@/lib/utils'
 import {
+  filterAndSortCcRows,
+  ccUtilization,
+  type CcSortOption,
+} from '@/lib/ccRowFilter'
+import { CcListToolbar } from '@/components/ui/cc-list-toolbar'
+import {
   NAV_TO_BUDGET_MODEL_EVENT,
   NAV_TO_INDIVIDUAL_EVENT,
   NAV_TO_UNIVERSAL_EVENT,
@@ -1209,6 +1215,67 @@ function CostCenterStatusCard({
     return rows
   }, [pool.costCenters, usageByCostCenterId])
 
+  // Toolbar state is local to the card so it doesn't survive remounts —
+  // intentional, mirrors the FailureList "showAll" decision in Phase 1.
+  const [query, setQuery] = useState('')
+  const [sort, setSort] = useState<string>('util-desc')
+
+  type EnrichedCc = (typeof pool)['costCenters'][number] & {
+    _mtd: number
+    _projected: number
+    _measured: boolean
+  }
+
+  const enrichedRows: EnrichedCc[] = useMemo(
+    () =>
+      pool.costCenters.map(cc => {
+        const data = perCc.get(cc.costCenterId)
+        return {
+          ...cc,
+          _mtd: data?.mtd ?? 0,
+          _projected: data?.projected ?? 0,
+          _measured: data?.measured ?? false,
+        }
+      }),
+    [pool.costCenters, perCc],
+  )
+
+  const sortOptions: CcSortOption<EnrichedCc>[] = useMemo(
+    () => [
+      {
+        id: 'util-desc',
+        label: 'Projected utilization (high → low)',
+        cmp: (a, b) => {
+          const ua = ccUtilization(a.budgetAmount, a._projected) ?? -Infinity
+          const ub = ccUtilization(b.budgetAmount, b._projected) ?? -Infinity
+          return ub - ua
+        },
+      },
+      {
+        id: 'projected-desc',
+        label: 'Projected $ (high → low)',
+        cmp: (a, b) => b._projected - a._projected,
+      },
+      {
+        id: 'budget-desc',
+        label: 'Budget (high → low)',
+        cmp: (a, b) => (b.budgetAmount ?? 0) - (a.budgetAmount ?? 0),
+      },
+      {
+        id: 'seats-desc',
+        label: 'Seats (high → low)',
+        cmp: (a, b) => b.seatCount - a.seatCount,
+      },
+      { id: 'name', label: 'Name (A → Z)', cmp: (a, b) => a.name.localeCompare(b.name) },
+    ],
+    [],
+  )
+
+  const filteredRows = useMemo(
+    () => filterAndSortCcRows(enrichedRows, query, sort, sortOptions, r => r.name),
+    [enrichedRows, query, sort, sortOptions],
+  )
+
   if (pool.costCenters.length === 0) {
     return (
       <Card>
@@ -1246,9 +1313,21 @@ function CostCenterStatusCard({
           })}
         />
 
-        <div className="rounded-md border border-neutral-200 dark:border-neutral-800 overflow-x-auto">
+        {pool.costCenters.length > 8 ? (
+          <CcListToolbar
+            query={query}
+            onQueryChange={setQuery}
+            sort={sort}
+            onSortChange={setSort}
+            sortOptions={sortOptions}
+            total={pool.costCenters.length}
+            visible={filteredRows.length}
+          />
+        ) : null}
+
+        <div className="rounded-md border border-neutral-200 dark:border-neutral-800 overflow-x-auto max-h-[32rem] overflow-y-auto">
           <table className="w-full text-xs">
-            <thead className="bg-neutral-50 dark:bg-neutral-900/40 text-neutral-500">
+            <thead className="bg-neutral-50 dark:bg-neutral-900/40 text-neutral-500 sticky top-0">
               <tr>
                 <th className="text-left font-medium px-3 py-2">Cost center</th>
                 <th className="text-right font-medium px-3 py-2">Seats</th>
@@ -1258,12 +1337,18 @@ function CostCenterStatusCard({
               </tr>
             </thead>
             <tbody>
-              {pool.costCenters.map(cc => {
-                const data = perCc.get(cc.costCenterId)
-                const measured = data?.measured ?? false
+              {filteredRows.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-3 py-6 text-center text-neutral-500">
+                    No cost centers match "{query}".
+                  </td>
+                </tr>
+              ) : null}
+              {filteredRows.map(cc => {
+                const measured = cc._measured
                 const hasBudget = cc.budgetAmount !== null && cc.budgetAmount > 0
                 const projPct = measured && hasBudget
-                  ? Math.round((data!.projected / cc.budgetAmount!) * 100)
+                  ? Math.round((cc._projected / cc.budgetAmount!) * 100)
                   : null
                 const projTone = projPct === null
                   ? ''
@@ -1281,12 +1366,12 @@ function CostCenterStatusCard({
                       {cc.seatCount.toLocaleString()}
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums">
-                      {measured ? formatCurrency(data!.mtd) : <span className="text-neutral-400">—</span>}
+                      {measured ? formatCurrency(cc._mtd) : <span className="text-neutral-400">—</span>}
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums">
                       {measured ? (
                         <span>
-                          {formatCurrency(data!.projected)}
+                          {formatCurrency(cc._projected)}
                           {projPct !== null && (
                             <span className={cn('ml-1.5 text-[10px] font-medium', projTone)}>
                               {projPct}%

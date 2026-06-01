@@ -29,6 +29,11 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { useCredentials } from '@/hooks/use-credentials'
 import { useBudgetConstraints } from '@/hooks/use-budget-constraints'
 import { describeError } from '@/lib/errors'
+import {
+  filterAndSortCcRows,
+  type CcSortOption,
+} from '@/lib/ccRowFilter'
+import { CcListToolbar } from '@/components/ui/cc-list-toolbar'
 import { computeRequiredMinimums } from '@/lib/budgetAutoFix'
 import { formatCurrency, formatCurrencyShort, cn, openExternal } from '@/lib/utils'
 import {
@@ -299,6 +304,8 @@ export function BudgetPlanner() {
   }
 
   const [showAll, setShowAll] = useState(false)
+  const [ccQuery, setCcQuery] = useState('')
+  const [ccSort, setCcSort] = useState<string>('default')
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [applying, setApplying] = useState(false)
   const [applyError, setApplyError] = useState<string | null>(null)
@@ -391,7 +398,30 @@ export function BudgetPlanner() {
     () => rows.filter(r => r.affectsCopilot && r.budgetId === null),
     [rows],
   )
-  const visibleRows = showAll ? rows : rows.filter(r => r.affectsCopilot)
+
+  const ccSortOptions: CcSortOption<Row>[] = useMemo(
+    () => [
+      {
+        id: 'default',
+        label: 'Default (affecting · budgeted · $ desc)',
+        cmp: (a, b) => {
+          if (a.affectsCopilot !== b.affectsCopilot) return a.affectsCopilot ? -1 : 1
+          if (!!a.budgetId !== !!b.budgetId) return a.budgetId ? -1 : 1
+          return b.apiAmount - a.apiAmount
+        },
+      },
+      { id: 'budget-desc', label: 'Budget (high → low)', cmp: (a, b) => b.apiAmount - a.apiAmount },
+      { id: 'seats-desc', label: 'Seats (high → low)', cmp: (a, b) => b.seatCount - a.seatCount },
+      { id: 'name', label: 'Name (A → Z)', cmp: (a, b) => a.name.localeCompare(b.name) },
+    ],
+    [],
+  )
+
+  const baseVisibleRows = showAll ? rows : rows.filter(r => r.affectsCopilot)
+  const visibleRows = useMemo(
+    () => filterAndSortCcRows(baseVisibleRows, ccQuery, ccSort, ccSortOptions, r => r.name),
+    [baseVisibleRows, ccQuery, ccSort, ccSortOptions],
+  )
 
   // --- Diff calculation ---
   const pending: PendingChange[] = useMemo(() => {
@@ -818,6 +848,18 @@ export function BudgetPlanner() {
                     </button>
                   ) : null}
                 </div>
+
+                {baseVisibleRows.length > 12 ? (
+                  <CcListToolbar
+                    query={ccQuery}
+                    onQueryChange={setCcQuery}
+                    sort={ccSort}
+                    onSortChange={setCcSort}
+                    sortOptions={ccSortOptions}
+                    total={baseVisibleRows.length}
+                    visible={visibleRows.length}
+                  />
+                ) : null}
 
                 <div className="overflow-hidden rounded-md border border-neutral-200 dark:border-neutral-800">
                   <table className="w-full text-xs">
