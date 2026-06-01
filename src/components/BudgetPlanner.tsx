@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { toast } from 'sonner'
 import {
   Buildings,
   Stack,
@@ -276,7 +277,9 @@ function SeatsLink({ seats, href }: { seats: number; href: string | null }) {
 export function BudgetPlanner() {
   const {
     enterpriseBudget,
+    setEnterpriseBudget,
     costCenterBudgetsByName,
+    setCostCenterBudgetsByName,
     costCenters,
     loginToCostCenter,
     budgets,
@@ -680,14 +683,68 @@ export function BudgetPlanner() {
 
   const handleApply = async () => {
     if (pending.length === 0) return
-    if (!apiFetch) {
+    const isDemo = credentials?.base === 'demo://'
+    if (!isDemo && !apiFetch) {
       setApplyError('Not connected to GitHub.')
       return
     }
-    const fetcher = apiFetch
     setApplying(true)
     setApplyError(null)
     try {
+      if (isDemo) {
+        // Sandbox: mutate enterprise + CC budget state in memory so the demo
+        // can follow the full apply → re-evaluate → constraints-recompute
+        // loop without calling github.com. Mirrors the demo branches in
+        // IndividualUlbPage.handleEdit and UniversalUlbPage.handleEditCap.
+        for (const change of pending) {
+          if (change.kind === 'patch-ent') {
+            setEnterpriseBudget(prev =>
+              prev
+                ? {
+                    ...prev,
+                    budgetAmount: change.amountAfter ?? prev.budgetAmount,
+                    preventFurtherUsage: change.preventAfter ?? prev.preventFurtherUsage,
+                  }
+                : prev,
+            )
+          } else if (change.kind === 'patch-cc') {
+            setCostCenterBudgetsByName(prev => {
+              const next = new Map(prev)
+              for (const [key, ccb] of prev) {
+                if (ccb.id === change.budgetId) {
+                  next.set(key, {
+                    ...ccb,
+                    budgetAmount: change.amountAfter ?? ccb.budgetAmount,
+                    preventFurtherUsage: change.preventAfter ?? ccb.preventFurtherUsage,
+                  })
+                  break
+                }
+              }
+              return next
+            })
+          } else {
+            setCostCenterBudgetsByName(prev => {
+              const next = new Map(prev)
+              next.set(change.name.toLowerCase(), {
+                id: `demo-ccb-new-${Date.now()}-${change.ccId}`,
+                costCenterName: change.name,
+                budgetAmount: change.amountAfter,
+                preventFurtherUsage: change.preventAfter,
+                willAlert: false,
+                alertRecipients: [],
+              })
+              return next
+            })
+          }
+        }
+        setLastAppliedAt(Date.now())
+        toast.success(
+          `Demo: applied ${pending.length} budget change${pending.length === 1 ? '' : 's'}.`,
+        )
+        setConfirmOpen(false)
+        return
+      }
+      const fetcher = apiFetch!
       const outcomes = await runBatch(pending, async change => {
         if (change.kind === 'patch-ent') {
           await patchEnterpriseBudget(fetcher, change.budgetId, {
