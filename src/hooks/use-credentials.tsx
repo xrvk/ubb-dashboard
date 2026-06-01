@@ -100,8 +100,20 @@ interface CredentialsContextValue {
   setBudgets: Dispatch<SetStateAction<UserBudget[]>>
   /** Enterprise-scope ai_credits budget or null if not configured. */
   enterpriseBudget: EnterpriseBudget | null
+  /**
+   * Local mutation of the enterprise budget. Exposed so demo-mode "apply"
+   * actions can mirror real API mutations into the in-memory store without
+   * hitting github.com. Real (non-demo) callers should keep using the API +
+   * refresh() cycle; this setter exists for sandbox flows only.
+   */
+  setEnterpriseBudget: Dispatch<SetStateAction<EnterpriseBudget | null>>
   /** Cost-center-scope ai_credits budgets, keyed by lowercased CC name. */
   costCenterBudgetsByName: ReadonlyMap<string, CostCenterBudget>
+  /**
+   * Local mutation of the cost-center budgets map. Same demo-mode escape
+   * hatch as `setEnterpriseBudget` — not for use in real (non-demo) flows.
+   */
+  setCostCenterBudgetsByName: Dispatch<SetStateAction<ReadonlyMap<string, CostCenterBudget>>>
   /**
    * Enterprise-wide Copilot billing usage summary for the current month, or
    * `null` if not yet loaded / unavailable. Best-effort: a 403 (no enhanced
@@ -489,7 +501,9 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
     setUniversalUlb,
     setBudgets,
     enterpriseBudget,
+    setEnterpriseBudget,
     costCenterBudgetsByName,
+    setCostCenterBudgetsByName,
     usageSummary,
     usageByCostCenterId,
     loading,
