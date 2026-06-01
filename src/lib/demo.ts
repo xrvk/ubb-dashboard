@@ -7,6 +7,8 @@ import type {
   UserBudget,
 } from './api'
 import { fillerBudgetFor, rollFillerHealth, rollFillerSeatCount } from './demoRng'
+import type { CachedReport } from './reportCache'
+import type { UserAicAggregate } from './usageReport'
 
 /**
  * Generate N synthetic user budgets for UI scale testing. Distribution is
@@ -498,4 +500,84 @@ export function generateDemoUsageSummary(
     ceLicenseNet: Math.round(ceSeats * 39 * 100) / 100,
     raw: [],
   }
+}
+
+/**
+ * Build 2 months of synthetic per-user AIC aggregates so demo mode lands on
+ * the Universal UBB planner with usable data. Without this, the planner is
+ * empty until the user manually uploads a CSV.
+ *
+ * The distribution mirrors the budget tiers used elsewhere in demo:
+ *   ~5% heavy ($80-$200/mo), ~10% high ($30-$80), ~25% mid ($5-$30),
+ *   ~35% low ($0-$5), ~25% idle. With ~75 universal-only seats (demo=150),
+ *   the Top 5% threshold lands a proposed UBB in the $80-$200 band, which
+ *   collides with the small demo enterprise envelope ($9k) and exercises
+ *   the new pre-flight envelope check end-to-end.
+ *
+ * The second month is jittered down so aggregateMaxMonth has a meaningful
+ * choice to make per user.
+ */
+export function generateDemoCachedReports(
+  enterprise: string,
+  seats: Array<{ login: string }>,
+  seed = 99,
+): CachedReport[] {
+  let s = seed
+  const rand = () => {
+    s = (s * 1103515245 + 12345) & 0x7fffffff
+    return s / 0x7fffffff
+  }
+  const lastUsedFor = (monthKey: string): string =>
+    `${monthKey}-${String(1 + Math.floor(rand() * 27)).padStart(2, '0')}`
+
+  const monthRows = (monthKey: string, scale: number): UserAicAggregate[] => {
+    const out: UserAicAggregate[] = []
+    for (const seat of seats) {
+      const bucket = rand()
+      let dollars: number
+      if (bucket < 0.05) dollars = 80 + rand() * 120
+      else if (bucket < 0.15) dollars = 30 + rand() * 50
+      else if (bucket < 0.4) dollars = 5 + rand() * 25
+      else if (bucket < 0.75) dollars = rand() * 5
+      else dollars = 0
+      dollars = Math.round(dollars * scale * 100) / 100
+      if (dollars <= 0) continue
+      const aic = Math.round(dollars * 100)
+      out.push({
+        username: seat.login,
+        aicConsumed: aic,
+        grossAmount: dollars,
+        lastUsedDate: lastUsedFor(monthKey),
+        codingAgentAic: Math.round(aic * 0.15),
+      })
+    }
+    return out
+  }
+
+  const now = new Date()
+  const monthKeyAt = (offset: number) => {
+    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - offset, 1))
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`
+  }
+  const last = monthKeyAt(1)
+  const prior = monthKeyAt(2)
+  const ingestedAt = Date.now()
+  return [
+    {
+      enterprise,
+      monthKey: prior,
+      reportId: null,
+      ingestedAt,
+      source: 'generated',
+      rows: monthRows(prior, 0.7),
+    },
+    {
+      enterprise,
+      monthKey: last,
+      reportId: null,
+      ingestedAt,
+      source: 'generated',
+      rows: monthRows(last, 1.0),
+    },
+  ]
 }

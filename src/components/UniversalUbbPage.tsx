@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input'
 import { CostCenterCombobox, type CostCenterOption } from '@/components/ui/cost-center-combobox'
 import { useCredentials } from '@/hooks/use-credentials'
 import {
+  buildCostCenterIndex,
   createUniversalUBB,
   createUserBudget as apiCreateUserBudget,
   fetchUniversalUBB,
@@ -14,6 +15,7 @@ import {
 } from '@/lib/api'
 import { describeError } from '@/lib/errors'
 import { formatCurrency } from '@/lib/utils'
+import { previewConstraintsWithProposedUbb, computeBudgetConstraints, type ComputeBudgetConstraintsInput } from '@/lib/budgetConstraints'
 import {
   loadAllCachedReports,
   aggregateMaxMonth,
@@ -33,6 +35,7 @@ import {
   DialogClose,
 } from '@/components/ui/dialog'
 import { EditUniversalUbbDialog } from '@/components/EditUniversalUbbDialog'
+import { EnvelopeCheckCard } from '@/components/EnvelopeCheckCard'
 import { UsageCsvImport } from '@/components/UsageCsvImport'
 import { ConsumptionCurve } from '@/components/ConsumptionCurve'
 
@@ -66,7 +69,11 @@ export function UniversalUbbPage() {
     seats,
     universalUbb,
     setUniversalUbb,
+    setBudgets,
     loginToCostCenter,
+    enterpriseBudget,
+    costCenters,
+    costCenterBudgetsByName,
   } = useCredentials()
 
   const [editing, setEditing] = useState(false)
@@ -90,6 +97,15 @@ export function UniversalUbbPage() {
   const [batchProgress, setBatchProgress] = useState<{ done: number; total: number } | null>(null)
   const [outlierPage, setOutlierPage] = useState(0)
   const [confirmCreateOpen, setConfirmCreateOpen] = useState(false)
+  /** Pending universal-UBB apply that failed the pre-flight envelope check
+   *  and is waiting on the admin's explicit confirmation. `null` when no
+   *  apply is pending or the preview passed. */
+  const [pendingOverApply, setPendingOverApply] = useState<{
+    usd: number
+    overBy: number
+    allowance: number
+    failingCcCount: number
+  } | null>(null)
   /** Growth buffer (%) applied on top of each outlier's max-month spend
    *  when computing their suggested individual UBB. */
   const [outlierBufferPct, setOutlierBufferPct] = useState<number>(DEFAULT_OUTLIER_BUFFER_PCT)
@@ -164,6 +180,22 @@ export function UniversalUbbPage() {
   const ubbAICs = ubbOverrideAICs !== null ? ubbOverrideAICs : threshold.suggestedUBB
   const ubbIsOverridden = ubbOverrideAICs !== null
 
+  // Inputs for the constraint engine — same shape useBudgetConstraints
+  // builds, but assembled inline so we can also feed it to the
+  // EnvelopeCheckCard's preview helper.
+  const constraintsInput: ComputeBudgetConstraintsInput = useMemo(() => {
+    const index = buildCostCenterIndex(costCenters, costCenterBudgetsByName)
+    return {
+      enterpriseBudget,
+      universalUbb,
+      costCenters,
+      costCenterIndex: index,
+      ccBudgetsByName: costCenterBudgetsByName,
+      seats,
+      userBudgets: budgets,
+    }
+  }, [enterpriseBudget, universalUbb, costCenters, costCenterBudgetsByName, seats, budgets])
+
   // Coverage: how many regular users fit under the chosen UBB?
   const coverage = useMemo(() => {
     if (threshold.regularUsers.length === 0) return { covered: 0, total: 0, pct: 0 }
@@ -190,7 +222,22 @@ export function UniversalUbbPage() {
 
   const handleEditCap = async (newAmount: number) => {
     if (credentials?.base === 'demo://') {
-      toast.info(`Demo mode: would set universal UBB to $${newAmount}`)
+      // Sandbox: mutate local state so the demo can follow the full apply →
+      // re-evaluate → outlier cleanup loop without calling github.com.
+      const current = universalUbb
+      setUniversalUbb(
+        current
+          ? { ...current, budgetAmount: newAmount }
+          : {
+              id: 'demo-uubb',
+              budgetAmount: newAmount,
+              consumedAmount: 0,
+              preventFurtherUsage: true,
+              willAlert: false,
+              alertRecipients: [],
+            },
+      )
+      toast.success(`Demo: universal UBB set to ${formatCurrency(newAmount)}`)
       return
     }
     if (!apiFetch) return
@@ -204,9 +251,46 @@ export function UniversalUbbPage() {
     toast.success(`Universal UBB set to ${formatCurrency(newAmount)}`)
   }
 
-  /** Convert the chart's UBB (AICs) → USD and write to the enterprise. */
+  /** Convert the chart's UBB (AICs) → USD and write to the enterprise.
+   *  When the preview engine flags the proposed value as worsening an
+   *  envelope check (relative to the current baseline) open a confirm
+   *  dialog instead of applying immediately. Pre-existing breaches that
+   *  the proposed UBB neither caused nor worsened are ignored here —
+   *  ConstraintsBanner on other tabs is responsible for those. */
   const handleApplyUniversalUBB = async () => {
     const newUsd = Math.max(1, Math.ceil(ubbAICs / AICS_PER_USD))
+    const hasEnvelope =
+      enterpriseBudget !== null || costCenterBudgetsByName.size > 0
+    if (hasEnvelope) {
+      const baseline = computeBudgetConstraints(constraintsInput)
+      const preview = previewConstraintsWithProposedUbb(constraintsInput, newUsd)
+      const baselineLeftoverActual = baseline.checks.unassignedLeftover?.actual ?? 0
+      const leftover = preview.checks.unassignedLeftover
+      const leftoverWorsened =
+        leftover && !leftover.ok && leftover.actual > baselineLeftoverActual
+      const baselineCcById = new Map(
+        baseline.checks.perCc.map(c => [c.costCenterId, c]),
+      )
+      const ccWorsened = preview.checks.perCc.filter(c => {
+        if (c.check.ok) return false
+        const base = baselineCcById.get(c.costCenterId)
+        return !base || c.check.actual > base.check.actual
+      })
+      const overBy = leftoverWorsened ? leftover.overBy : 0
+      if (leftoverWorsened || ccWorsened.length > 0) {
+        setPendingOverApply({
+          usd: newUsd,
+          overBy,
+          allowance: leftover?.allowed ?? 0,
+          failingCcCount: ccWorsened.length,
+        })
+        return
+      }
+    }
+    await proceedApplyUniversalUBB(newUsd)
+  }
+
+  const proceedApplyUniversalUBB = async (newUsd: number) => {
     setApplying(true)
     try {
       await handleEditCap(newUsd)
@@ -221,16 +305,36 @@ export function UniversalUbbPage() {
   /** Create individual UBBs for selected outliers at ceil(maxAICs/100 × 1.10),
    * or at the admin's edited amount if they've customized the row. */
   const handleCreateOutlierUbbs = async () => {
-    if (!apiFetch) return
     const targets = outlierTargets
     if (targets.length === 0) {
       toast.error('Select at least one outlier.')
       return
     }
     if (credentials?.base === 'demo://') {
-      toast.info(`Demo mode: would create ${targets.length} individual UBBs.`)
+      // Sandbox: append synthetic individual UBBs to the local store. The
+      // Universal UBB sizing curve will refilter on the next render because
+      // its indUbbLogins set rebuilds from `budgets`.
+      setBudgets(prev => {
+        const existing = new Set(prev.map(b => b.user.toLowerCase()))
+        const additions = targets
+          .filter(t => !existing.has(t.login.toLowerCase()))
+          .map((t, i) => ({
+            id: `demo-ubb-new-${Date.now()}-${i}`,
+            user: t.login,
+            budgetAmount: t.amount,
+            consumedAmount: 0,
+            preventFurtherUsage: true,
+            willAlert: false,
+            alertRecipients: [] as string[],
+          }))
+        return [...prev, ...additions]
+      })
+      setSelectedOutlierLogins(new Set())
+      setEditedOutlierUbbsEntry(null)
+      toast.success(`Demo: created ${targets.length.toLocaleString()} individual UBBs.`)
       return
     }
+    if (!apiFetch) return
     setBatchProgress({ done: 0, total: targets.length })
     try {
       const results = await runBatch(
@@ -522,6 +626,16 @@ export function UniversalUbbPage() {
               </div>
             ) : null}
           </div>
+
+          {hasData ? (
+            <EnvelopeCheckCard
+              proposedUsd={ubbDeltaUsd}
+              constraintsInput={constraintsInput}
+              onSnapToMaxSafe={usd =>
+                setUbbOverrideEntry({ sig: datasetSig, value: usd * AICS_PER_USD })
+              }
+            />
+          ) : null}
 
           <ConsumptionCurve
             sortedUsers={[...csvUsers].sort((a, b) => b.totalAICs - a.totalAICs)}
@@ -972,6 +1086,56 @@ export function UniversalUbbPage() {
               {batchProgress
                 ? 'Creating…'
                 : `Create ${outlierTargets.length.toLocaleString()} UBBs · $${outlierTotalDollars.toLocaleString()}/mo`}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Pre-flight: confirm when the proposed universal UBB would breach
+          an envelope. The EnvelopeCheckCard already shows the same info
+          inline; this is the safety net for admins who scroll past it. */}
+      <Dialog
+        open={pendingOverApply !== null}
+        onOpenChange={open => {
+          if (!open) setPendingOverApply(null)
+        }}
+      >
+        <DialogContent>
+          <DialogTitle>Apply universal UBB over the envelope?</DialogTitle>
+          <DialogDescription>
+            {pendingOverApply ? (
+              pendingOverApply.overBy > 0 ? (
+                <>
+                  Setting the universal UBB to ${pendingOverApply.usd.toLocaleString()} would
+                  put projected spend{' '}
+                  <span className="font-semibold">{formatCurrency(pendingOverApply.overBy)} over</span>{' '}
+                  the enterprise allowance of {formatCurrency(pendingOverApply.allowance)}.
+                  The enterprise budget would become the binding cap instead of the UBB.
+                </>
+              ) : (
+                <>
+                  Setting the universal UBB to ${pendingOverApply.usd.toLocaleString()} would
+                  cause {pendingOverApply.failingCcCount} cost-center budget{pendingOverApply.failingCcCount === 1 ? '' : 's'} to be exceeded.
+                </>
+              )
+            ) : null}
+          </DialogDescription>
+
+          <div className="flex justify-end gap-2 mt-4">
+            <DialogClose asChild>
+              <Button type="button" variant="ghost">
+                Cancel
+              </Button>
+            </DialogClose>
+            <Button
+              type="button"
+              onClick={async () => {
+                const pending = pendingOverApply
+                setPendingOverApply(null)
+                if (pending) await proceedApplyUniversalUBB(pending.usd)
+              }}
+            >
+              Apply anyway
             </Button>
           </div>
         </DialogContent>
