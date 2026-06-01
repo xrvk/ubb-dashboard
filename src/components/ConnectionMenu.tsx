@@ -130,7 +130,7 @@ export function ConnectionMenu({
                 <span className="ml-auto text-[9px] font-normal normal-case text-neutral-400">dev</span>
               </div>
               {devProfiles.map(p => {
-                let host: string | null = null
+                let host: string
                 try {
                   host = new URL(p.url).host
                 } catch {
