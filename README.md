@@ -382,9 +382,13 @@ src/
 |---|---|
 | `npm run dev` | Vite dev server on port 5003 |
 | `npm run build` | Type-check + production build |
+| `npm run typecheck` | `tsc -b` only (fast TS feedback without bundling) |
 | `npm run lint` | ESLint (strict, must pass with 0 errors) |
-| `npm test` | Vitest, one shot |
+| `npm test` | Vitest, one shot (~1s for full suite) |
 | `npm run test:watch` | Vitest watch mode |
+| `npm run test:changed` | Only re-run tests for files changed since `main` |
+| `npm run test:related <file>…` | Only run tests covering the given source files |
+| `npm run verify` | typecheck + lint + test in parallel — local pre-PR check |
 
 ---
 
