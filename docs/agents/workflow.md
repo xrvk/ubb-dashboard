@@ -21,18 +21,25 @@ warning — don't introduce new ones.
 
 ## Demo mode knobs
 
+## URL parameters
+
+The full reference lives in [`docs/url-parameters.md`](../url-parameters.md).
+The agent-relevant subset is below — demo / dev knobs that you'll
+actually toggle while working on the app.
+
 Demo mode is URL-driven and stacks. Append any combination to
 `http://127.0.0.1:5005/ind-ubb-dashboard/`:
 
 | Param | Effect |
 |---|---|
 | `?demo=N` | Force demo mode with `N` synthetic users. Without this, the app starts in connect-an-enterprise mode. |
+| `?cc=N` | Override the demo cost-center count (1–5000). |
 | `?pool=N` | Override pool fill % (0–200). Scales `consumedAmount` on every budget so the pool tile shows roughly `N%` drawn. |
 | `?exclude=0` / `?exclude=1` | Include / exclude CC-bucketed usage from the individual list. Default is `1` (excluded) since CC users aren't individually-budgeted. |
-| `?entcap=N` | Override the enterprise budget cap (raw dollars). Useful for showing "over enterprise budget" constraints. |
 | `?asof=YYYY-MM-DD` | Pin the synthetic "today" so screenshots and time-elapsed math stay stable. Default is "5 days before month end" of the current real month. |
 | `?debug=1` | Show the dashboard data overlay (origins + raw values for each tile). See `dashboard-data-flow.md`. |
-| `?ent=...` | Prefill the Enterprise URL field on the connect form. Accepts a bare slug (`?ent=octodemo`) or a full URL (`?ent=https://github.com/enterprises/octodemo`). Invalid values silently fall back to the `VITE_DEV_ENTERPRISE_URL` default. The PAT is never read from the URL. |
+| `?ent=...` | Prefill the Enterprise URL field on the connect form (bare slug or full URL). Ignored in demo mode. |
+| `?host=...` | Companion to `?ent=` for GHE.com tenants. See `docs/url-parameters.md`. |
 
 The default demo (`?demo=150`) is the canonical scenario for
 screenshots: 5 days to month end, ~8/10/14/22/46 distribution across

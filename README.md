@@ -300,7 +300,7 @@ Demo mode generates believable user distributions (~70% low / 15% moderate / 7% 
 
 The Import panel needs two things:
 
-1. **Enterprise URL** — e.g. `https://github.com/enterprises/your-slug` or `https://your-host.ghe.com/enterprises/your-slug`.
+1. **Enterprise URL** — e.g. `https://github.com/enterprises/your-slug` or `https://your-host.ghe.com/enterprises/your-slug`. Can be prefilled via [`?ent=your-slug`](docs/url-parameters.md) when sharing links.
 2. **Classic personal access token** with the `manage_billing:enterprise` scope.
 
 > Fine-grained tokens are **not** supported on the enterprise billing API. This is a platform limitation, not an app limitation.

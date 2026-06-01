@@ -45,4 +45,24 @@ describe('readEnterpriseUrlFromUrl', () => {
     setSearch('?ent=')
     expect(readEnterpriseUrlFromUrl()).toBeNull()
   })
+
+  it('combines a bare slug with a GHE.com host param', () => {
+    setSearch('?ent=octodemo&host=customer.ghe.com')
+    expect(readEnterpriseUrlFromUrl()).toBe('https://customer.ghe.com/enterprises/octodemo')
+  })
+
+  it('ignores host param when ent is already a full URL', () => {
+    setSearch('?ent=https%3A%2F%2Fgithub.com%2Fenterprises%2Focto&host=customer.ghe.com')
+    expect(readEnterpriseUrlFromUrl()).toBe('https://github.com/enterprises/octo')
+  })
+
+  it('falls back to github.com when host is an unsupported host', () => {
+    setSearch('?ent=octodemo&host=evil.com')
+    expect(readEnterpriseUrlFromUrl()).toBe('https://github.com/enterprises/octodemo')
+  })
+
+  it('accepts github.com explicitly as host', () => {
+    setSearch('?ent=octodemo&host=github.com')
+    expect(readEnterpriseUrlFromUrl()).toBe('https://github.com/enterprises/octodemo')
+  })
 })
