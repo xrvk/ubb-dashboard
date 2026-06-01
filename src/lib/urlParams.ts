@@ -53,16 +53,27 @@ export function readEnterpriseUrlFromUrl(): string | null {
   // character set that matches what GitHub allows in enterprise slugs;
   // this also rules out path traversal / query / fragment injection.
   if (!/^[A-Za-z0-9._-]+$/.test(trimmed)) return null
-  const host = readHostParam(params) ?? 'github.com'
-  const candidate = `https://${host}/enterprises/${trimmed}`
+  const host = readHostParam(params)
+  // `host` is `false` when the user passed `?host=` with a bad value.
+  // Reject the whole prefill in that case so we fall back to the env
+  // default — silently swapping in github.com would be misleading.
+  if (host === false) return null
+  const candidate = `https://${host ?? 'github.com'}/enterprises/${trimmed}`
   return parseEnterpriseUrl(candidate) ? candidate : null
 }
 
-function readHostParam(params: URLSearchParams): string | null {
+/**
+ * Read and validate `?host=`. Returns:
+ *   - `null` when the param is absent or empty (caller picks a default),
+ *   - `false` when the param is present but points at a host we don't
+ *     trust (caller should bail out entirely),
+ *   - the normalized host string when valid.
+ */
+function readHostParam(params: URLSearchParams): string | false | null {
   const raw = params.get('host')
-  if (!raw) return null
+  if (raw === null) return null
   const trimmed = raw.trim().toLowerCase()
   if (!trimmed) return null
-  if (!ALLOWED_ENTERPRISE_HOST.test(trimmed)) return null
+  if (!ALLOWED_ENTERPRISE_HOST.test(trimmed)) return false
   return trimmed
 }

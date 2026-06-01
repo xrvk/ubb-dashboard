@@ -56,8 +56,18 @@ describe('readEnterpriseUrlFromUrl', () => {
     expect(readEnterpriseUrlFromUrl()).toBe('https://github.com/enterprises/octo')
   })
 
-  it('falls back to github.com when host is an unsupported host', () => {
+  it('rejects the prefill entirely when host is an unsupported host', () => {
     setSearch('?ent=octodemo&host=evil.com')
+    expect(readEnterpriseUrlFromUrl()).toBeNull()
+  })
+
+  it('falls back to github.com when host param is missing', () => {
+    setSearch('?ent=octodemo')
+    expect(readEnterpriseUrlFromUrl()).toBe('https://github.com/enterprises/octodemo')
+  })
+
+  it('falls back to github.com when host param is empty', () => {
+    setSearch('?ent=octodemo&host=')
     expect(readEnterpriseUrlFromUrl()).toBe('https://github.com/enterprises/octodemo')
   })
 

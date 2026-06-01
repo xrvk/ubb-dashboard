@@ -37,8 +37,11 @@ Companion to `?ent=` for GitHub Enterprise Cloud with data residency
 (GHE.com). Only matters when `?ent=` is a bare slug; ignored when
 `?ent=` is already a full URL.
 
-Must be `github.com` or `<tenant>.ghe.com` — anything else is silently
-ignored and we fall back to `github.com`. Example:
+Must be `github.com` or `<tenant>.ghe.com`. If `?host=` is passed but
+points at an untrusted host (e.g. `evil.com`), the entire prefill is
+rejected and the form falls back to its default — we deliberately
+don't silently swap in `github.com`, because that would route the
+user somewhere they didn't ask for. Example:
 
 ```
 ?ent=octodemo&host=customer.ghe.com
