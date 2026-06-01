@@ -32,6 +32,7 @@ Demo mode is URL-driven and stacks. Append any combination to
 | `?entcap=N` | Override the enterprise budget cap (raw dollars). Useful for showing "over enterprise budget" constraints. |
 | `?asof=YYYY-MM-DD` | Pin the synthetic "today" so screenshots and time-elapsed math stay stable. Default is "5 days before month end" of the current real month. |
 | `?debug=1` | Show the dashboard data overlay (origins + raw values for each tile). See `dashboard-data-flow.md`. |
+| `?ent=...` | Prefill the Enterprise URL field on the connect form. Accepts a bare slug (`?ent=octodemo`) or a full URL (`?ent=https://github.com/enterprises/octodemo`). Invalid values silently fall back to the `VITE_DEV_ENTERPRISE_URL` default. The PAT is never read from the URL. |
 
 The default demo (`?demo=150`) is the canonical scenario for
 screenshots: 5 days to month end, ~8/10/14/22/46 distribution across
