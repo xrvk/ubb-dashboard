@@ -8,6 +8,7 @@ import { StatusBadge } from '@/components/ui/status-badge'
 import { formatCurrency, formatPercent, cn } from '@/lib/utils'
 import { classifyStatus, utilization, type Status } from '@/lib/status'
 import { projectMonthlyBudget } from '@/lib/projection'
+import { getEffectiveDemoAsof } from '@/lib/demo'
 import { bucketForBudget } from '@/components/UtilizationHistogram'
 import type { CostCenter, CostCenterResolution, UserBudget } from '@/lib/api'
 
@@ -139,6 +140,7 @@ export function BudgetsTable({ budgets, filters, onFiltersChange, onEdit, onDele
   }
 
   const allRows = useMemo(() => {
+    const asof = getEffectiveDemoAsof() ?? undefined
     const filtered = budgets.filter(b => {
       if (filters.status !== 'all' && classifyStatus(b) !== filters.status) return false
       if (filters.atRiskByEom) {
@@ -148,7 +150,7 @@ export function BudgetsTable({ budgets, filters, onFiltersChange, onEdit, onDele
         if (!currentlyOver) {
           // Match the ForecastHero's projectedOver definition exactly.
           if (b.budgetAmount <= 0) return false
-          const proj = projectMonthlyBudget(b.consumedAmount, 0)
+          const proj = projectMonthlyBudget(b.consumedAmount, 0, asof)
           if (proj.projectedMonthTotal <= b.budgetAmount) return false
         }
       }

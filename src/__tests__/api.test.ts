@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import {
   buildCostCenterIndex,
+  createApiFetch,
   fetchCostCenters,
   fetchUserBudgets,
   resolveCostCenter,
@@ -146,6 +147,55 @@ describe('fetchCostCenters', () => {
     }))
     const result = await fetchCostCenters(fetchMock)
     expect(result.map(c => c.id)).toEqual(['cc1'])
+  })
+
+  it('stops after one page when the server ignores pagination and returns >PER_PAGE', async () => {
+    // Repros the acme bug where omitting state=active makes the API
+    // return the full set on every page request, ignoring page/per_page.
+    const fetchMock: ApiFetch = vi.fn(async () => ({
+      costCenters: Array.from({ length: 155 }, (_, i) => fakeCC(`cc${i}`, `n${i}`)),
+    }))
+    const result = await fetchCostCenters(fetchMock)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(result).toHaveLength(155)
+  })
+})
+
+describe('createApiFetch host allowlist', () => {
+  it('accepts api.github.com', () => {
+    expect(() =>
+      createApiFetch({ base: 'https://api.github.com', ent: 'acme', token: 't' }),
+    ).not.toThrow()
+  })
+
+  it('accepts ghe.com tenants', () => {
+    expect(() =>
+      createApiFetch({ base: 'https://api.your-host.example.com', ent: 'x', token: 't' }),
+    ).not.toThrow()
+  })
+
+  it('rejects non-github hosts', () => {
+    expect(() =>
+      createApiFetch({ base: 'https://attacker.com', ent: 'x', token: 't' }),
+    ).toThrow(/untrusted host/)
+  })
+
+  it('rejects http (non-TLS) base URLs', () => {
+    expect(() =>
+      createApiFetch({ base: 'http://api.github.com', ent: 'x', token: 't' }),
+    ).toThrow(/https/)
+  })
+
+  it('rejects malformed base URLs', () => {
+    expect(() =>
+      createApiFetch({ base: 'not a url', ent: 'x', token: 't' }),
+    ).toThrow(/Invalid API base/)
+  })
+
+  it('rejects look-alike hosts (ghe.com suffix only)', () => {
+    expect(() =>
+      createApiFetch({ base: 'https://api.evil.com.ghe.example', ent: 'x', token: 't' }),
+    ).toThrow(/untrusted host/)
   })
 })
 

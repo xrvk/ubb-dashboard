@@ -56,13 +56,19 @@ export interface IncludedCredits {
  * Compute the included AI credit pool for a given seat mix. Returns the
  * per-seat rate alongside the pooled totals so callers can render either
  * the unit price or the rolled-up dollar value.
+ *
+ * `overrides.promoActive` lets callers force the promo on or off — useful
+ * for customers who signed up after the transition and so don't qualify
+ * for the bumped allowance, and for previewing the post-promo experience.
+ * When omitted, the value is derived from the calendar window.
  */
 export function includedAiCredits(
   business: number,
   enterprise: number,
   now: Date = new Date(),
+  overrides?: { promoActive?: boolean },
 ): IncludedCredits {
-  const promoActive = isCreditPromoActive(now)
+  const promoActive = overrides?.promoActive ?? isCreditPromoActive(now)
   const perBusiness = promoActive
     ? COPILOT_BUSINESS_CREDITS_PROMO
     : COPILOT_BUSINESS_CREDITS_STANDARD

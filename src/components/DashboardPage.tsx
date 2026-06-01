@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import {
   Buildings,
   CurrencyDollar,
@@ -12,11 +12,13 @@ import {
   COPILOT_BUSINESS_LIST_PRICE,
   COPILOT_ENTERPRISE_LIST_PRICE,
   includedAiCredits,
+  isCreditPromoActive,
   seatCostBreakdown,
+  type IncludedCredits,
 } from '@/lib/pricing'
 import { forecastSummary } from '@/lib/status'
 import { projectMonthlyBudget } from '@/lib/projection'
-import { readDemoAsofFromUrl } from '@/lib/demo'
+import { getEffectiveDemoAsof } from '@/lib/demo'
 import { formatCurrency, formatCurrencyWhole, formatPercent, cn } from '@/lib/utils'
 import {
   NAV_TO_BUDGET_MODEL_EVENT,
@@ -60,7 +62,8 @@ export function DashboardPage() {
     [enterpriseBudget, universalUlb, costCenters, costCenterBudgetsByName, seats, budgets],
   )
 
-  const forecast = useMemo(() => forecastSummary(budgets), [budgets])
+  const demoAsof = useMemo(() => getEffectiveDemoAsof() ?? undefined, [])
+  const forecast = useMemo(() => forecastSummary(budgets, demoAsof), [budgets, demoAsof])
   const seatCost = useMemo(() => seatCostBreakdown(seats), [seats])
 
   /** How many seats are covered by an individual ULB (have a user-scope budget). */
@@ -87,7 +90,7 @@ export function DashboardPage() {
    */
   const trackedForecast = useMemo(() => {
     const univMtd = universalUlb?.consumedAmount ?? 0
-    const univProj = projectMonthlyBudget(univMtd, 0).projectedMonthTotal
+    const univProj = projectMonthlyBudget(univMtd, 0, demoAsof).projectedMonthTotal
     const indMtd = forecast.spendMtd
     const indProj = forecast.projectedEom
     // Seats whose consumption flows through a CC budget rather than universal
@@ -107,7 +110,7 @@ export function DashboardPage() {
     // misleading total.
     const actualMtd = usageSummary?.aiCreditsGross ?? null
     const actualProjected =
-      actualMtd !== null ? projectMonthlyBudget(actualMtd, 0).projectedMonthTotal : null
+      actualMtd !== null ? projectMonthlyBudget(actualMtd, 0, demoAsof).projectedMonthTotal : null
     return {
       universal: { mtd: univMtd, projected: univProj, hasBudget: !!universalUlb },
       individual: { mtd: indMtd, projected: indProj, count: indCoverage.withInd },
@@ -128,10 +131,33 @@ export function DashboardPage() {
     loginToCostCenter,
     costCenterBudgetsByName,
     usageSummary,
+    demoAsof,
   ])
 
   const entAmount = pool.enterpriseBudget
-  const credits = includedAiCredits(seatCost.business, seatCost.enterprise)
+  // User-toggleable override: customers that signed up after the transition
+  // don't qualify for the bumped allowance. Click the pill to simulate that
+  // experience. Persisted in localStorage so the choice survives reloads.
+  const naturalPromoActive = isCreditPromoActive()
+  const [promoDisabled, setPromoDisabled] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false
+    return window.localStorage.getItem('dashboard.promoOverride') === 'off'
+  })
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (promoDisabled) {
+      window.localStorage.setItem('dashboard.promoOverride', 'off')
+    } else {
+      window.localStorage.removeItem('dashboard.promoOverride')
+    }
+  }, [promoDisabled])
+  const credits = useMemo(
+    () =>
+      includedAiCredits(seatCost.business, seatCost.enterprise, undefined, {
+        promoActive: promoDisabled ? false : naturalPromoActive,
+      }),
+    [seatCost.business, seatCost.enterprise, promoDisabled, naturalPromoActive],
+  )
   const poolSize = credits.totalCredits > 0 ? credits.totalDollars : null
   const poolRemaining =
     poolSize === null ? null : Math.max(0, poolSize - trackedForecast.totalMtd)
@@ -141,10 +167,34 @@ export function DashboardPage() {
   return (
     <div className="grid gap-6">
       {/* § 1 — Current state: pool, licenses, used so far. */}
-      <SectionHeader title="Pool and licenses" />
+      <SectionHeader
+        title="AI Credit Pool & Licenses"
+        rightSlot={
+          naturalPromoActive ? (
+            <button
+              type="button"
+              onClick={() => setPromoDisabled(v => !v)}
+              title={
+                promoDisabled
+                  ? 'Click to apply the promotional credit boost (Jun 1 – Aug 31 2026)'
+                  : "Click to simulate a customer that doesn't qualify for the promo (signed up after the transition)"
+              }
+              className={cn(
+                'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium whitespace-nowrap cursor-pointer transition-colors',
+                promoDisabled
+                  ? 'bg-neutral-100 dark:bg-neutral-800/60 text-neutral-500 dark:text-neutral-400 line-through hover:bg-neutral-200 dark:hover:bg-neutral-700/60'
+                  : 'bg-amber-100 dark:bg-amber-900/40 text-amber-900 dark:text-amber-200 hover:bg-amber-200 dark:hover:bg-amber-900/60',
+              )}
+            >
+              Promotional credits · Jun 1 – Aug 31 2026
+            </button>
+          ) : null
+        }
+      />
       <PoolAndLicensesCard
         seatCost={seatCost}
         usage={usageSummary}
+        credits={credits}
       />
 
       {/* § 2 — Spend so far + forecast. Numbers are gross AI credit
@@ -331,7 +381,8 @@ function KpiTile({
 
 // Color tokens for the spend-forecast stacked bar — kept distinct from the
 // pool donut palette so the two charts read as different metrics.
-const COLOR_UNIVERSAL = '#6366f1' // indigo-500
+// Sepia palette: warm bronze/amber/emerald, matching the Enterprise Budgets tab.
+const COLOR_UNIVERSAL = '#b45309' // amber-700 (bronze)
 const COLOR_INDIVIDUAL = '#10b981' // emerald-500
 const COLOR_CC_ROUTED = '#f59e0b' // amber-500
 
@@ -529,9 +580,11 @@ function EmptyChart({ message }: { message: string }) {
 function SectionHeader({
   title,
   subtitle,
+  rightSlot,
 }: {
   title: string
   subtitle?: string
+  rightSlot?: ReactNode
 }) {
   return (
     <div className="flex items-baseline gap-2 mt-2">
@@ -543,6 +596,7 @@ function SectionHeader({
           · {subtitle}
         </div>
       ) : null}
+      {rightSlot ? <div className="ml-auto">{rightSlot}</div> : null}
     </div>
   )
 }
@@ -557,11 +611,12 @@ function SectionHeader({
 function PoolAndLicensesCard({
   seatCost,
   usage,
+  credits,
 }: {
   seatCost: ReturnType<typeof seatCostBreakdown>
   usage: import('@/lib/api').CopilotUsageSummary | null
+  credits: IncludedCredits
 }) {
-  const credits = includedAiCredits(seatCost.business, seatCost.enterprise)
   if (credits.totalCredits === 0) {
     return (
       <Card>
@@ -589,23 +644,16 @@ function PoolAndLicensesCard({
   return (
     <Card>
       <CardContent className="space-y-4 pt-6">
-        {credits.promoActive ? (
-          <div className="flex justify-end">
-            <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 dark:bg-violet-900/40 text-violet-900 dark:text-violet-200 px-2 py-0.5 text-[10px] font-medium whitespace-nowrap">
-              Promotional credits · Jun 1 – Sep 1 2026
-            </span>
-          </div>
-        ) : null}
         {/* Pool headline tiles */}
         <div className="grid gap-3 grid-cols-1 sm:grid-cols-2">
-          <div className="rounded-md border border-indigo-200 dark:border-indigo-900/60 bg-indigo-50/60 dark:bg-indigo-950/30 p-3">
-            <div className="text-[11px] uppercase tracking-wide text-indigo-700 dark:text-indigo-300">
+          <div className="rounded-md border border-amber-200 dark:border-amber-900/60 bg-amber-50/60 dark:bg-amber-950/30 p-3">
+            <div className="text-[11px] uppercase tracking-wide text-amber-700 dark:text-amber-300">
               Total AI credits / month
             </div>
-            <div className="text-2xl font-semibold mt-1 tabular-nums text-indigo-950 dark:text-indigo-100">
+            <div className="text-2xl font-semibold mt-1 tabular-nums text-amber-950 dark:text-amber-100">
               {credits.totalCredits.toLocaleString()}
             </div>
-            <div className="text-[11px] text-indigo-700 dark:text-indigo-300 mt-0.5">
+            <div className="text-[11px] text-amber-700 dark:text-amber-300 mt-0.5">
               from all seats
             </div>
           </div>
@@ -815,7 +863,7 @@ function BudgetAllocationCard({
   const entBudget = pool.enterpriseBudget
 
   const segments = useMemo(() => {
-    const asof = readDemoAsofFromUrl() ?? undefined
+    const asof = getEffectiveDemoAsof() ?? undefined
     return pool.costCenters
       .filter(cc => cc.budgetAmount !== null && cc.budgetAmount > 0)
       .map(cc => {
@@ -882,7 +930,7 @@ function BudgetAllocationCard({
         <div className="grid gap-1.5 text-[11px] grid-cols-1 sm:grid-cols-2">
           {entBudget !== null && entBudget > 0 ? (
             <LegendRow
-              swatch="bg-indigo-500"
+              swatch="bg-amber-700"
               label={independent ? 'Enterprise pool' : 'Enterprise cap'}
               value={formatCurrency(entBudget)}
             />
@@ -950,7 +998,7 @@ function IndependentAllocationView({
         {entBudget !== null && entBudget > 0 ? (
           <AllocSegment
             widthPct={(entBudget / totalCommit) * 100}
-            className="bg-indigo-500"
+            className="bg-amber-700"
             title={`Enterprise · ${formatCurrency(entBudget)}`}
           />
         ) : null}
@@ -1041,7 +1089,7 @@ function RolledUpAllocationView({
         >
           <AllocSegment
             widthPct={100}
-            className="bg-indigo-500"
+            className="bg-amber-700"
             title={`Enterprise cap · ${formatCurrency(entBudget)}`}
           />
         </AllocBarRow>
@@ -1152,7 +1200,7 @@ function CostCenterStatusCard({
   usageByCostCenterId: ReturnType<typeof useCredentials>['usageByCostCenterId']
 }) {
   const perCc = useMemo(() => {
-    const asof = readDemoAsofFromUrl() ?? undefined
+    const asof = getEffectiveDemoAsof() ?? undefined
     type CcRow = { mtd: number; projected: number; measured: boolean }
     const rows = new Map<string, CcRow>()
     for (const cc of pool.costCenters) {
