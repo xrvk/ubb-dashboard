@@ -28,6 +28,7 @@ import {
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { useCredentials } from '@/hooks/use-credentials'
 import { useBudgetConstraints } from '@/hooks/use-budget-constraints'
+import { describeError } from '@/lib/errors'
 import { computeRequiredMinimums } from '@/lib/budgetAutoFix'
 import { formatCurrency, formatCurrencyShort, cn, openExternal } from '@/lib/utils'
 import {
@@ -606,7 +607,7 @@ export function BudgetPlanner() {
       await refresh()
       setConfirmOpen(false)
     } catch (err) {
-      setApplyError(err instanceof Error ? err.message : String(err))
+      setApplyError(describeError(err, 'budget-planner').body)
     } finally {
       setApplying(false)
     }

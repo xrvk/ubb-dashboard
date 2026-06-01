@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { formatCurrency } from '@/lib/utils'
 import type { UniversalUbb } from '@/lib/api'
+import { describeError } from '@/lib/errors'
 
 interface Props {
   universalUbb: UniversalUbb | null
@@ -54,7 +55,7 @@ export function EditUniversalUbbDialog({ universalUbb, open, onOpenChange, onSub
               await onSubmit(n)
               onOpenChange(false)
             } catch (err) {
-              setError(err instanceof Error ? err.message : String(err))
+              setError(describeError(err, 'edit-universal-ubb').body)
             } finally {
               setSubmitting(false)
             }

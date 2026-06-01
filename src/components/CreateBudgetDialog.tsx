@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { UserCombobox } from '@/components/ui/user-combobox'
 import type { CopilotSeat } from '@/lib/api'
+import { describeError } from '@/lib/errors'
 import { openExternal } from '@/lib/utils'
 
 interface Props {
@@ -83,7 +84,7 @@ export function CreateBudgetDialog({ open, onOpenChange, onSubmit, seats, existi
               await onSubmit(username.trim(), n)
               onOpenChange(false)
             } catch (err) {
-              setError(err instanceof Error ? err.message : String(err))
+              setError(describeError(err, 'create-budget').body)
             } finally {
               setSubmitting(false)
             }
