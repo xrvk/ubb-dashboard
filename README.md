@@ -178,12 +178,24 @@ GitHub classic PATs are capped at 5,000 requests/hour (primary) with a stricter 
 
 - Caps concurrency at 5 in-flight requests.
 - Adds a small inter-task delay to stay below abuse detection.
-- Parses `Retry-After` on 429s, falls back to 60 seconds, retries up to 2 times per task.
+- Parses `Retry-After` from response headers first (falls back to body, then a 60s default), retries up to 2 times per task on 429.
+- Retries transient 5xx and network errors with bounded exponential backoff + jitter, separately from 429.
 - Supports cancellation mid-batch via `AbortSignal`.
 - Surfaces live progress (completed / succeeded / failed / waiting), elapsed time, and ETA.
 - Pre-flight warning when the batch exceeds 5,000 (will hit the primary cap).
 
 You can confidently run a 9,800-user unblock without thinking about it.
+
+### Error handling
+
+The dashboard treats errors as first-class UX, not just toast spam:
+
+- **Typed taxonomy** — every API failure becomes one of `AuthError` (401), `ScopeError` (403), `NotFoundError` (404), `ValidationError` (422), `RateLimitError` (429), `ServerError` (5xx), `NetworkError` (fetch reject), or `AbortedError`. The UI maps each to a short, actionable message instead of dumping raw JSON.
+- **Partial-load banner** — if a secondary fetch (cost centers, seats, usage summary) fails during connect, the page still renders with a collapsible amber banner explaining what's missing and why (e.g. "PAT lacks `manage_billing:enterprise` scope") instead of showing an empty cost-center column with no explanation.
+- **Failed-items dialog** — when a bulk update finishes with failures, you see a per-user list with status code and reason. "Retry failures" re-runs only the failed subset; "Export CSV" downloads the list for triage.
+- **Snapshot warnings** — after a bulk apply finishes, if `localStorage` is full when we try to persist the pre-/post-values, you're warned that the revert button will not be available for this batch (you can still re-run the bulk apply with the inverse values manually).
+- **Error boundary** — render-time exceptions in one tab collapse to a small "Try again / Copy error details" card instead of white-screening the entire app and losing your credentials.
+- **Debug log** — the last ~100 errors are kept in an in-memory ring buffer. The "Copy error log" link in the footer copies a structured bundle (status codes, response excerpts, captured headers — never the token) for bug reports.
 
 </details>
 
@@ -370,9 +382,13 @@ src/
 |---|---|
 | `npm run dev` | Vite dev server on port 5003 |
 | `npm run build` | Type-check + production build |
+| `npm run typecheck` | `tsc -b` only (fast TS feedback without bundling) |
 | `npm run lint` | ESLint (strict, must pass with 0 errors) |
-| `npm test` | Vitest, one shot |
+| `npm test` | Vitest, one shot (~1s for full suite) |
 | `npm run test:watch` | Vitest watch mode |
+| `npm run test:changed` | Only re-run tests for files changed since `main` |
+| `npm run test:related <file>…` | Only run tests covering the given source files |
+| `npm run verify` | typecheck + lint + test in parallel — local pre-PR check |
 
 ---
 

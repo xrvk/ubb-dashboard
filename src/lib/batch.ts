@@ -9,18 +9,30 @@
  *     primary limit when requests arrive in rapid succession.
  *   - Bulk individual-UBB updates at scale (hundreds-to-thousands of users)
  *     will trip the secondary limit if we Promise.all() the whole batch.
+ *   - Transient 5xx and network blips happen, especially around GitHub
+ *     deploys. Failing the whole item over a single hiccup is wasteful.
  *
  * Strategy:
  *   1. Concurrency cap (default 5 in flight) so we never blast the secondary
  *      limit.
  *   2. Small inter-request delay so steady-state stays below abuse detection.
- *   3. On 429, parse the `Retry-After` header (or fall back to 60s) and
- *      retry up to 2 times. Same shape as CCC's withRateLimitRetry.
- *   4. Cancellation via AbortSignal so the user can stop a long-running batch.
- *   5. Progress callback so the UI can show "X of N, M succeeded, K failed".
+ *   3. On 429, read Retry-After from headers (preferred) or body (fallback)
+ *      and retry up to 2 times.
+ *   4. On 5xx and network errors, retry with bounded exponential backoff +
+ *      jitter (smaller budget than 429 since these are usually faster to
+ *      clear and we don't want to stall a 5k-item batch).
+ *   5. Cancellation via AbortSignal so the user can stop a long-running batch.
+ *   6. Progress callback so the UI can show "X of N, M succeeded, K failed".
+ *   7. Per-item BatchOutcome so the caller can show which items failed and
+ *      why, and offer "retry just the failures".
  */
 
-import { ApiError } from '@/lib/api'
+import {
+  ApiError,
+  AbortedError,
+  isAborted,
+  retryAfterSecondsFromError,
+} from '@/lib/errors'
 
 const PRIMARY_LIMIT_PER_HOUR = 5000
 
@@ -31,8 +43,14 @@ export interface BatchOptions {
   perTaskDelayMs?: number
   /** Max retries per task on 429. Default 2. */
   maxRetriesOn429?: number
+  /** Max retries per task on 5xx / network. Default 2. */
+  maxRetriesOnTransient?: number
   /** Fallback wait when Retry-After is absent, ms. Default 60_000. */
   defaultRetryAfterMs?: number
+  /** Base backoff for 5xx / network retries, ms. Default 500. */
+  transientBaseDelayMs?: number
+  /** Cap for 5xx / network retries, ms. Default 4_000. */
+  transientMaxDelayMs?: number
   signal?: AbortSignal
   onProgress?: (state: BatchProgress) => void
 }
@@ -55,14 +73,8 @@ export interface BatchOutcome<T> {
 
 interface RetryableTask<T> {
   item: T
-  attempts: number
-}
-
-class AbortedError extends Error {
-  constructor() {
-    super('Batch aborted')
-    this.name = 'AbortedError'
-  }
+  attempts429: number
+  attemptsTransient: number
 }
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
@@ -80,18 +92,24 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   })
 }
 
+function jitter(ms: number): number {
+  return Math.round(Math.random() * Math.min(500, ms))
+}
+
 function parseRetryAfter(err: unknown, fallback: number): number {
   if (err instanceof ApiError) {
-    // Body may contain JSON with documentation_url; the Retry-After header is
-    // not currently surfaced through ApiError, so we look for it in the body
-    // text. Safer fallback: configurable default (60s, matching CCC).
-    const match = err.body.match(/retry[-_ ]after[^0-9]*([0-9]+)/i)
-    if (match) {
-      const n = Number(match[1])
-      if (Number.isFinite(n)) return Math.max(1000, n * 1000)
-    }
+    const seconds = retryAfterSecondsFromError(err)
+    if (seconds != null) return Math.max(1000, seconds * 1000)
   }
   return fallback
+}
+
+function classifyTransient(err: unknown): 'rate_limit' | 'transient' | 'fatal' | 'aborted' {
+  if (isAborted(err)) return 'aborted'
+  if (!(err instanceof ApiError)) return 'fatal'
+  if (err.kind === 'rate_limit') return 'rate_limit'
+  if (err.kind === 'server' || err.kind === 'network') return 'transient'
+  return 'fatal'
 }
 
 export async function runBatch<T>(
@@ -102,7 +120,10 @@ export async function runBatch<T>(
   const concurrency = Math.max(1, opts.concurrency ?? 5)
   const perTaskDelayMs = Math.max(0, opts.perTaskDelayMs ?? 50)
   const maxRetriesOn429 = Math.max(0, opts.maxRetriesOn429 ?? 2)
+  const maxRetriesOnTransient = Math.max(0, opts.maxRetriesOnTransient ?? 2)
   const defaultRetryAfterMs = Math.max(1000, opts.defaultRetryAfterMs ?? 60_000)
+  const transientBaseDelayMs = Math.max(50, opts.transientBaseDelayMs ?? 500)
+  const transientMaxDelayMs = Math.max(transientBaseDelayMs, opts.transientMaxDelayMs ?? 4_000)
 
   const startedAt = Date.now()
   const state: BatchProgress = {
@@ -120,41 +141,72 @@ export async function runBatch<T>(
   emit()
 
   const queue: Array<{ task: RetryableTask<T>; index: number }> = items.map(
-    (item, index) => ({ task: { item, attempts: 0 }, index }),
+    (item, index) => ({
+      task: { item, attempts429: 0, attemptsTransient: 0 },
+      index,
+    }),
   )
 
   async function processOne(task: RetryableTask<T>, index: number) {
+    state.inFlight += 1
+    emit()
     try {
-      state.inFlight += 1
-      emit()
-      await worker(task.item)
-      results[index] = { ok: true, item: task.item }
-      state.succeeded += 1
-    } catch (err) {
-      if (err instanceof AbortedError) {
-        results[index] = { ok: false, item: task.item, error: err }
-        state.failed += 1
-        throw err
-      }
-      const is429 =
-        err instanceof ApiError && err.status === 429
-      if (is429 && task.attempts < maxRetriesOn429) {
-        task.attempts += 1
-        state.retrying += 1
-        state.inFlight -= 1
-        emit()
-        const waitMs = parseRetryAfter(err, defaultRetryAfterMs)
+      // Iterative retry: a single `processOne` invocation handles all attempts
+      // for one item, so the `finally` block runs exactly once per item.
+      // Recursion here would double-count `completed` because each recursive
+      // frame would run its own `finally`.
+      while (true) {
         try {
-          await sleep(waitMs, opts.signal)
-        } finally {
-          state.retrying -= 1
+          await worker(task.item)
+          results[index] = { ok: true, item: task.item }
+          state.succeeded += 1
+          return
+        } catch (err) {
+          const kind = classifyTransient(err)
+          if (kind === 'aborted') {
+            results[index] = { ok: false, item: task.item, error: err }
+            state.failed += 1
+            throw err
+          }
+          if (kind === 'rate_limit' && task.attempts429 < maxRetriesOn429) {
+            task.attempts429 += 1
+            state.retrying += 1
+            state.inFlight -= 1
+            emit()
+            const waitMs = parseRetryAfter(err, defaultRetryAfterMs)
+            try {
+              await sleep(waitMs, opts.signal)
+            } finally {
+              state.retrying -= 1
+              state.inFlight += 1
+              emit()
+            }
+            continue
+          }
+          if (kind === 'transient' && task.attemptsTransient < maxRetriesOnTransient) {
+            task.attemptsTransient += 1
+            state.retrying += 1
+            state.inFlight -= 1
+            emit()
+            const backoff = Math.min(
+              transientMaxDelayMs,
+              transientBaseDelayMs * 2 ** (task.attemptsTransient - 1),
+            )
+            const waitMs = backoff + jitter(backoff)
+            try {
+              await sleep(waitMs, opts.signal)
+            } finally {
+              state.retrying -= 1
+              state.inFlight += 1
+              emit()
+            }
+            continue
+          }
+          results[index] = { ok: false, item: task.item, error: err }
+          state.failed += 1
+          return
         }
-        state.inFlight += 1
-        emit()
-        return processOne(task, index)
       }
-      results[index] = { ok: false, item: task.item, error: err }
-      state.failed += 1
     } finally {
       state.inFlight = Math.max(0, state.inFlight - 1)
       state.completed += 1
@@ -170,14 +222,14 @@ export async function runBatch<T>(
       try {
         await processOne(next.task, next.index)
       } catch (err) {
-        if (err instanceof AbortedError) throw err
+        if (isAborted(err)) throw err
         // Other errors already recorded; keep going.
       }
       if (perTaskDelayMs > 0 && queue.length > 0) {
         try {
           await sleep(perTaskDelayMs, opts.signal)
         } catch (e) {
-          if (e instanceof AbortedError) throw e
+          if (isAborted(e)) throw e
         }
       }
     }
@@ -186,7 +238,7 @@ export async function runBatch<T>(
   try {
     await Promise.all(Array.from({ length: concurrency }, () => workerLoop()))
   } catch (err) {
-    if (!(err instanceof AbortedError)) throw err
+    if (!isAborted(err)) throw err
     // Mark any remaining queue entries as failed/aborted.
     for (const q of queue) {
       results[q.index] = { ok: false, item: q.task.item, error: err }

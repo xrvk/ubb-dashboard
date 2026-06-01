@@ -1,8 +1,35 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import { runBatch } from '@/lib/batch'
 import { ApiError } from '@/lib/api'
 
+/**
+ * Drive a runBatch promise to completion under fake timers. runBatch's
+ * retry path calls setTimeout via its internal sleep() helper; under
+ * fake timers those callbacks never fire on their own, so we tick the
+ * clock until the batch resolves. The poll loop yields to the
+ * microtask queue between ticks so awaited promises can settle.
+ *
+ * Used by the retry tests to keep them ~instant instead of paying the
+ * production `Math.max(1000, defaultRetryAfterMs)` safety floor that
+ * runBatch enforces on real timers.
+ */
+async function settleFakeTimerBatch<T>(promise: Promise<T>): Promise<T> {
+  let settled = false
+  promise.finally(() => {
+    settled = true
+  })
+  while (!settled) {
+    await vi.advanceTimersByTimeAsync(1000)
+  }
+  return promise
+}
+
 describe('runBatch', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+
   it('processes all items and reports success', async () => {
     const items = [1, 2, 3, 4, 5]
     const worker = vi.fn(async () => {})
@@ -28,30 +55,36 @@ describe('runBatch', () => {
   })
 
   it('retries on 429 then succeeds', async () => {
+    vi.useFakeTimers()
     let calls = 0
     const worker = vi.fn(async () => {
       calls += 1
       if (calls === 1) throw new ApiError(429, '{"message":"slow down"}')
     })
-    const results = await runBatch([1], worker, {
-      concurrency: 1,
-      perTaskDelayMs: 0,
-      defaultRetryAfterMs: 5,
-    })
+    const results = await settleFakeTimerBatch(
+      runBatch([1], worker, {
+        concurrency: 1,
+        perTaskDelayMs: 0,
+        defaultRetryAfterMs: 5,
+      }),
+    )
     expect(results[0].ok).toBe(true)
     expect(worker).toHaveBeenCalledTimes(2)
   })
 
   it('gives up after maxRetriesOn429', async () => {
+    vi.useFakeTimers()
     const worker = vi.fn(async () => {
       throw new ApiError(429, 'rate limited')
     })
-    const results = await runBatch([1], worker, {
-      concurrency: 1,
-      perTaskDelayMs: 0,
-      defaultRetryAfterMs: 1,
-      maxRetriesOn429: 2,
-    })
+    const results = await settleFakeTimerBatch(
+      runBatch([1], worker, {
+        concurrency: 1,
+        perTaskDelayMs: 0,
+        defaultRetryAfterMs: 1,
+        maxRetriesOn429: 2,
+      }),
+    )
     expect(results[0].ok).toBe(false)
     expect(worker).toHaveBeenCalledTimes(3) // 1 attempt + 2 retries
   })
@@ -95,5 +128,39 @@ describe('runBatch', () => {
       onProgress: s => states.push(s.completed),
     })
     expect(states[states.length - 1]).toBe(3)
+  })
+
+  it('counts each item exactly once in `completed` even after retries (regression)', async () => {
+    // Regression: when processOne recursed on retry, the outer frame's
+    // `finally` ran again and double-counted. Each item that retried once
+    // ended up with `completed += 2`, so the progress UI showed values
+    // greater than `total`.
+    vi.useFakeTimers()
+    let attempts = 0
+    const worker = vi.fn(async () => {
+      attempts += 1
+      // First two attempts fail with 429, third succeeds.
+      if (attempts <= 2) throw new ApiError(429, 'slow down')
+    })
+    const states: Array<{ completed: number; inFlight: number; succeeded: number }> = []
+    const results = await settleFakeTimerBatch(
+      runBatch([1], worker, {
+        concurrency: 1,
+        perTaskDelayMs: 0,
+        defaultRetryAfterMs: 1,
+        maxRetriesOn429: 5,
+        onProgress: s => states.push({ completed: s.completed, inFlight: s.inFlight, succeeded: s.succeeded }),
+      }),
+    )
+    expect(results[0].ok).toBe(true)
+    expect(worker).toHaveBeenCalledTimes(3)
+    const final = states[states.length - 1]
+    expect(final.completed).toBe(1)
+    expect(final.succeeded).toBe(1)
+    expect(final.inFlight).toBe(0)
+    // No intermediate progress event should report completed > total.
+    expect(states.every(s => s.completed <= 1)).toBe(true)
+    // And inFlight should never exceed concurrency.
+    expect(states.every(s => s.inFlight <= 1)).toBe(true)
   })
 })

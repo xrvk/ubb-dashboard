@@ -3,6 +3,7 @@ import { Dialog, DialogContent, DialogTitle, DialogDescription, DialogClose } fr
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import type { UserBudget } from '@/lib/api'
+import { describeError } from '@/lib/errors'
 
 interface Props {
   budget: UserBudget | null
@@ -51,7 +52,7 @@ export function EditBudgetDialog({ budget, open, onOpenChange, onSubmit }: Props
               await onSubmit(n)
               onOpenChange(false)
             } catch (err) {
-              setError(err instanceof Error ? err.message : String(err))
+              setError(describeError(err, 'edit-budget').body)
             } finally {
               setSubmitting(false)
             }

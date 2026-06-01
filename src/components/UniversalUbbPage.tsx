@@ -11,6 +11,7 @@ import {
   fetchUniversalUBB,
   patchUniversalUBB,
 } from '@/lib/api'
+import { describeError } from '@/lib/errors'
 import { formatCurrency } from '@/lib/utils'
 import {
   loadAllCachedReports,
@@ -210,7 +211,7 @@ export function UniversalUbbPage() {
       await handleEditCap(newUsd)
       setUbbOverrideEntry(null)
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : String(err))
+      toast.error(describeError(err, 'set-universal-ubb').body)
     } finally {
       setApplying(false)
     }

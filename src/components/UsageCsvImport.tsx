@@ -8,6 +8,7 @@ import {
   type CachedReport,
 } from '@/lib/reportCache'
 import { aggregateAicByUser, parseUsageCsv } from '@/lib/usageReport'
+import { describeError } from '@/lib/errors'
 
 interface Props {
   enterprise: string
@@ -65,7 +66,8 @@ export function UsageCsvImport({ enterprise, months, onChanged }: Props) {
         })
         imported += 1
       } catch (err) {
-        skipped.push(`${file.name}: ${err instanceof Error ? err.message : String(err)}`)
+        const desc = describeError(err, 'usage-csv-import')
+        skipped.push(`${file.name}: ${desc.body}`)
       }
     }
     if (imported > 0) {
