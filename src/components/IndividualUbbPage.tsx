@@ -73,7 +73,6 @@ export function IndividualUbbPage({
     costCenters,
     loginToCostCenter,
     loading,
-    loadProgress,
     apiFetch,
     refresh,
   } = useCredentials()
@@ -374,11 +373,7 @@ export function IndividualUbbPage({
   if (loading && budgets.length === 0) {
     return (
       <div className="text-center text-sm text-neutral-500 py-12">
-        {loadProgress
-          ? loadProgress.total
-            ? `Loading budgets… ${loadProgress.loaded} of ${loadProgress.total}`
-            : `Loading budgets… ${loadProgress.loaded}`
-          : 'Loading budgets…'}
+        Loading budgets…
       </div>
     )
   }
