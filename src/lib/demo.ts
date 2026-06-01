@@ -6,6 +6,7 @@ import type {
   UniversalUbb,
   UserBudget,
 } from './api'
+import { fillerBudgetFor, rollFillerHealth, rollFillerSeatCount } from './demoRng'
 
 /**
  * Generate N synthetic user budgets for UI scale testing. Distribution is
@@ -214,13 +215,18 @@ export function generateDemoSeats(count: number, ccCount?: number) {
   // skips zero-seat CCs in poolSplit.ts), and on the Dashboard "CCs
   // routing Copilot" list. Logins are namespaced so they don't collide
   // with `demo-user-NNNN` — they have no individual UBB, so their
-  // effective cap falls back to the universal UBB amount.
+  // effective cap falls back to the universal UBB amount. Seat counts
+  // are rolled deterministically from the CC name via `rollFillerSeatCount`
+  // so a) every reload renders the same demo, and b) the Dashboard sort
+  // dropdown has a meaningful spread of CC sizes to sort by (5–50 seats,
+  // biased toward small teams ~ log-uniform).
   const baseCcCount = 4
   if (ccCount && ccCount > baseCcCount) {
     const extras = ccCount - baseCcCount
     for (let i = 1; i <= extras; i += 1) {
       const orgName = `team-${String(i).padStart(3, '0')}`
-      for (let s = 0; s < 3; s += 1) {
+      const seats = rollFillerSeatCount(orgName)
+      for (let s = 0; s < seats; s += 1) {
         out.push({
           login: `${orgName}-user-${s + 1}`,
           orgLogin: orgName,
@@ -378,17 +384,20 @@ export function generateDemoCostCenterBudgets(extraCcs?: CostCenter[]): Map<stri
   add('data-platform', 7000, true, false)
   add('devx', 5000, true, false)
   add('security', 3000, true, false)
-  // Stamp a realistic budget on every additional CC (e.g. when ?cc=N>4) so the
-  // structure diagram / planner list have a value to render per row, while
-  // staying comfortably above the filler CCs' ~$150 UBB ceiling (3 seats ×
-  // universal $50) so they don't all trip per_cc. The 4 named "story" CCs
-  // above remain intentionally undersized to keep the constraint banner's
-  // narrative working.
+  // Stamp a varied, deterministic budget on every additional CC (e.g. when
+  // ?cc=N>4) so the dashboard / planner / structure diagram have meaningful
+  // signal to render — ~10% "over", ~15% "near", ~75% "healthy" rolled
+  // from the CC name (see demoRng.ts). The 4 named "story" CCs above
+  // remain intentionally undersized to keep the constraint banner's
+  // narrative working; filler over-CCs trip per_cc with tiny overshoots
+  // ($15–$150 each) so the Phase 1 top-N cap surfaces the story CCs first.
   if (extraCcs) {
     for (const cc of extraCcs) {
       const lname = cc.name.toLowerCase()
       if (out.has(lname)) continue
-      add(cc.name, 500, true, false)
+      const seats = rollFillerSeatCount(cc.name)
+      const health = rollFillerHealth(cc.name)
+      add(cc.name, fillerBudgetFor(seats, health), true, false)
     }
   }
   return out
