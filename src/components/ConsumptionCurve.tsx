@@ -478,7 +478,7 @@ export function ConsumptionCurve({
         <div className="rounded-md bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800 px-3 py-2">
           <div className="flex items-center gap-1.5 text-amber-800 dark:text-amber-300 font-semibold">
             <span className="w-2.5 h-2.5 rounded-sm bg-amber-600 dark:bg-amber-400" />
-            Regular users · UBB {formatUsd(ubbAICs)}{ubbIsOverridden ? ' (custom)' : ''}
+            Regular users · ULB {formatUsd(ubbAICs)}{ubbIsOverridden ? ' (custom)' : ''}
           </div>
           <p className="text-neutral-600 dark:text-neutral-400 mt-0.5">
             {totalN - powerUserCount} {totalN - powerUserCount === 1 ? 'user' : 'users'} below threshold
