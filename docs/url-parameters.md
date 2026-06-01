@@ -45,14 +45,19 @@ ignored and we fall back to `github.com`. Example:
 → https://customer.ghe.com/enterprises/octodemo
 ```
 
-### `?demo=N` — Try the dashboard with synthetic data
+## For developers and testing
+
+> These parameters are intended for local development, screenshots, and
+> deterministic test scenarios. They are not stable end-user features
+> and may change without notice.
+
+### `?demo=N`
 
 Boots the app with `N` synthetic users instead of asking you to
 connect. Everything in the UI is fake but realistic; all writes are
-stubbed with toast notifications so you can click around without
-consequence.
+stubbed with toast notifications.
 
-Good starting points:
+Common values:
 
 | URL | What it does |
 |---|---|
@@ -60,13 +65,8 @@ Good starting points:
 | `?demo=900` | Mid-size: paginated table, full histogram |
 | `?demo=9800` | Stress test: rate-limit pre-flight, progress UI |
 
-## For developers and testing
-
-> These parameters are intended for local development, screenshots, and
-> deterministic test scenarios. They are not stable end-user features
-> and may change without notice.
-
-All of them only take effect when `?demo=N` is also set.
+The remaining params in this section only take effect when `?demo=N`
+is also set.
 
 ### `?cc=N`
 
