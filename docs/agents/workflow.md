@@ -22,7 +22,7 @@ warning — don't introduce new ones.
 ## Demo mode knobs
 
 Demo mode is URL-driven and stacks. Append any combination to
-`http://127.0.0.1:5005/ind-ulb-dashboard/`:
+`http://127.0.0.1:5005/ind-ubb-dashboard/`:
 
 | Param | Effect |
 |---|---|

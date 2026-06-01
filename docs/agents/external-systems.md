@@ -27,7 +27,7 @@ The only external system in production. The app is a thin client.
 | `GET /enterprises/{ent}/settings/billing/usage/summary?product=Copilot` | MTD gross AIC consumption by SKU. Source for pool drawdown. |
 | `GET /enterprises/{ent}/settings/billing/cost-centers` | Cost center list. Paginated. |
 | `GET /enterprises/{ent}/settings/billing/cost-centers/{id}/...` | Per-CC budget and usage. |
-| `GET /enterprises/{ent}/settings/billing/budgets/...` | Enterprise + universal + individual ULB budgets. |
+| `GET /enterprises/{ent}/settings/billing/budgets/...` | Enterprise + universal + individual UBB budgets. |
 | `PATCH /...budgets/{id}` | Mutations from edit-budget and bulk-unblock flows. |
 
 The canonical, up-to-date list is whatever lives in `api.ts`. If you're

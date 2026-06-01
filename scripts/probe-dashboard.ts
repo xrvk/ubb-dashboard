@@ -104,7 +104,7 @@ interface Probe {
   enterprise: string
   budgetsCount: number
   userBudgetsCount: number
-  universalUlb: { budget: number; consumed: number } | null
+  universalUbb: { budget: number; consumed: number } | null
   enterpriseBudget: { amount: number; consumed: number; excludeCC: boolean } | null
   costCenterBudgets: Array<{ name: string; amount: number; consumed: number }>
   costCentersAll: number
@@ -169,7 +169,7 @@ async function probe(envPath: string): Promise<Probe> {
 
   const pool = computePoolSplit({
     enterpriseBudget: allBudgets.enterprise,
-    universalUlb: allBudgets.universal,
+    universalUbb: allBudgets.universal,
     costCenters: allCcs,
     ccBudgetsByName,
     seats,
@@ -208,7 +208,7 @@ async function probe(envPath: string): Promise<Probe> {
     enterprise: parsed.ent,
     budgetsCount: allBudgets.totalBudgetCount,
     userBudgetsCount: allBudgets.userBudgets.length,
-    universalUlb: allBudgets.universal
+    universalUbb: allBudgets.universal
       ? {
           budget: allBudgets.universal.budgetAmount,
           consumed: allBudgets.universal.consumedAmount,
@@ -294,7 +294,7 @@ function renderReport(p: Probe): string {
   push('| KPI | Recomputed |')
   push('|---|---|')
   push(`| Enterprise budget | ${p.enterpriseBudget ? fmt$(p.enterpriseBudget.amount) : 'Not set'} |`)
-  push(`| Spent MTD | ${fmt$(p.trackedForecast.totalMtd)} (${p.trackedForecast.hasActual ? 'gross AIC' : 'ULB proxy'}) |`)
+  push(`| Spent MTD | ${fmt$(p.trackedForecast.totalMtd)} (${p.trackedForecast.hasActual ? 'gross AIC' : 'UBB proxy'}) |`)
   push(`| Forecast EoM | ${fmt$(p.trackedForecast.totalProjected)} |`)
   push(`| Over pool? | ${fmt$(Math.max(0, p.trackedForecast.totalProjected - p.pool.totalDollars))} |`)
   push(`| Pool remaining | ${fmt$(Math.max(0, p.pool.totalDollars - p.trackedForecast.totalMtd))} |`)
@@ -305,10 +305,10 @@ function renderReport(p: Probe): string {
   push('| Bucket | MTD | Projected | % of total proj |')
   push('|---|---|---|---|')
   push(
-    `| Universal ULB | ${fmt$(p.trackedForecast.universal.mtd)} | ${fmt$(p.trackedForecast.universal.projected)} | ${fmtPct(p.trackedForecast.universal.projected, p.trackedForecast.totalProjected)} |`,
+    `| Universal UBB | ${fmt$(p.trackedForecast.universal.mtd)} | ${fmt$(p.trackedForecast.universal.projected)} | ${fmtPct(p.trackedForecast.universal.projected, p.trackedForecast.totalProjected)} |`,
   )
   push(
-    `| Individual ULBs (${p.trackedForecast.individual.count}) | ${fmt$(p.trackedForecast.individual.mtd)} | ${fmt$(p.trackedForecast.individual.projected)} | ${fmtPct(p.trackedForecast.individual.projected, p.trackedForecast.totalProjected)} |`,
+    `| Individual UBBs (${p.trackedForecast.individual.count}) | ${fmt$(p.trackedForecast.individual.mtd)} | ${fmt$(p.trackedForecast.individual.projected)} | ${fmtPct(p.trackedForecast.individual.projected, p.trackedForecast.totalProjected)} |`,
   )
   if (p.trackedForecast.hasActual) {
     push(
@@ -333,14 +333,14 @@ function renderReport(p: Probe): string {
   }
   push(`Over-allocated flag: ${p.poolSplit.overAllocated}`)
   push('')
-  push('| CC | Budget | ULB ceiling | Seats | Effective draw | MTD (gross) | Projected |')
+  push('| CC | Budget | UBB ceiling | Seats | Effective draw | MTD (gross) | Projected |')
   push('|---|---|---|---|---|---|---|')
   for (const s of p.poolSplit.costCenters) {
     const u = p.usagePerCc.find(x => x.ccId === s.costCenterId)
     const mtd = u?.gross ?? 0
     const proj = projectMonthlyBudget(mtd, 0).projectedMonthTotal
     push(
-      `| ${s.name} | ${s.budgetAmount === null ? '(uncapped)' : fmt$(s.budgetAmount)} | ${fmt$(s.ulbCeiling)} | ${s.seatCount} | ${fmt$(s.effectiveDraw)} | ${fmt$(mtd)} | ${fmt$(proj)} |`,
+      `| ${s.name} | ${s.budgetAmount === null ? '(uncapped)' : fmt$(s.budgetAmount)} | ${fmt$(s.ubbCeiling)} | ${s.seatCount} | ${fmt$(s.effectiveDraw)} | ${fmt$(mtd)} | ${fmt$(proj)} |`,
     )
   }
   push('')
@@ -375,9 +375,9 @@ function renderReport(p: Probe): string {
     `skus=${p.usageEnterprise.sampleSkus.slice(0, 8).join(',')}`,
   ])
   checks.push([
-    'Universal ULB reports consumed_amount',
-    !p.universalUlb || p.universalUlb.consumed >= 0,
-    p.universalUlb ? `consumed=${fmt$(p.universalUlb.consumed)}` : 'no universal ULB',
+    'Universal UBB reports consumed_amount',
+    !p.universalUbb || p.universalUbb.consumed >= 0,
+    p.universalUbb ? `consumed=${fmt$(p.universalUbb.consumed)}` : 'no universal UBB',
   ])
   checks.push([
     'Enterprise budget consumed_amount stays 0 (per probe-findings)',

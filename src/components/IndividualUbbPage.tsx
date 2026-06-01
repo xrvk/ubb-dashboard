@@ -52,7 +52,7 @@ interface Props {
   onTaskDismiss?: () => void
 }
 
-export function IndividualUlbPage({
+export function IndividualUbbPage({
   creating,
   onCreatingChange,
   onSnapshotChange,
@@ -128,7 +128,7 @@ export function IndividualUlbPage({
   }
 
   // Live recompute of the active task's progress so the contextual banner
-  // updates as the user lowers ULBs on this page. The banner itself now
+  // updates as the user lowers UBBs on this page. The banner itself now
   // lives in App.tsx so it persists above the page scroll; we keep just the
   // filter-mismatch dismiss effect below.
 
@@ -342,7 +342,7 @@ export function IndividualUlbPage({
       ) : null}
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
         <p className="text-xs text-neutral-500 dark:text-neutral-400">
-          Live utilization for users with an individual ULB. Forecasts project end of month at the current burn rate.
+          Live utilization for users with an individual UBB. Forecasts project end of month at the current burn rate.
         </p>
       </div>
       <ForecastHero
@@ -378,7 +378,7 @@ export function IndividualUlbPage({
           <div ref={tableRef} className="space-y-3">
             <div className="flex items-center justify-between gap-3">
               <h2 className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
-                Individual ULBs
+                Individual UBBs
                 <span className="ml-2 text-xs font-normal text-neutral-500">
                   {totalBudgetCount.toLocaleString()} total
                 </span>
@@ -390,7 +390,7 @@ export function IndividualUlbPage({
                 title={totalBudgetCount >= 10000 ? 'Budget limit of 10,000 reached for this enterprise' : undefined}
               >
                 <Plus size={16} weight="bold" />
-                Add ULB
+                Add UBB
               </Button>
             </div>
             <BudgetsTable
@@ -407,7 +407,7 @@ export function IndividualUlbPage({
         </>
       ) : (
         <div className="rounded-lg border border-dashed border-neutral-300 dark:border-neutral-700 p-12 text-center">
-          <p className="text-sm text-neutral-500">No individual ULBs found for this enterprise.</p>
+          <p className="text-sm text-neutral-500">No individual UBBs found for this enterprise.</p>
           <Button className="mt-4" onClick={() => onCreatingChange(true)}>
             <Plus size={16} weight="bold" />
             Add the first one

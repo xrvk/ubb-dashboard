@@ -21,7 +21,7 @@ export interface BulkApplySnapshot {
   }>
 }
 
-const STORAGE_KEY = 'ind-ulb-dashboard:last-bulk-apply'
+const STORAGE_KEY = 'ubb-dashboard:last-bulk-apply'
 const SNAPSHOT_TTL_MS = 60 * 24 * 60 * 60 * 1000 // 60 days
 
 function isStorageAvailable(): boolean {
@@ -177,7 +177,7 @@ export function downloadSnapshot(snap: BulkApplySnapshot): void {
   const date = new Date(snap.appliedAt)
   const stamp = `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}-${String(date.getHours()).padStart(2, '0')}${String(date.getMinutes()).padStart(2, '0')}`
   a.href = url
-  a.download = `ind-ulb-snapshot-${snap.enterprise}-${stamp}.json`
+  a.download = `ubb-snapshot-${snap.enterprise}-${stamp}.json`
   document.body.appendChild(a)
   a.click()
   a.remove()

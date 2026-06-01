@@ -6,10 +6,10 @@ import type { TableFilters } from '@/components/BudgetsTable'
  * with some context, without lifting tab state into a dedicated context.
  */
 
-export const NAV_TO_INDIVIDUAL_EVENT = 'ulb:nav-to-individual'
+export const NAV_TO_INDIVIDUAL_EVENT = 'ubb:nav-to-individual'
 
-/** Navigate to the Universal ULB tab. No payload needed today. */
-export const NAV_TO_UNIVERSAL_EVENT = 'ulb:nav-to-universal'
+/** Navigate to the Universal UBB tab. No payload needed today. */
+export const NAV_TO_UNIVERSAL_EVENT = 'ubb:nav-to-universal'
 
 /**
  * Task context attached to a deep-link nav. Rendered as a contextual banner at
@@ -24,11 +24,11 @@ export interface NavToIndividualTask {
   costCenterId: string
   costCenterName: string
   memberCount: number
-  /** Σ of effective ULBs of the CC members at the time of the click. */
-  actualUlbSum: number
+  /** Σ of effective UBBs of the CC members at the time of the click. */
+  actualUbbSum: number
   /** Current CC budget the members must fit under. */
   ccBudget: number
-  /** actualUlbSum − ccBudget. */
+  /** actualUbbSum − ccBudget. */
   overBy: number
 }
 
@@ -38,7 +38,7 @@ export interface NavToIndividualDetail {
 }
 
 /** Navigate to the in-app budget constraint model explainer page. */
-export const NAV_TO_BUDGET_MODEL_EVENT = 'ulb:nav-to-budget-model'
+export const NAV_TO_BUDGET_MODEL_EVENT = 'ubb:nav-to-budget-model'
 
 /**
  * Ask the BudgetPlanner to highlight a section and show a transient banner
@@ -47,7 +47,7 @@ export const NAV_TO_BUDGET_MODEL_EVENT = 'ulb:nav-to-budget-model'
  * action knows the goal but not which specific row(s) to change, so the
  * planner card shows a contextual hint to guide the manual edit.
  */
-export const PLANNER_HIGHLIGHT_EVENT = 'ulb:planner-highlight'
+export const PLANNER_HIGHLIGHT_EVENT = 'ubb:planner-highlight'
 
 export interface PlannerHighlightDetail {
   /** Which planner section to highlight + banner. */

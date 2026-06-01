@@ -1,18 +1,18 @@
 {
-  "name": "ind-ulb-dashboard",
+  "name": "ubb-dashboard",
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Monitor and manage per-user GitHub Copilot AI Credit budgets (individual ULBs) across an enterprise.",
+  "description": "Monitor and manage per-user GitHub Copilot AI Credit budgets (individual UBBs) across an enterprise.",
   "license": "MIT",
   "author": "@xrvk",
-  "homepage": "https://github.com/xrvk/ind-ulb-dashboard",
+  "homepage": "https://github.com/xrvk/ubb-dashboard",
   "repository": {
     "type": "git",
-    "url": "https://github.com/xrvk/ind-ulb-dashboard.git"
+    "url": "https://github.com/xrvk/ubb-dashboard.git"
   },
   "bugs": {
-    "url": "https://github.com/xrvk/ind-ulb-dashboard/issues"
+    "url": "https://github.com/xrvk/ubb-dashboard/issues"
   },
   "scripts": {
     "dev": "vite",

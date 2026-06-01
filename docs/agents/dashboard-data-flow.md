@@ -68,5 +68,5 @@ import `DebugBadge` + `DebugInfo` and pass a `debug` prop.
 ## Reference docs
 
 - [ai-credit-pool.md](./ai-credit-pool.md) — included pool sizing.
-- [metered-ai-credits.md](./metered-ai-credits.md) — budgets, ULBs,
+- [metered-ai-credits.md](./metered-ai-credits.md) — budgets, UBBs,
   cost-center routing.

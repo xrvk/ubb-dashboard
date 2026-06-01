@@ -1,5 +1,5 @@
 /**
- * Pure constraint calculator that enforces the "golden rule": Σ effective per-user ULBs
+ * Pure constraint calculator that enforces the "golden rule": Σ effective per-user UBBs
  * must remain the binding constraint, never the enterprise or cost-center envelope.
  *
  * See docs/budget-constraints.md for the model, vocabulary, and justification.
@@ -15,7 +15,7 @@ import type {
   CostCenterIndex,
   CopilotSeat,
   EnterpriseBudget,
-  UniversalUlb,
+  UniversalUbb,
   UserBudget,
 } from './api'
 import { resolveCostCenter } from './api'
@@ -24,7 +24,7 @@ import { resolveCostCenter } from './api'
 
 export interface ComputeBudgetConstraintsInput {
   enterpriseBudget: EnterpriseBudget | null
-  universalUlb: UniversalUlb | null
+  universalUbb: UniversalUbb | null
   /** Active cost centers in the enterprise. */
   costCenters: CostCenter[]
   /** Cost-center index built from the same `costCenters` and (ideally) ccBudgets. */
@@ -45,7 +45,7 @@ export interface ComputeBudgetConstraintsInput {
  */
 export interface BudgetCheck {
   ok: boolean
-  /** Σ effective ULBs (or Σ CC budgets, for ccVsEnterprise). */
+  /** Σ effective UBBs (or Σ CC budgets, for ccVsEnterprise). */
   actual: number
   /** The envelope being checked against. */
   allowed: number
@@ -57,7 +57,7 @@ export interface PerCcCheck {
   costCenterId: string
   costCenterName: string
   memberCount: number
-  /** Effective ULBs of all members of this CC (or members routed via org). */
+  /** Effective UBBs of all members of this CC (or members routed via org). */
   check: BudgetCheck
   /** Member logins (lowercased) for diagnostics. */
   memberLogins: string[]
@@ -81,7 +81,7 @@ export interface BudgetWarning {
 export interface BudgetConstraintsResult {
   mode: ConstraintMode
   checks: {
-    /** Per-cost-center-with-budget: Σ members' ULBs ≤ CC budget. */
+    /** Per-cost-center-with-budget: Σ members' UBBs ≤ CC budget. */
     perCc: PerCcCheck[]
     /**
      * Umbrella mode only: Σ CC budgets ≤ enterprise budget. `null` in
@@ -90,20 +90,20 @@ export interface BudgetConstraintsResult {
     ccVsEnterprise: BudgetCheck | null
     /**
      * Leftover for users not in a budgeted CC:
-     *   - umbrella: Σ ULBs ≤ ent − Σ CC budgets
-     *   - independent: Σ ULBs ≤ ent
+     *   - umbrella: Σ UBBs ≤ ent − Σ CC budgets
+     *   - independent: Σ UBBs ≤ ent
      * `null` when there is no enterprise budget.
      */
     unassignedLeftover: BudgetCheck | null
   }
   warnings: BudgetWarning[]
   /**
-   * The max universal ULB value that would keep ALL hard checks passing,
-   * holding everything else (individual ULBs, ent budget, CC budgets,
+   * The max universal UBB value that would keep ALL hard checks passing,
+   * holding everything else (individual UBBs, ent budget, CC budgets,
    * memberships) constant. Useful as a "Step 1" hint. May be `Infinity`
-   * if no envelope binds, or `0` if even a universal ULB of 0 fails.
+   * if no envelope binds, or `0` if even a universal UBB of 0 fails.
    */
-  maxSafeUniversalUlb: number
+  maxSafeUniversalUbb: number
 }
 
 // --- Helpers ---
@@ -113,10 +113,10 @@ function checkLe(actual: number, allowed: number): BudgetCheck {
   return { ok, actual, allowed, overBy: ok ? 0 : actual - allowed }
 }
 
-function effectiveUlbFor(
+function effectiveUbbFor(
   login: string,
   individualByLogin: ReadonlyMap<string, UserBudget>,
-  universal: UniversalUlb | null,
+  universal: UniversalUbb | null,
 ): number {
   const ind = individualByLogin.get(login.toLowerCase())
   if (ind) return ind.budgetAmount
@@ -137,7 +137,7 @@ export function computeBudgetConstraints(
 ): BudgetConstraintsResult {
   const {
     enterpriseBudget,
-    universalUlb,
+    universalUbb,
     costCenters,
     costCenterIndex,
     ccBudgetsByName,
@@ -158,12 +158,12 @@ export function computeBudgetConstraints(
     individualByLogin.set(ub.user.toLowerCase(), ub)
   }
 
-  // --- Per-seat: which CC (if any) and what is the effective ULB.
+  // --- Per-seat: which CC (if any) and what is the effective UBB.
   // The seat universe is what we constrain. CC membership is derived via the
   // index; this respects the user > org priority documented in resolveCostCenter.
   interface SeatRouting {
     login: string
-    effectiveUlb: number
+    effectiveUbb: number
     /** CC the user resolves to, or null if unassigned. */
     cc: CostCenter | null
     /** True if the resolved CC has its own ai_credits budget. */
@@ -178,7 +178,7 @@ export function computeBudgetConstraints(
     const isInBudgetedCc = cc ? ccBudgetsByName.has(lower(cc.name)) : false
     return {
       login: seat.login,
-      effectiveUlb: effectiveUlbFor(seat.login, individualByLogin, universalUlb),
+      effectiveUbb: effectiveUbbFor(seat.login, individualByLogin, universalUbb),
       cc,
       isInBudgetedCc,
     }
@@ -197,7 +197,7 @@ export function computeBudgetConstraints(
     const budget = ccBudgetsByName.get(lower(cc.name))
     if (!budget) continue
     const members = ccIdToMembers.get(cc.id) ?? []
-    const actual = members.reduce((s, m) => s + m.effectiveUlb, 0)
+    const actual = members.reduce((s, m) => s + m.effectiveUbb, 0)
     perCc.push({
       costCenterId: cc.id,
       costCenterName: cc.name,
@@ -227,48 +227,48 @@ export function computeBudgetConstraints(
 
   // --- D: leftover for users not in a budgeted CC.
   const leftoverUsers = routings.filter(r => !r.isInBudgetedCc)
-  const sumLeftoverUlbs = leftoverUsers.reduce((s, r) => s + r.effectiveUlb, 0)
+  const sumLeftoverUbbs = leftoverUsers.reduce((s, r) => s + r.effectiveUbb, 0)
   let unassignedLeftover: BudgetCheck | null = null
   if (enterpriseBudget) {
     const allowed =
       mode === 'umbrella'
         ? Math.max(0, enterpriseBudget.budgetAmount - sumCcBudgets)
         : enterpriseBudget.budgetAmount
-    unassignedLeftover = checkLe(sumLeftoverUlbs, allowed)
+    unassignedLeftover = checkLe(sumLeftoverUbbs, allowed)
   }
 
   // --- Warnings.
 
-  // prevent_further_usage off on any ULB-bearing budget means the cap is informational.
-  if (universalUlb && !universalUlb.preventFurtherUsage) {
+  // prevent_further_usage off on any UBB-bearing budget means the cap is informational.
+  if (universalUbb && !universalUbb.preventFurtherUsage) {
     warnings.push({
       code: 'prevent_further_usage_off',
-      message: 'Universal ULB has prevent_further_usage=false; users will not be hard-stopped at the cap.',
-      context: { budgetId: universalUlb.id },
+      message: 'Universal UBB has prevent_further_usage=false; users will not be hard-stopped at the cap.',
+      context: { budgetId: universalUbb.id },
     })
   }
   for (const ub of userBudgets) {
     if (!ub.preventFurtherUsage) {
       warnings.push({
         code: 'prevent_further_usage_off',
-        message: `User "${ub.user}" ULB has prevent_further_usage=false; they will not be hard-stopped at $${ub.budgetAmount}.`,
+        message: `User "${ub.user}" UBB has prevent_further_usage=false; they will not be hard-stopped at $${ub.budgetAmount}.`,
         context: { budgetId: ub.id, login: ub.user },
       })
     }
   }
 
-  // Unbounded coverage: a user with no individual ULB, no universal ULB, no
+  // Unbounded coverage: a user with no individual UBB, no universal UBB, no
   // enclosing budgeted CC, and no enterprise budget. They have no hard cap.
-  if (!universalUlb || !enterpriseBudget) {
+  if (!universalUbb || !enterpriseBudget) {
     for (const r of routings) {
       const hasIndividual = individualByLogin.has(r.login.toLowerCase())
       if (hasIndividual) continue
-      if (universalUlb) continue
+      if (universalUbb) continue
       if (r.isInBudgetedCc) continue
       if (enterpriseBudget) continue
       warnings.push({
         code: 'unbounded_user_coverage',
-        message: `User "${r.login}" has no individual ULB, no universal ULB, no budgeted cost center, and no enterprise budget. Their Copilot AI Credit spend is unbounded.`,
+        message: `User "${r.login}" has no individual UBB, no universal UBB, no budgeted cost center, and no enterprise budget. Their Copilot AI Credit spend is unbounded.`,
         context: { login: r.login },
       })
     }
@@ -283,9 +283,9 @@ export function computeBudgetConstraints(
     })
   }
 
-  // --- maxSafeUniversalUlb derivation.
+  // --- maxSafeUniversalUbb derivation.
   // Find the largest universal value U such that all checks still pass when
-  // every seat WITHOUT an individual ULB uses U as its effective ULB.
+  // every seat WITHOUT an individual UBB uses U as its effective UBB.
   // Closed-form per check; take the min over all binding ones.
   const seatsWithoutIndividual = (filter: (r: SeatRouting) => boolean): number =>
     routings.filter(filter).filter(r => !individualByLogin.has(r.login.toLowerCase())).length
@@ -293,7 +293,7 @@ export function computeBudgetConstraints(
     routings
       .filter(filter)
       .filter(r => individualByLogin.has(r.login.toLowerCase()))
-      .reduce((s, r) => s + r.effectiveUlb, 0)
+      .reduce((s, r) => s + r.effectiveUbb, 0)
 
   const caps: number[] = []
   // Per-CC binding: for each budgeted CC,
@@ -320,12 +320,12 @@ export function computeBudgetConstraints(
     }
   }
   // ccVsEnterprise does NOT depend on U — it's budget vs budget.
-  const maxSafeUniversalUlb = caps.length === 0 ? Infinity : Math.min(...caps)
+  const maxSafeUniversalUbb = caps.length === 0 ? Infinity : Math.min(...caps)
 
   return {
     mode,
     checks: { perCc, ccVsEnterprise, unassignedLeftover },
     warnings,
-    maxSafeUniversalUlb,
+    maxSafeUniversalUbb,
   }
 }

@@ -21,8 +21,8 @@ index.html
         └── src/App.tsx          ← top-level tab switcher (useState<Tab>)
               ├── OverviewPage
               ├── DashboardPage       ← the headline view
-              ├── IndividualUlbPage
-              ├── UniversalUlbPage
+              ├── IndividualUbbPage
+              ├── UniversalUbbPage
               ├── BudgetPlanner
               └── BudgetConstraintsHelpPage
 ```

@@ -7,7 +7,7 @@ in this repo. Read what's relevant before touching the corresponding area.
 
 | File | When to read |
 |---|---|
-| [glossary.md](./glossary.md) | First. Decodes the alphabet soup (ULB, AIC, CB/CE, CC, MTD, gross vs net, …). |
+| [glossary.md](./glossary.md) | First. Decodes the alphabet soup (UBB, AIC, CB/CE, CC, MTD, gross vs net, …). |
 | [architecture.md](./architecture.md) | 10-minute map of how the app is wired: entry points, state, persistence, demo mode. |
 | [external-systems.md](./external-systems.md) | Before touching `api.ts` or anything that talks to GitHub. Endpoints, auth, version pin, quirks. |
 | [tone-and-voice.md](./tone-and-voice.md) | Before writing UI copy, commit messages, PR bodies, toasts, or docs. |
@@ -37,7 +37,7 @@ Read before touching anything that computes spend, budgets, or forecasts.
 - **Not an official GitHub product.** See the disclaimer in the top-level
   `README.md`. Match that framing.
 - **Single-purpose tool.** This dashboard exists to make per-user Copilot
-  AI Credit budgets (individual ULBs) operable at scale. Resist scope
+  AI Credit budgets (individual UBBs) operable at scale. Resist scope
   creep — push back before building anything that isn't in service of
   "see who's near / over their cap and fix it in one click."
 - **Browser-only, static-hosted on GitHub Pages.** No server, no backend,
