@@ -163,4 +163,119 @@ describe('runBatch', () => {
     // And inFlight should never exceed concurrency.
     expect(states.every(s => s.inFlight <= 1)).toBe(true)
   })
+
+  // --- Transient (5xx / network) retry path. The original suite only
+  // covered 429; without these, a regression could silently turn 5xx
+  // into a fatal-on-first-failure and skip backoff on network errors. ---
+
+  it('retries on 5xx then succeeds', async () => {
+    vi.useFakeTimers()
+    let calls = 0
+    const worker = vi.fn(async () => {
+      calls += 1
+      if (calls === 1) throw new ApiError(503, 'down')
+    })
+    const results = await settleFakeTimerBatch(
+      runBatch([1], worker, {
+        concurrency: 1,
+        perTaskDelayMs: 0,
+        transientBaseDelayMs: 50,
+        transientMaxDelayMs: 100,
+      }),
+    )
+    expect(results[0].ok).toBe(true)
+    expect(worker).toHaveBeenCalledTimes(2)
+  })
+
+  it('retries on network errors then succeeds', async () => {
+    vi.useFakeTimers()
+    let calls = 0
+    const worker = vi.fn(async () => {
+      calls += 1
+      // NetworkError sets status=0, kind='network' so it routes through
+      // the transient retry path. Constructing via `new ApiError(0, ...)`
+      // directly with kind: 'network' mimics that without dragging in the
+      // NetworkError ctor's "Network error: <cause>" message prefix.
+      if (calls === 1) throw new ApiError(0, '', { kind: 'network' })
+    })
+    const results = await settleFakeTimerBatch(
+      runBatch([1], worker, {
+        concurrency: 1,
+        perTaskDelayMs: 0,
+        transientBaseDelayMs: 50,
+        transientMaxDelayMs: 100,
+      }),
+    )
+    expect(results[0].ok).toBe(true)
+    expect(worker).toHaveBeenCalledTimes(2)
+  })
+
+  it('gives up on transient errors after maxRetriesOnTransient', async () => {
+    vi.useFakeTimers()
+    const worker = vi.fn(async () => {
+      throw new ApiError(500, 'down')
+    })
+    const results = await settleFakeTimerBatch(
+      runBatch([1], worker, {
+        concurrency: 1,
+        perTaskDelayMs: 0,
+        transientBaseDelayMs: 50,
+        transientMaxDelayMs: 100,
+        maxRetriesOnTransient: 1,
+      }),
+    )
+    expect(results[0].ok).toBe(false)
+    expect(worker).toHaveBeenCalledTimes(2) // 1 attempt + 1 retry
+  })
+
+  it('honors Retry-After header on 429 with the 1000ms minimum floor', async () => {
+    // parseRetryAfter enforces Math.max(1000, seconds * 1000): a small
+    // retry-after must not collapse the wait below 1s. Without this
+    // floor, runBatch can hammer 429 endpoints faster than they recover.
+    vi.useFakeTimers()
+    let calls = 0
+    const worker = vi.fn(async () => {
+      calls += 1
+      if (calls === 1) {
+        throw new ApiError(429, 'slow', { headers: { 'retry-after': '0.2' } })
+      }
+    })
+    // Drive timers manually so we can observe the wait window.
+    const promise = runBatch([1], worker, {
+      concurrency: 1,
+      perTaskDelayMs: 0,
+      defaultRetryAfterMs: 60_000,
+    })
+    // The Retry-After value is 0.2s but the floor is 1000ms — at 500ms
+    // the retry must not have fired yet.
+    await vi.advanceTimersByTimeAsync(500)
+    expect(worker).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(1_500)
+    const results = await promise
+    expect(results[0].ok).toBe(true)
+    expect(worker).toHaveBeenCalledTimes(2)
+  })
+
+  it('honors a large Retry-After header value verbatim', async () => {
+    vi.useFakeTimers()
+    let calls = 0
+    const worker = vi.fn(async () => {
+      calls += 1
+      if (calls === 1) {
+        throw new ApiError(429, 'slow', { headers: { 'retry-after': '5' } })
+      }
+    })
+    const promise = runBatch([1], worker, {
+      concurrency: 1,
+      perTaskDelayMs: 0,
+      defaultRetryAfterMs: 60_000,
+    })
+    // At 4 seconds the retry must not have fired yet.
+    await vi.advanceTimersByTimeAsync(4_000)
+    expect(worker).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(2_000)
+    const results = await promise
+    expect(results[0].ok).toBe(true)
+    expect(worker).toHaveBeenCalledTimes(2)
+  })
 })
