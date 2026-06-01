@@ -88,7 +88,7 @@ interface CredentialsContextValue {
   totalBudgetCount: number
   seats: CopilotSeat[]
   costCenters: CostCenter[]
-  /** Universal UBB (multi_user_customer scope) or null if not configured. */
+  /** Universal ULB (multi_user_customer scope) or null if not configured. */
   universalUbb: UniversalUbb | null
   setUniversalUbb: (u: UniversalUbb | null) => void
   /**
@@ -114,7 +114,7 @@ interface CredentialsContextValue {
    * `fetchCopilotUsageSummary({ costCenterId })` per CC in parallel. CCs
    * whose fetch failed are absent from the map (caller should treat as
    * unknown / show "—"). This is the authoritative per-CC MTD source —
-   * it covers individual UBB, universal UBB, and org-routed seats alike,
+   * it covers individual ULB, universal ULB, and org-routed seats alike,
    * unlike the user-budgets API which only reports individual-UBB users.
    */
   usageByCostCenterId: ReadonlyMap<string, CopilotUsageSummary>

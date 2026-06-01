@@ -58,7 +58,7 @@ describe('proposeLowerUniversalUbb cent-boundary direction', () => {
     const proposal = proposeLowerUniversalUbb(result, 11.5)
     expect(proposal).not.toBeNull()
     expect(proposal!.newValue).toBe(10.99)
-    expect(proposal!.label).toBe('Lower universal UBB to $10.99')
+    expect(proposal!.label).toBe('Lower universal ULB to $10.99')
     expect(proposal!.scope).toBe('universal_ubb')
   })
 
@@ -158,9 +158,9 @@ describe('proposeRaiseEnt', () => {
     expect(proposeRaiseEnt(r)).toBeNull()
   })
 
-  it('proposes the sum of CC budgets + unassigned UBBs (umbrella)', () => {
-    // CC "foo" with $50 budget; alice routed to it with universal UBB $10.
-    // bob is unassigned with universal UBB $10. Ent budget too low at $40.
+  it('proposes the sum of CC budgets + unassigned ULBs (umbrella)', () => {
+    // CC "foo" with $50 budget; alice routed to it with universal ULB $10.
+    // bob is unassigned with universal ULB $10. Ent budget too low at $40.
     const ccFoo = cc('cc1', 'foo')
     const r = computeBudgetConstraints(
       baseInput({
@@ -173,13 +173,13 @@ describe('proposeRaiseEnt', () => {
       }),
     )
     const proposal = proposeRaiseEnt(r)
-    // Required = sum CC budgets ($50) + unassigned UBBs (bob $10) = $60.
+    // Required = sum CC budgets ($50) + unassigned ULBs (bob $10) = $60.
     expect(proposal).not.toBeNull()
     expect(proposal!.newValue).toBe(60)
     expect(proposal!.scope).toBe('enterprise')
   })
 
-  it('proposes only Σ unassigned UBBs in independent mode', () => {
+  it('proposes only Σ unassigned ULBs in independent mode', () => {
     const ccFoo = cc('cc1', 'foo')
     const r = computeBudgetConstraints(
       baseInput({
@@ -226,7 +226,7 @@ describe('proposeRaiseCc', () => {
     expect(proposeRaiseCc(r, 'cc1')).toBeNull()
   })
 
-  it('proposes the sum of member UBBs when CC is over', () => {
+  it('proposes the sum of member ULBs when CC is over', () => {
     const ccFoo = cc('cc1', 'foo')
     const r = computeBudgetConstraints(
       baseInput({
@@ -314,7 +314,7 @@ describe('computeRequiredMinimums', () => {
     expect(computeRequiredMinimums(r).enterprise).toBeNull()
   })
 
-  it('sums CC budgets + unassigned UBBs in umbrella', () => {
+  it('sums CC budgets + unassigned ULBs in umbrella', () => {
     const ccFoo = cc('cc1', 'foo')
     const r = computeBudgetConstraints(
       baseInput({
@@ -331,7 +331,7 @@ describe('computeRequiredMinimums', () => {
     expect(min.perCc.get('cc1')).toBe(7) // alice's UBB
   })
 
-  it('only Σ unassigned UBBs in independent', () => {
+  it('only Σ unassigned ULBs in independent', () => {
     const ccFoo = cc('cc1', 'foo')
     const r = computeBudgetConstraints(
       baseInput({
@@ -346,7 +346,7 @@ describe('computeRequiredMinimums', () => {
     expect(computeRequiredMinimums(r).enterprise).toBe(7)
   })
 
-  it('individual UBBs override universal when computing required', () => {
+  it('individual ULBs override universal when computing required', () => {
     const r = computeBudgetConstraints(
       baseInput({
         enterpriseBudget: entBudget(1000),

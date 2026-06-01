@@ -103,7 +103,7 @@ export function parseUsageCsv(text: string): UsageRow[] {
 /**
  * Aggregated per-user AI-credit consumption derived from a usage report.
  * `aicConsumed` is the sum of `quantity` (in AIC units) across `copilot_ai_credit`
- * and `coding_agent_ai_credit` SKUs — what the universal UBB caps.
+ * and `coding_agent_ai_credit` SKUs — what the universal ULB caps.
  */
 export interface UserAicAggregate {
   username: string

@@ -103,7 +103,7 @@ describe('EnvelopeCheckCard', () => {
     )
     expect(screen.getByText(/within enterprise envelope/i)).toBeInTheDocument()
     expect(screen.getByText(/headroom/i)).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /snap ubb to max safe/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /snap ulb to max safe/i })).toBeNull()
     expect(screen.queryByRole('button', { name: /raise enterprise budget/i })).toBeNull()
   })
 
@@ -122,7 +122,7 @@ describe('EnvelopeCheckCard', () => {
     )
     expect(screen.getByText(/exceeds the enterprise envelope/i)).toBeInTheDocument()
     expect(screen.getByText(/over by/i)).toBeInTheDocument()
-    const snap = screen.getByRole('button', { name: /snap ubb to max safe/i })
+    const snap = screen.getByRole('button', { name: /snap ulb to max safe/i })
     fireEvent.click(snap)
     expect(onSnap).toHaveBeenCalledWith(5)
   })
@@ -139,14 +139,14 @@ describe('EnvelopeCheckCard', () => {
         onSnapToMaxSafe={() => {}}
       />,
     )
-    expect(screen.queryByRole('button', { name: /snap ubb to max safe/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /snap ulb to max safe/i })).toBeNull()
     // Raise enterprise budget remains as the actionable remediation.
     expect(screen.getByRole('button', { name: /raise enterprise budget/i })).toBeInTheDocument()
   })
 
   it('does not surface pre-existing failures the proposed UBB did not cause', () => {
-    // Pre-existing breach: an individual UBB already exceeds the small ent
-    // budget. The proposed universal UBB on a NEW seat is well within
+    // Pre-existing breach: an individual ULB already exceeds the small ent
+    // budget. The proposed universal ULB on a NEW seat is well within
     // headroom relative to baseline (baseline already over), so the card
     // should not blame the proposal.
     const seats: CopilotSeat[] = [seat('alice'), seat('bob')]
@@ -165,8 +165,8 @@ describe('EnvelopeCheckCard', () => {
     // Baseline leftover = 500 (alice). Preview leftover = 500 + 1 = 501.
     // Preview is worse than baseline so the card SHOULD flag this small
     // contribution. To exercise the "not blamed" branch we need the
-    // proposed UBB to not increase leftover. Use a seat that's already
-    // covered by an individual UBB → no contribution from the universal.
+    // proposed ULB to not increase leftover. Use a seat that's already
+    // covered by an individual ULB → no contribution from the universal.
     // (Re-test with only alice, who has an ind UBB.)
     const noContribution = baseInput({
       enterpriseBudget: entBudget(100),

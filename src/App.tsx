@@ -37,8 +37,8 @@ type Tab = 'dashboard' | 'overview' | 'individual' | 'universal' | 'budget-model
 const TAB_LABELS: Record<Tab, string> = {
   dashboard: 'Dashboard',
   overview: 'Enterprise Budgets',
-  individual: 'Individual UBBs',
-  universal: 'Universal UBB',
+  individual: 'Individual ULBs',
+  universal: 'Universal ULB',
   'budget-model': 'Budget model',
 }
 
@@ -98,7 +98,7 @@ export function App() {
   // Pending filter set by deep-link events (e.g. from ConstraintsBanner).
   // Cleared by IndividualUbbPage once consumed.
   const [pendingIndividualFilter, setPendingIndividualFilter] = useState<TableFilters | null>(null)
-  // Active task context shown as a contextual banner on the Individual UBBs
+  // Active task context shown as a contextual banner on the Individual ULBs
   // page so the user remembers what they came to fix.
   const [activeTask, setActiveTask] = useState<NavToIndividualTask | null>(null)
   // Active hint surfaced under the tab bar on the Budget model page after
@@ -191,7 +191,7 @@ export function App() {
     const handler = () => {
       setTab('universal')
       // Wait for the tab content to render, then flash the cap card so the
-      // user sees where to act after clicking 'Lower universal UBB to $X'.
+      // user sees where to act after clicking 'Lower universal ULB to $X'.
       window.requestAnimationFrame(() => {
         window.requestAnimationFrame(() => {
           const el = document.getElementById('uubb-cap')
@@ -376,7 +376,7 @@ export function App() {
           ) : tab === 'overview' ? (
             <ErrorBoundary label="Enterprise Budgets tab"><OverviewPage /></ErrorBoundary>
           ) : tab === 'individual' ? (
-            <ErrorBoundary label="Individual UBBs tab">
+            <ErrorBoundary label="Individual ULBs tab">
               <IndividualUbbPage
                 creating={creating}
                 onCreatingChange={setCreating}
@@ -394,7 +394,7 @@ export function App() {
               <BudgetConstraintsHelpPage onBack={() => goToTab('overview')} />
             </ErrorBoundary>
           ) : (
-            <ErrorBoundary label="Universal UBB tab"><UniversalUbbPage /></ErrorBoundary>
+            <ErrorBoundary label="Universal ULB tab"><UniversalUbbPage /></ErrorBoundary>
           )
         ) : null}
       </main>

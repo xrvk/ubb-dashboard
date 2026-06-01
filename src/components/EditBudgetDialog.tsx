@@ -34,7 +34,7 @@ export function EditBudgetDialog({ budget, open, onOpenChange, onSubmit }: Props
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
-        <DialogTitle>Edit individual UBB</DialogTitle>
+        <DialogTitle>Edit individual ULB</DialogTitle>
         <DialogDescription>
           Update the budget for <strong>{budget.user}</strong>. Hard stop is always enforced.
         </DialogDescription>

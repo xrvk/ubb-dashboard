@@ -1,6 +1,6 @@
 /**
  * Pure helpers for projecting monthly Copilot spend and recommending a new
- * individual UBB cap. Used by the bulk "Unblock for month" flow.
+ * individual ULB cap. Used by the bulk "Unblock for month" flow.
  */
 
 export interface MonthlyProjection {

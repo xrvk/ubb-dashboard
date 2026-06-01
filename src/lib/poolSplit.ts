@@ -1,8 +1,8 @@
 /**
  * Pool-allocation math shared between the Budget Planner and the Dashboard
  * donut. Without a single source these surfaces drift; the planner uses
- * `row.floor` (= Σ effective UBBs in the CC) while the donut needs the
- * same number framed as a "UBB ceiling" slice of the enterprise pool.
+ * `row.floor` (= Σ effective ULBs in the CC) while the donut needs the
+ * same number framed as a "ULB ceiling" slice of the enterprise pool.
  */
 
 import {
@@ -30,7 +30,7 @@ export interface CcSlice {
   name: string
   /** Configured CC budget, or null if uncapped. */
   budgetAmount: number | null
-  /** Σ effective UBBs of seats routed to this CC. The "UBB ceiling". */
+  /** Σ effective ULBs of seats routed to this CC. The "ULB ceiling". */
   ubbCeiling: number
   seatCount: number
   /**
@@ -59,7 +59,7 @@ export interface PoolSplit {
 
 /**
  * Derive the enterprise-pool split: how much of the ent budget each CC is
- * committed to draw (capped by either its own budget or its UBB ceiling),
+ * committed to draw (capped by either its own budget or its ULB ceiling),
  * plus the un-assigned bucket and remaining headroom.
  */
 export function computePoolSplit(input: PoolSplitInput): PoolSplit {

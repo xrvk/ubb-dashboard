@@ -18,7 +18,7 @@ describe('mutation-resistance: applyThreshold equality boundary', () => {
   it('classifies users exactly AT the threshold as power users (>=, not >)', () => {
     // If anyone flips `>=` to `>` in applyThreshold, the two users at
     // exactly 1000 quietly fall into `regularUsers` and the recommended
-    // universal UBB shifts.
+    // universal ULB shifts.
     const r = applyThreshold([u('a', 1000), u('b', 999), u('c', 1000)], 1000)
     expect(r.powerUserCount).toBe(2)
     expect(r.regularUserCount).toBe(1)

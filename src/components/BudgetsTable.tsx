@@ -275,7 +275,7 @@ export function BudgetsTable({ budgets, filters, onFiltersChange, onEdit, onDele
       <CardHeader className="flex flex-col gap-3">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <CardTitle className="text-base font-semibold text-neutral-900 dark:text-neutral-100">
-            Individual UBBs ({allRows.length.toLocaleString()})
+            Individual ULBs ({allRows.length.toLocaleString()})
           </CardTitle>
           <div className="flex flex-wrap items-center gap-2">
             <div className="flex gap-1 p-1 rounded-md bg-neutral-100 dark:bg-neutral-800">
@@ -477,7 +477,7 @@ export function BudgetsTable({ budgets, filters, onFiltersChange, onEdit, onDele
             {rows.length === 0 ? (
               <tr>
                 <td colSpan={costCenters.length > 0 ? 8 : 7} className="px-3 py-8 text-center text-sm text-neutral-500">
-                  No matching individual UBBs.
+                  No matching individual ULBs.
                 </td>
               </tr>
             ) : (

@@ -63,7 +63,7 @@ export function rollFillerSeatCount(name: string): number {
 /**
  * Per-seat consumption baseline used when sizing budgets so a "healthy"
  * filler CC's budget really does cover its expected projected spend.
- * Mirrors the universal UBB seed value the demo plants (`$50`).
+ * Mirrors the universal ULB seed value the demo plants (`$50`).
  */
 export const DEMO_FILLER_PER_SEAT_SPEND = 50
 

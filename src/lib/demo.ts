@@ -216,8 +216,8 @@ export function generateDemoSeats(count: number, ccCount?: number) {
   // least one seat to appear in pool-split surfaces (`computePoolSplit`
   // skips zero-seat CCs in poolSplit.ts), and on the Dashboard "CCs
   // routing Copilot" list. Logins are namespaced so they don't collide
-  // with `demo-user-NNNN` — they have no individual UBB, so their
-  // effective cap falls back to the universal UBB amount. Seat counts
+  // with `demo-user-NNNN` — they have no individual ULB, so their
+  // effective cap falls back to the universal ULB amount. Seat counts
   // are rolled deterministically from the CC name via `rollFillerSeatCount`
   // so a) every reload renders the same demo, and b) the Dashboard sort
   // dropdown has a meaningful spread of CC sizes to sort by (5–50 seats,
@@ -245,7 +245,7 @@ export function generateDemoSeats(count: number, ccCount?: number) {
  * Build a deterministic set of cost centers that, combined with the demo
  * budgets above, trip exactly two common constraint failures in the banner:
  *
- *   1. per_cc — platform-eng's members' effective UBBs exceed its CC budget.
+ *   1. per_cc — platform-eng's members' effective ULBs exceed its CC budget.
  *   2. cc_vs_enterprise — the sum of all four CC budgets exceeds the
  *      enterprise envelope.
  *
@@ -253,7 +253,7 @@ export function generateDemoSeats(count: number, ccCount?: number) {
  * seat counts resolving from both bases (User and Org are not mutually
  * exclusive in production data):
  *   - platform-eng: User resources (the override-bearing user range so
- *     per-user effective UBBs overrun the CC cap).
+ *     per-user effective ULBs overrun the CC cap).
  *   - data-platform / devx / security: Org resources (seats whose orgLogin
  *     matches resolve via the org path).
  *
@@ -308,7 +308,7 @@ export function generateDemoEnterpriseBudget(opts?: { excludeCostCenterUsage?: b
 export function generateDemoUniversalUbb(budgets?: UserBudget[]): UniversalUbb {
   // Mirror the universal share assumed by generateDemoUsageSummary (18% of
   // individual consumption). Without this, the Forecast Breakdown card
-  // shows Universal UBB at $0 in default demo mode, which contradicts the
+  // shows Universal ULB at $0 in default demo mode, which contradicts the
   // pool drawdown the usage summary reports.
   const indivConsumed = (budgets ?? []).reduce((s, b) => s + b.consumedAmount, 0)
   const consumed = Math.round(indivConsumed * 0.18 * 100) / 100
@@ -323,7 +323,7 @@ export function generateDemoUniversalUbb(budgets?: UserBudget[]): UniversalUbb {
 }
 
 /**
- * Scale the consumed amounts on demo budgets + universal UBB so that their
+ * Scale the consumed amounts on demo budgets + universal ULB so that their
  * sum matches `targetDollars`. Mutates inputs in place. Used when the demo
  * is told (via `?pool=N`) to show a partially-drawn pool.
  *
@@ -367,7 +367,7 @@ export function scaleDemoConsumptionTo(
  * Every CC carries a budget so the unassignedLeftover check stays vacuous.
  * Numbers sit in the realistic $3k–$8k per-CC band but their sum ($20k) is
  * deliberately above the $9k enterprise cap — that's the cc_vs_enterprise
- * breach. platform-eng's $5k cap is intentionally below the effective UBB
+ * breach. platform-eng's $5k cap is intentionally below the effective ULB
  * sum of its ~100 override-bearing members, which trips per_cc on it alone.
  */
 export function generateDemoCostCenterBudgets(extraCcs?: CostCenter[]): Map<string, CostCenterBudget> {
@@ -504,7 +504,7 @@ export function generateDemoUsageSummary(
 
 /**
  * Build 2 months of synthetic per-user AIC aggregates so demo mode lands on
- * the Universal UBB planner with usable data. Without this, the planner is
+ * the Universal ULB planner with usable data. Without this, the planner is
  * empty until the user manually uploads a CSV.
  *
  * The distribution mirrors the budget tiers used elsewhere in demo:

@@ -180,7 +180,7 @@ export function BulkUnblockDialog({ open, onOpenChange, selected, onApply }: Pro
           </span>
         </DialogTitle>
         <DialogDescription>
-          Raise each user's individual UBB so they remain unblocked through month-end. The
+          Raise each user's individual ULB so they remain unblocked through month-end. The
           recommendation projects this month's usage from their current daily rate and adds
           your growth buffer.
         </DialogDescription>
@@ -379,8 +379,8 @@ export function BulkUnblockDialog({ open, onOpenChange, selected, onApply }: Pro
         <div className="flex items-start gap-2 text-xs mt-3 p-3 rounded-md border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800/50">
           <Warning size={16} weight="duotone" className="text-neutral-500 dark:text-neutral-400 mt-0.5 shrink-0" />
           <p className="text-neutral-700 dark:text-neutral-200">
-            This only raises individual UBBs. Cost center and enterprise budgets can still
-            block these users before they reach their new UBB ceiling.
+            This only raises individual ULBs. Cost center and enterprise budgets can still
+            block these users before they reach their new ULB ceiling.
           </p>
         </div>
 
