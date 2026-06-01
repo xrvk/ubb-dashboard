@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, it, expect, beforeEach } from 'vitest'
 import {
   saveSnapshot,
@@ -114,6 +115,51 @@ describe('snapshot JSON serialization', () => {
   it('rejects empty entries', () => {
     const snap = makeSnap({ entries: [] })
     const result = parseSnapshot(serializeSnapshot(snap))
+    expect(result.ok).toBe(false)
+  })
+
+  // --- Reject non-finite numeric fields. Previously parseSnapshot only
+  // checked `typeof x === 'number'`, which accepts both NaN and Infinity.
+  // A corrupt or hand-crafted file with NaN amounts would otherwise feed
+  // into the rollback flow and render as "$NaN" in the UI. ---
+
+  it('rejects NaN in entry previousAmount', () => {
+    // JSON.stringify turns NaN into null, so we craft the JSON by hand.
+    const json = JSON.stringify({
+      schemaVersion: 1,
+      id: 'snap-1',
+      enterprise: ent,
+      appliedAt: Date.now(),
+      cycleEndsAt: Date.now() + 1000,
+      entries: [{ budgetId: 'b1', user: 'u1', previousAmount: 0, newAmount: 10 }],
+    }).replace('"previousAmount":0', '"previousAmount":NaN')
+    const result = parseSnapshot(json)
+    expect(result.ok).toBe(false)
+  })
+
+  it('rejects Infinity in entry newAmount', () => {
+    const json = JSON.stringify({
+      schemaVersion: 1,
+      id: 'snap-1',
+      enterprise: ent,
+      appliedAt: Date.now(),
+      cycleEndsAt: Date.now() + 1000,
+      entries: [{ budgetId: 'b1', user: 'u1', previousAmount: 0, newAmount: 0 }],
+    }).replace('"newAmount":0', '"newAmount":Infinity')
+    const result = parseSnapshot(json)
+    expect(result.ok).toBe(false)
+  })
+
+  it('rejects NaN in top-level appliedAt timestamp', () => {
+    const json = JSON.stringify({
+      schemaVersion: 1,
+      id: 'snap-1',
+      enterprise: ent,
+      appliedAt: 0,
+      cycleEndsAt: 0,
+      entries: [{ budgetId: 'b1', user: 'u1', previousAmount: 1, newAmount: 2 }],
+    }).replace('"appliedAt":0', '"appliedAt":NaN')
+    const result = parseSnapshot(json)
     expect(result.ok).toBe(false)
   })
 })

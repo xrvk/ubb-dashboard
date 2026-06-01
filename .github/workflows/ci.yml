@@ -12,29 +12,12 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  lint:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-      - run: npm ci
-      - run: npm run lint
-
-  typecheck:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-      - run: npm ci
-      - run: npm run typecheck
-
-  test:
+  # Single job: install once, then fan out lint/typecheck/test in
+  # parallel via npm-run-all. For this repo `npm ci` dominates wall
+  # time (~30-60s) and the work itself is tiny (~5-15s), so merging
+  # 4 jobs into 1 saves 3 cold installs per PR. Re-split if any of
+  # lint/typecheck/test/build ever grows to multi-minute runtimes.
+  checks:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -42,18 +25,10 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version-file: '.nvmrc'
           cache: 'npm'
-      - run: npm ci
-      - run: npm test
-
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-      - run: npm ci
-      - run: npm run build
+      - run: npm ci --prefer-offline --no-audit --no-fund
+      - name: Lint, typecheck, and test (parallel, labeled output)
+        run: npm run verify
+      - name: Build (vite only — typecheck already ran in verify)
+        run: npm run build:ci
