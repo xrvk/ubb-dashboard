@@ -19,34 +19,24 @@ Prefills the **Enterprise URL** field on the connect form. Useful when
 sharing onboarding links or pointing a colleague at the right
 enterprise. The user still has to paste their PAT and click Connect.
 
-Accepts either:
+The easiest way to generate one of these links is to connect to your
+enterprise, open the connection menu in the top-right, and choose
+**Copy shareable link** — it builds the right form for your host
+automatically.
 
-- A bare slug: `?ent=octodemo` →
+Manual construction supports two shapes:
+
+- **Bare slug** (github.com only): `?ent=octodemo` →
   `https://github.com/enterprises/octodemo`
-- A full URL:
-  `?ent=https://github.com/enterprises/octodemo` or
-  `?ent=https://customer.ghe.com/enterprises/octodemo`
+- **Full URL** (any trusted host, including GHE.com):
+  - `?ent=https://github.com/enterprises/octodemo`
+  - `?ent=https://customer.ghe.com/enterprises/octodemo`
 
-Invalid values (random garbage, non-GitHub hosts, etc.) are silently
-ignored — the form stays usable and falls back to the
-`VITE_DEV_ENTERPRISE_URL` default if one is set, or empty otherwise.
-
-### `?host=...` — Pick a GHE.com tenant
-
-Companion to `?ent=` for GitHub Enterprise Cloud with data residency
-(GHE.com). Only matters when `?ent=` is a bare slug; ignored when
-`?ent=` is already a full URL.
-
-Must be `github.com` or `<tenant>.ghe.com`. If `?host=` is passed but
-points at an untrusted host (e.g. `evil.com`), the entire prefill is
-rejected and the form falls back to its default — we deliberately
-don't silently swap in `github.com`, because that would route the
-user somewhere they didn't ask for. Example:
-
-```
-?ent=octodemo&host=customer.ghe.com
-→ https://customer.ghe.com/enterprises/octodemo
-```
+GHE.com tenants always use the full-URL form so the link routes to
+the correct host. Invalid values (random garbage, non-GitHub hosts,
+slugs with disallowed characters) are silently ignored — the form
+stays usable and falls back to the `VITE_DEV_ENTERPRISE_URL` default
+if one is set, or empty otherwise.
 
 ## For developers and testing
 
@@ -103,8 +93,6 @@ exposes.
 
 Params stack. Examples:
 
-- `?ent=octodemo&host=customer.ghe.com` — prefill the GHE.com connect
-  form.
 - `?demo=150&pool=75` — demo mode, 150 users, pool 75% full.
 - `?demo=150&debug=1` — demo mode with the data overlay on.
 

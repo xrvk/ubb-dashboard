@@ -1,14 +1,4 @@
-import { parseEnterpriseUrl } from './api'
-
-/**
- * Allowlist of hosts the connect form will prefill against. Matches
- * `ALLOWED_API_HOST` in `api.ts` (minus the `api.` prefix that's added
- * when the URL is converted to an API base). Keeping these two regexes
- * in lockstep matters: if the prefill produces a value the API base
- * sanitizer would reject, connecting would fail with a confusing
- * "untrusted host" error.
- */
-const ALLOWED_ENTERPRISE_HOST = /^(github\.com|[a-z0-9-]+\.ghe\.com)$/i
+import { parseEnterpriseUrl, type Credentials } from './api'
 
 /**
  * Optional `?ent=...` query param that prefills the Enterprise URL field
@@ -17,14 +7,9 @@ const ALLOWED_ENTERPRISE_HOST = /^(github\.com|[a-z0-9-]+\.ghe\.com)$/i
  *   - a bare slug (`?ent=octodemo`) → normalized to
  *     `https://github.com/enterprises/octodemo`, or
  *   - a full URL (`?ent=https://github.com/enterprises/octodemo` or
- *     `?ent=https://customer.ghe.com/enterprises/octodemo`) → used as-is
- *     after validation.
- *
- * The companion `?host=...` param lets users target a specific GHE.com
- * tenant with a bare slug: `?ent=octodemo&host=customer.ghe.com`
- * resolves to `https://customer.ghe.com/enterprises/octodemo`. `?host`
- * is ignored when `?ent` is already a full URL, and falls back to
- * `github.com` when missing or pointed at an unsupported host.
+ *     `?ent=https://customer.ghe.com/enterprises/octodemo`) → used
+ *     as-is after validation. GHE.com tenants share their pre-fill
+ *     link in this form.
  *
  * Invalid values (garbage, unparseable URLs, slugs with disallowed
  * characters, non-GitHub hosts) return `null` so the caller can fall
@@ -43,8 +28,8 @@ export function readEnterpriseUrlFromUrl(): string | null {
   if (!trimmed) return null
 
   // If it looks like a URL, validate it directly. `parseEnterpriseUrl`
-  // does the host check via the same allowlist used by the API base
-  // sanitizer, so a `?host=` companion would be redundant here.
+  // enforces the same host allowlist used by the API base sanitizer,
+  // so we don't need a separate host check here.
   if (/^https?:\/\//i.test(trimmed)) {
     return parseEnterpriseUrl(trimmed) ? trimmed : null
   }
@@ -53,27 +38,37 @@ export function readEnterpriseUrlFromUrl(): string | null {
   // character set that matches what GitHub allows in enterprise slugs;
   // this also rules out path traversal / query / fragment injection.
   if (!/^[A-Za-z0-9._-]+$/.test(trimmed)) return null
-  const host = readHostParam(params)
-  // `host` is `false` when the user passed `?host=` with a bad value.
-  // Reject the whole prefill in that case so we fall back to the env
-  // default — silently swapping in github.com would be misleading.
-  if (host === false) return null
-  const candidate = `https://${host ?? 'github.com'}/enterprises/${trimmed}`
+  const candidate = `https://github.com/enterprises/${trimmed}`
   return parseEnterpriseUrl(candidate) ? candidate : null
 }
 
 /**
- * Read and validate `?host=`. Returns:
- *   - `null` when the param is absent or empty (caller picks a default),
- *   - `false` when the param is present but points at a host we don't
- *     trust (caller should bail out entirely),
- *   - the normalized host string when valid.
+ * Build a shareable link that pre-fills the Enterprise URL on the
+ * connect form. Returns `null` for demo credentials (nothing real to
+ * share) or when the API base can't be parsed.
+ *
+ * github.com tenants get the short `?ent=<slug>` form; GHE.com tenants
+ * get the full-URL form so the recipient lands on the right host even
+ * without a `?host=` companion.
  */
-function readHostParam(params: URLSearchParams): string | false | null {
-  const raw = params.get('host')
-  if (raw === null) return null
-  const trimmed = raw.trim().toLowerCase()
-  if (!trimmed) return null
-  if (!ALLOWED_ENTERPRISE_HOST.test(trimmed)) return false
-  return trimmed
+export function buildShareableEnterpriseUrl(
+  credentials: Credentials,
+  origin: string,
+  pathname: string,
+): string | null {
+  if (credentials.base === 'demo://') return null
+  let host: string
+  try {
+    host = new URL(credentials.base).host
+  } catch {
+    return null
+  }
+  // API bases are `api.<webhost>`; strip the prefix to recover the
+  // user-facing host (`github.com` or `<tenant>.ghe.com`).
+  const webHost = host.startsWith('api.') ? host.slice(4) : host
+  const entValue =
+    webHost === 'github.com'
+      ? credentials.ent
+      : `https://${webHost}/enterprises/${credentials.ent}`
+  return `${origin}${pathname}?ent=${encodeURIComponent(entValue)}`
 }

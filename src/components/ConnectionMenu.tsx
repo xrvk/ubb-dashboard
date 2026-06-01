@@ -3,6 +3,7 @@ import {
   ArrowsClockwise,
   ArrowsLeftRight,
   CaretDown,
+  LinkSimple,
   PlugsConnected,
   SignOut,
 } from '@phosphor-icons/react'
@@ -26,6 +27,12 @@ interface ConnectionMenuProps {
   onSwitchProfile?: (profile: DevProfile) => void
   /** Host of the currently connected enterprise URL, used to mark the active profile. */
   currentHost?: string
+  /**
+   * Optional handler for copying a shareable pre-fill link. When
+   * omitted (e.g. demo mode, or no parseable host), the menu item is
+   * hidden — there's nothing useful to share.
+   */
+  onCopyShareLink?: () => void
 }
 
 /**
@@ -46,6 +53,7 @@ export function ConnectionMenu({
   devProfiles = [],
   onSwitchProfile,
   currentHost,
+  onCopyShareLink,
 }: ConnectionMenuProps) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
@@ -171,6 +179,20 @@ export function ConnectionMenu({
             </div>
           ) : null}
           <div className={cn(showProfiles && 'border-t border-neutral-200 dark:border-neutral-800 mt-1 pt-1')}>
+            {onCopyShareLink ? (
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setOpen(false)
+                  onCopyShareLink()
+                }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left hover:bg-neutral-100 dark:hover:bg-neutral-800"
+              >
+                <LinkSimple size={14} weight="duotone" />
+                Copy shareable link
+              </button>
+            ) : null}
             <button
               type="button"
               role="menuitem"

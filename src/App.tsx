@@ -18,6 +18,7 @@ import { CopyErrorLogButton } from '@/components/CopyErrorLogButton'
 import { Button } from '@/components/ui/button'
 import { cn, openExternal } from '@/lib/utils'
 import { describeError, isAborted } from '@/lib/errors'
+import { buildShareableEnterpriseUrl } from '@/lib/urlParams'
 import { EMPTY_FILTERS, type TableFilters } from '@/components/BudgetsTable'
 import {
   NAV_TO_BUDGET_MODEL_EVENT,
@@ -305,6 +306,32 @@ export function App() {
                   void switchProfile(p)
                 }}
                 currentHost={credentials.base !== 'demo://' ? new URL(credentials.base).host : undefined}
+                onCopyShareLink={
+                  credentials.base === 'demo://'
+                    ? undefined
+                    : () => {
+                        const link = buildShareableEnterpriseUrl(
+                          credentials,
+                          window.location.origin,
+                          window.location.pathname,
+                        )
+                        if (!link) {
+                          toast.error("Couldn't build a shareable link for this connection.")
+                          return
+                        }
+                        void navigator.clipboard
+                          .writeText(link)
+                          .then(() =>
+                            toast.success('Link copied', {
+                              description:
+                                'Recipients will see your enterprise URL pre-filled but still need their own PAT.',
+                            }),
+                          )
+                          .catch(() =>
+                            toast.error("Couldn't copy to clipboard", { description: link }),
+                          )
+                      }
+                }
               />
             </div>
           </div>

@@ -309,7 +309,9 @@ On connect, the app fetches every budget and every Copilot seat in your enterpri
 
 ### Pre-fill the enterprise URL via a shareable link
 
-Solutions Engineers and admins can send teammates a link that pre-fills the Enterprise URL field on the connect screen. The recipient still needs to paste their own PAT — credentials are never in the URL.
+The easiest way to generate one of these links is from inside the app: connect to your enterprise, open the connection menu in the top-right, and choose **Copy shareable link**. The result pre-fills the Enterprise URL field on the connect screen for the recipient — they still need to paste their own PAT, since credentials are never in the URL.
+
+Manual construction works too:
 
 **github.com:**
 
@@ -317,13 +319,7 @@ Solutions Engineers and admins can send teammates a link that pre-fills the Ente
 https://xrvk.github.io/ubb-dashboard/?ent=acme-corp
 ```
 
-**GHE.com (data residency tenants):**
-
-```
-https://xrvk.github.io/ubb-dashboard/?ent=acme-corp&host=acme.ghe.com
-```
-
-Or pass the full URL directly:
+**GHE.com (data residency tenants):** use the full URL form so the link routes to the right host.
 
 ```
 https://xrvk.github.io/ubb-dashboard/?ent=https://acme.ghe.com/enterprises/acme-corp

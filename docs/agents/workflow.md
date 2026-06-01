@@ -36,8 +36,7 @@ Demo mode is URL-driven and stacks. Append any combination to
 | `?exclude=0` / `?exclude=1` | Include / exclude CC-bucketed usage from the individual list. Default is `1` (excluded) since CC users aren't individually-budgeted. |
 | `?asof=YYYY-MM-DD` | Pin the synthetic "today" so screenshots and time-elapsed math stay stable. Default is "5 days before month end" of the current real month. |
 | `?debug=1` | Show the dashboard data overlay (origins + raw values for each tile). See `dashboard-data-flow.md`. |
-| `?ent=...` | Prefill the Enterprise URL field on the connect form (bare slug or full URL). Ignored in demo mode. |
-| `?host=...` | Companion to `?ent=` for GHE.com tenants. See `docs/url-parameters.md`. |
+| `?ent=...` | Prefill the Enterprise URL field on the connect form (bare slug for github.com, full URL for GHE.com). Ignored in demo mode. See `docs/url-parameters.md`. |
 
 The default demo (`?demo=150`) is the canonical scenario for
 screenshots: 5 days to month end, ~8/10/14/22/46 distribution across
