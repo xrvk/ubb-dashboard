@@ -232,12 +232,12 @@ This file is gitignored and never persisted anywhere else.
 If you regularly bounce between enterprises (e.g. a staging GHE.com tenant + a production GHEC enterprise), drop one file per profile alongside `.env.local`:
 
 ```bash
-# .env.tbb-staffship.local
-VITE_DEV_ENTERPRISE_URL=https://tbb-staffship.ghe.com/enterprises/tbb-staffship
+# .env.staging.local
+VITE_DEV_ENTERPRISE_URL=https://your-host.ghe.com/enterprises/your-staging-slug
 VITE_DEV_PAT=ghp_xxxxxxxxxxxxxxxxx
 
-# .env.octodemo.local
-VITE_DEV_ENTERPRISE_URL=https://github.com/enterprises/octodemo
+# .env.prod.local
+VITE_DEV_ENTERPRISE_URL=https://github.com/enterprises/your-prod-slug
 VITE_DEV_PAT=ghp_yyyyyyyyyyyyyyyyy
 ```
 

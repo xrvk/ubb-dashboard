@@ -13,8 +13,8 @@ afterEach(() => {
 
 describe('readEnterpriseUrlFromUrl', () => {
   it('normalizes a bare slug to a full github.com enterprises URL', () => {
-    setSearch('?ent=octodemo')
-    expect(readEnterpriseUrlFromUrl()).toBe('https://github.com/enterprises/octodemo')
+    setSearch('?ent=acme')
+    expect(readEnterpriseUrlFromUrl()).toBe('https://github.com/enterprises/acme')
   })
 
   it('passes through a full github.com enterprise URL unchanged', () => {

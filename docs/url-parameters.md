@@ -26,11 +26,11 @@ automatically.
 
 Manual construction supports two shapes:
 
-- **Bare slug** (github.com only): `?ent=octodemo` →
-  `https://github.com/enterprises/octodemo`
+- **Bare slug** (github.com only): `?ent=acme` →
+  `https://github.com/enterprises/acme`
 - **Full URL** (any trusted host, including GHE.com):
-  - `?ent=https://github.com/enterprises/octodemo`
-  - `?ent=https://customer.ghe.com/enterprises/octodemo`
+  - `?ent=https://github.com/enterprises/acme`
+  - `?ent=https://customer.ghe.com/enterprises/acme`
 
 GHE.com tenants always use the full-URL form so the link routes to
 the correct host. Invalid values (random garbage, non-GitHub hosts,

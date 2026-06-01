@@ -4,10 +4,10 @@ import { parseEnterpriseUrl, type Credentials } from './api'
  * Optional `?ent=...` query param that prefills the Enterprise URL field
  * in the connect form. Accepts either:
  *
- *   - a bare slug (`?ent=octodemo`) → normalized to
- *     `https://github.com/enterprises/octodemo`, or
- *   - a full URL (`?ent=https://github.com/enterprises/octodemo` or
- *     `?ent=https://customer.ghe.com/enterprises/octodemo`) → used
+ *   - a bare slug (`?ent=acme`) → normalized to
+ *     `https://github.com/enterprises/acme`, or
+ *   - a full URL (`?ent=https://github.com/enterprises/acme` or
+ *     `?ent=https://customer.ghe.com/enterprises/acme`) → used
  *     as-is after validation. GHE.com tenants share their pre-fill
  *     link in this form.
  *
