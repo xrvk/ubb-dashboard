@@ -44,7 +44,7 @@ gates this purely by date — there is no per-enterprise opt-in field.
 │  └── gross AIC MTD ──┘                                             │
 │                                                                    │
 │  drained first by *any* Copilot user, regardless of which CC or    │
-│  UBB scope they belong to                                          │
+│  ULB scope they belong to                                          │
 └────────────────────────────────────────────────────────────────────┘
                                   │
                                   ▼ (pool exhausted)
@@ -55,7 +55,7 @@ Key properties:
 
 1. **Pool is enterprise-wide and fungible.** A CC's users still drain
    the shared pool. Cost center budgets don't reserve pool credits.
-2. **No per-user pool slice.** A user with no UBB and a heavy day can
+2. **No per-user pool slice.** A user with no ULB and a heavy day can
    consume credits that "belonged" (conceptually) to other seats.
 3. **Drainage is gross, not net.** A $100 raw event followed by a $20
    credit/refund still drains the pool by $100 in the gross MTD column
