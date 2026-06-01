@@ -40,7 +40,17 @@ export function ImportPanel() {
             />
           </label>
           <label className="text-sm grid gap-1">
-            <span className="text-neutral-600 dark:text-neutral-400">Personal access token</span>
+            <span className="flex items-center justify-between gap-2 text-neutral-600 dark:text-neutral-400">
+              <span>Personal access token</span>
+              <a
+                href="https://github.com/settings/tokens"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs font-normal text-blue-600 hover:underline dark:text-blue-400"
+              >
+                Create one ↗
+              </a>
+            </span>
             <Input
               required
               type="password"
