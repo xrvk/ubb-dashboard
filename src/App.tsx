@@ -8,6 +8,7 @@ import { ImportPanel } from '@/components/ImportPanel'
 import { IndividualUbbPage } from '@/components/IndividualUbbPage'
 import { IndividualUbbTaskBanner } from '@/components/IndividualUbbTaskBanner'
 import { BudgetPlannerHintBanner } from '@/components/BudgetPlannerHintBanner'
+import { LoadProgressBanner } from '@/components/LoadProgressBanner'
 import { OverviewPage } from '@/components/OverviewPage'
 import { DashboardPage } from '@/components/DashboardPage'
 import { UniversalUbbPage } from '@/components/UniversalUbbPage'
@@ -41,7 +42,7 @@ const TAB_LABELS: Record<Tab, string> = {
 }
 
 export function App() {
-  const { credentials, refresh, disconnect, loading, devProfiles, switchProfile, partialLoadWarnings, dismissPartialLoadWarning } = useCredentials()
+  const { credentials, refresh, disconnect, loading, loadProgress, devProfiles, switchProfile, partialLoadWarnings, dismissPartialLoadWarning } = useCredentials()
   const { theme, resolvedTheme, setTheme } = useTheme()
 
   /**
@@ -311,7 +312,15 @@ export function App() {
         </div>
       ) : null}
 
-      {credentials && tab === 'individual' && activeTask ? (
+      {loading && loadProgress ? (
+        <div className="sticky top-[49px] z-10 border-b border-neutral-200 dark:border-neutral-800 bg-white/95 dark:bg-neutral-950/95 backdrop-blur supports-[backdrop-filter]:bg-white/80 dark:supports-[backdrop-filter]:bg-neutral-950/80">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 py-2">
+            <LoadProgressBanner loaded={loadProgress.loaded} total={loadProgress.total} />
+          </div>
+        </div>
+      ) : null}
+
+      {credentials && !loading && tab === 'individual' && activeTask ? (
         <div className="sticky top-[49px] z-10 border-b border-neutral-200 dark:border-neutral-800 bg-white/95 dark:bg-neutral-950/95 backdrop-blur supports-[backdrop-filter]:bg-white/80 dark:supports-[backdrop-filter]:bg-neutral-950/80">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 py-2">
             <IndividualUbbTaskBanner task={activeTask} onDismiss={() => setActiveTask(null)} />
@@ -319,7 +328,7 @@ export function App() {
         </div>
       ) : null}
 
-      {credentials && tab === 'budget-model' && plannerHint ? (
+      {credentials && !loading && tab === 'budget-model' && plannerHint ? (
         <div className="sticky top-[49px] z-10 border-b border-neutral-200 dark:border-neutral-800 bg-white/95 dark:bg-neutral-950/95 backdrop-blur supports-[backdrop-filter]:bg-white/80 dark:supports-[backdrop-filter]:bg-neutral-950/80">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 py-2">
             <BudgetPlannerHintBanner hint={plannerHint} onDismiss={() => setPlannerHint(null)} />
