@@ -5,8 +5,8 @@ Thanks for considering a contribution!
 ## Quick start
 
 ```bash
-git clone https://github.com/xrvk/ind-ulb-dashboard.git
-cd ind-ulb-dashboard
+git clone https://github.com/xrvk/ubb-dashboard.git
+cd ubb-dashboard
 npm install
 npm run dev   # localhost:5003
 ```

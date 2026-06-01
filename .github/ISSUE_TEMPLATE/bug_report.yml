@@ -49,7 +49,7 @@ body:
   - type: input
     id: scale
     attributes:
-      label: Roughly how many individual ULBs were loaded?
+      label: Roughly how many individual UBBs were loaded?
       description: e.g. 7, 200, 9800
       placeholder: e.g. 200
 

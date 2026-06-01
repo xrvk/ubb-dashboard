@@ -30,16 +30,16 @@ import { DebugBadge, type DebugInfo } from './DebugBadge'
 /**
  * Top-level Dashboard. Single-screen rollup of the enterprise's AI credit
  * posture: where the pool is committed, how budgets compare to effective
- * caps, where spend is trending, ULB coverage, and license cost context.
+ * caps, where spend is trending, UBB coverage, and license cost context.
  *
  * Every section here is read-only — editing happens on the dedicated tabs
- * (Enterprise Budgets, Universal ULB, Individual ULBs) — so the dashboard
+ * (Enterprise Budgets, Universal UBB, Individual UBBs) — so the dashboard
  * can stay focused on signal rather than form fields.
  */
 export function DashboardPage() {
   const {
     enterpriseBudget,
-    universalUlb,
+    universalUbb,
     costCenters,
     costCenterBudgetsByName,
     seats,
@@ -53,20 +53,20 @@ export function DashboardPage() {
     () =>
       computePoolSplit({
         enterpriseBudget,
-        universalUlb,
+        universalUbb,
         costCenters,
         ccBudgetsByName: costCenterBudgetsByName,
         seats,
         userBudgets: budgets,
       }),
-    [enterpriseBudget, universalUlb, costCenters, costCenterBudgetsByName, seats, budgets],
+    [enterpriseBudget, universalUbb, costCenters, costCenterBudgetsByName, seats, budgets],
   )
 
   const demoAsof = useMemo(() => getEffectiveDemoAsof() ?? undefined, [])
   const forecast = useMemo(() => forecastSummary(budgets, demoAsof), [budgets, demoAsof])
   const seatCost = useMemo(() => seatCostBreakdown(seats), [seats])
 
-  /** How many seats are covered by an individual ULB (have a user-scope budget). */
+  /** How many seats are covered by an individual UBB (have a user-scope budget). */
   const indCoverage = useMemo(() => {
     const seatLogins = new Set(seats.map(s => s.login.toLowerCase()))
     let withInd = 0
@@ -79,22 +79,22 @@ export function DashboardPage() {
   /**
    * Forecast breakdown across the two budget scopes that report
    * `consumed_amount` via the budgets API:
-   *   • `multi_user_customer` (universal ULB)
-   *   • `user` (individual ULBs)
+   *   • `multi_user_customer` (universal UBB)
+   *   • `user` (individual UBBs)
    *
    * Note: `enterprise`- and `cost_center`-scope budgets DO NOT report
    * consumed_amount (verified empirically — see probe-findings.md). Any
    * Copilot user whose spend is absorbed by a CC budget without an
-   * individual ULB is invisible here. We count those seats so the card can
+   * individual UBB is invisible here. We count those seats so the card can
    * be honest about coverage.
    */
   const trackedForecast = useMemo(() => {
-    const univMtd = universalUlb?.consumedAmount ?? 0
+    const univMtd = universalUbb?.consumedAmount ?? 0
     const univProj = projectMonthlyBudget(univMtd, 0, demoAsof).projectedMonthTotal
     const indMtd = forecast.spendMtd
     const indProj = forecast.projectedEom
     // Seats whose consumption flows through a CC budget rather than universal
-    // or an individual ULB — these are the "untrackable-by-budgets-API" ones.
+    // or an individual UBB — these are the "untrackable-by-budgets-API" ones.
     const indLogins = new Set(budgets.filter(b => b.user).map(b => b.user.toLowerCase()))
     let untrackedSeats = 0
     for (const s of seats) {
@@ -112,7 +112,7 @@ export function DashboardPage() {
     const actualProjected =
       actualMtd !== null ? projectMonthlyBudget(actualMtd, 0, demoAsof).projectedMonthTotal : null
     return {
-      universal: { mtd: univMtd, projected: univProj, hasBudget: !!universalUlb },
+      universal: { mtd: univMtd, projected: univProj, hasBudget: !!universalUbb },
       individual: { mtd: indMtd, projected: indProj, count: indCoverage.withInd },
       trackedMtd: univMtd + indMtd,
       trackedProjected: univProj + indProj,
@@ -122,7 +122,7 @@ export function DashboardPage() {
       untrackedSeats,
     }
   }, [
-    universalUlb,
+    universalUbb,
     forecast.spendMtd,
     forecast.projectedEom,
     indCoverage.withInd,
@@ -231,23 +231,23 @@ export function DashboardPage() {
           hint={
             trackedForecast.hasActual
               ? `Day ${forecast.daysElapsed} of ${forecast.daysInMonth} · gross AIC`
-              : `Day ${forecast.daysElapsed} of ${forecast.daysInMonth} · ULB proxy`
+              : `Day ${forecast.daysElapsed} of ${forecast.daysInMonth} · UBB proxy`
           }
           icon={<CurrencyDollar size={22} weight="duotone" className="text-neutral-400" />}
           debug={{
             source: trackedForecast.hasActual
               ? "/usage/summary · Σ usageItems[sku='copilot_ai_unit'].grossAmount"
-              : 'universalUlb.consumedAmount + Σ userBudgets[].consumedAmount',
+              : 'universalUbb.consumedAmount + Σ userBudgets[].consumedAmount',
             formula: trackedForecast.hasActual
               ? 'usage.aiCreditsGross'
               : 'univMtd + indMtd  (no enterprise gross available)',
             inputs: {
               'usage.aiCreditsGross': usageSummary?.aiCreditsGross ?? 'null',
-              'universalUlb.consumedAmount': universalUlb?.consumedAmount ?? 0,
+              'universalUbb.consumedAmount': universalUbb?.consumedAmount ?? 0,
               'Σ userBudgets.consumedAmount': forecast.spendMtd,
               hasActual: String(trackedForecast.hasActual),
             },
-            note: 'When hasActual=false, CC-routed seats without a ULB are invisible to this tile.',
+            note: 'When hasActual=false, CC-routed seats without a UBB are invisible to this tile.',
           }}
         />
         <KpiTile
@@ -325,7 +325,7 @@ export function DashboardPage() {
       <SectionHeader title="Action items" />
       <ActionItemsCard
         forecast={forecast}
-        universalUlb={universalUlb}
+        universalUbb={universalUbb}
         entAmount={entAmount}
         pool={pool}
         seats={seats}
@@ -425,13 +425,13 @@ function ForecastBreakdownCard({
         <div className={cn('grid gap-4', tracked.hasActual ? 'md:grid-cols-4' : 'md:grid-cols-3')}>
           <BreakdownStat
             color={COLOR_UNIVERSAL}
-            label="Universal ULB"
+            label="Universal UBB"
             mtd={tracked.universal.mtd}
             projected={tracked.universal.projected}
             sub={
               tracked.universal.hasBudget
                 ? `${pct(tracked.universal.projected, tracked.totalProjected)} of total`
-                : 'No universal ULB'
+                : 'No universal UBB'
             }
             debug={{
               source: "multi_user_customer-scope BundlePricing/ai_credits budget · consumed_amount",
@@ -442,18 +442,18 @@ function ForecastBreakdownCard({
                 'totalProjected': tracked.totalProjected,
                 'hasBudget': String(tracked.universal.hasBudget),
               },
-              note: 'Universal ULB is one of only two scopes that report consumed_amount (the other is user-scope).',
+              note: 'Universal UBB is one of only two scopes that report consumed_amount (the other is user-scope).',
             }}
           />
           <BreakdownStat
             color={COLOR_INDIVIDUAL}
-            label="Individual ULBs"
+            label="Individual UBBs"
             mtd={tracked.individual.mtd}
             projected={tracked.individual.projected}
             sub={
               tracked.individual.count > 0
                 ? `${tracked.individual.count.toLocaleString()} users · ${pct(tracked.individual.projected, tracked.totalProjected)} of total`
-                : 'No individual ULBs'
+                : 'No individual UBBs'
             }
             debug={{
               source: 'user-scope BundlePricing/ai_credits budgets · Σ consumed_amount, projected per user',
@@ -509,19 +509,19 @@ function ForecastBreakdownCard({
         {tracked.hasActual ? (
           <div className="text-[11px] text-neutral-500">
             Totals come from billing usage. Other / unattributed is gross AIC
-            drawdown outside universal and individual ULB scopes; CC budgets
+            drawdown outside universal and individual UBB scopes; CC budgets
             do not report consumed spend.
           </div>
         ) : tracked.untrackedSeats > 0 ? (
           <div className="rounded-md border border-amber-200 dark:border-amber-900/60 bg-amber-50 dark:bg-amber-950/30 text-amber-900 dark:text-amber-200 px-3 py-2 text-xs">
             {tracked.untrackedSeats.toLocaleString()} seat
             {tracked.untrackedSeats === 1 ? ' uses' : 's use'} a cost-center
-            budget with no individual ULB. Spend is not included above. Grant
+            budget with no individual UBB. Spend is not included above. Grant
             PAT enhanced-billing access for full totals.
           </div>
         ) : (
           <div className="text-[11px] text-neutral-500">
-            Includes only spend reported by universal and individual ULBs.
+            Includes only spend reported by universal and individual UBBs.
           </div>
         )}
       </CardContent>
@@ -719,7 +719,7 @@ function PoolAndLicensesCard({
         </div>
 
         {/* Pool drawdown — answers "how much of the pool has been used so
-            far". We can only see ULB-scope consumption directly; once any
+            far". We can only see UBB-scope consumption directly; once any
             metered charges appear, the pool is fully drawn. */}
         {meteredMtd === null ? (
           <div className="rounded-md border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900/40 text-neutral-600 dark:text-neutral-400 px-3 py-2 text-xs">
@@ -780,7 +780,7 @@ function PoolAndLicensesCard({
           </div>
         )}
         <div className="text-[11px] text-neutral-500 dark:text-neutral-400 pt-1 border-t border-neutral-200 dark:border-neutral-800">
-          Pool and ULBs work together to cap AI credit drawdown.{' '}
+          Pool and UBBs work together to cap AI credit drawdown.{' '}
           <a
             href="https://docs.github.com/en/copilot/concepts/billing/budgets-for-usage-based-billing"
             target="_blank"
@@ -1242,7 +1242,7 @@ function CostCenterStatusCard({
               key: cc.costCenterId,
               name: cc.name,
               budget: cc.budgetAmount,
-              ceiling: cc.ulbCeiling,
+              ceiling: cc.ubbCeiling,
               mtd: data?.mtd ?? 0,
               projected: data?.projected ?? 0,
               measured: data?.measured ?? false,
@@ -1478,7 +1478,7 @@ type ActionItem = {
 
 function ActionItemsCard({
   forecast,
-  universalUlb,
+  universalUbb,
   entAmount,
   pool,
   seats,
@@ -1486,7 +1486,7 @@ function ActionItemsCard({
   loginToCostCenter,
 }: {
   forecast: ReturnType<typeof forecastSummary>
-  universalUlb: import('@/lib/api').UniversalUlb | null
+  universalUbb: import('@/lib/api').UniversalUbb | null
   entAmount: number | null
   pool: ReturnType<typeof computePoolSplit>
   seats: import('@/lib/api').CopilotSeat[]
@@ -1499,8 +1499,8 @@ function ActionItemsCard({
     items.push({
       id: 'already-over',
       severity: 'high',
-      title: `${forecast.alreadyOver} user${forecast.alreadyOver === 1 ? '' : 's'} over individual ULB`,
-      hint: 'Already over individual ULB. Blocked only if ULB is set to prevent further usage.',
+      title: `${forecast.alreadyOver} user${forecast.alreadyOver === 1 ? '' : 's'} over individual UBB`,
+      hint: 'Already over individual UBB. Blocked only if UBB is set to prevent further usage.',
       ctaLabel: 'Review',
       onCta: () =>
         window.dispatchEvent(new CustomEvent(NAV_TO_INDIVIDUAL_EVENT, { detail: {} })),
@@ -1510,7 +1510,7 @@ function ActionItemsCard({
     items.push({
       id: 'projected-over',
       severity: 'medium',
-      title: `${forecast.projectedOver} user${forecast.projectedOver === 1 ? '' : 's'} projected over ULB`,
+      title: `${forecast.projectedOver} user${forecast.projectedOver === 1 ? '' : 's'} projected over UBB`,
       hint: 'On track to exceed cap.',
       ctaLabel: 'Review',
       onCta: () =>
@@ -1538,29 +1538,29 @@ function ActionItemsCard({
       onCta: () => window.dispatchEvent(new CustomEvent(NAV_TO_BUDGET_MODEL_EVENT)),
     })
   }
-  if (!universalUlb) {
+  if (!universalUbb) {
     const indLogins = new Set(budgets.filter(b => b.user).map(b => b.user.toLowerCase()))
     const fallbackSeats = seats.filter(s => !indLogins.has(s.login.toLowerCase())).length
     if (fallbackSeats > 0) {
       items.push({
         id: 'missing-univ',
         severity: 'medium',
-        title: `No universal ULB. ${fallbackSeats.toLocaleString()} seat${fallbackSeats === 1 ? '' : 's'} have no per-user cap`,
+        title: `No universal UBB. ${fallbackSeats.toLocaleString()} seat${fallbackSeats === 1 ? '' : 's'} have no per-user cap`,
         hint: 'Pool drawdown is uncapped until the pool runs out.',
-        ctaLabel: 'Set universal ULB',
+        ctaLabel: 'Set universal UBB',
         onCta: () => window.dispatchEvent(new CustomEvent(NAV_TO_UNIVERSAL_EVENT)),
       })
     }
   }
-  // Uncapped CCs whose seats include any without individual ULB coverage —
+  // Uncapped CCs whose seats include any without individual UBB coverage —
   // a recipe for surprise spend once the pool exhausts.
   const indLoginsForCcCheck = new Set(
     budgets.filter(b => b.user).map(b => b.user.toLowerCase()),
   )
   const uncappedRiskyCcs = pool.costCenters.filter(cc => {
     if (cc.budgetAmount !== null) return false
-    if (universalUlb) return false // universal ULB covers them
-    // count seats in this CC without an individual ULB
+    if (universalUbb) return false // universal UBB covers them
+    // count seats in this CC without an individual UBB
     let bare = 0
     for (const seat of seats) {
       const r = loginToCostCenter.get(seat.login.toLowerCase())?.cc
@@ -1573,7 +1573,7 @@ function ActionItemsCard({
     items.push({
       id: 'uncapped-risky',
       severity: 'medium',
-      title: `${uncappedRiskyCcs.length} uncapped CC${uncappedRiskyCcs.length === 1 ? '' : 's'} have seats without ULB fallback`,
+      title: `${uncappedRiskyCcs.length} uncapped CC${uncappedRiskyCcs.length === 1 ? '' : 's'} have seats without UBB fallback`,
       hint: 'No CC budget and no user cap after pool exhaustion.',
       ctaLabel: 'Open budgets',
       onCta: () => window.dispatchEvent(new CustomEvent(NAV_TO_BUDGET_MODEL_EVENT)),

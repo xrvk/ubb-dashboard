@@ -17,8 +17,8 @@ ARG GIT_SHA=unknown
 ARG GIT_REF=unknown
 ARG BUILD_TIME=unknown
 
-LABEL org.opencontainers.image.title="ind-ulb-dashboard" \
-      org.opencontainers.image.source="https://github.com/xrvk/ind-ulb-dashboard" \
+LABEL org.opencontainers.image.title="ubb-dashboard" \
+      org.opencontainers.image.source="https://github.com/xrvk/ubb-dashboard" \
       org.opencontainers.image.revision="${GIT_SHA}" \
       org.opencontainers.image.ref.name="${GIT_REF}" \
       org.opencontainers.image.created="${BUILD_TIME}" \

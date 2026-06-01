@@ -31,7 +31,7 @@ export function RevertBulkDialog({ snapshot, onCancel, onConfirm, onDiscard }: P
           </span>
         </DialogTitle>
         <DialogDescription>
-          Restore {snapshot.entries.length.toLocaleString()} individual ULB
+          Restore {snapshot.entries.length.toLocaleString()} individual UBB
           {snapshot.entries.length === 1 ? '' : 's'} to the values they held before the bulk
           apply on {appliedAt.toLocaleString()}.
         </DialogDescription>

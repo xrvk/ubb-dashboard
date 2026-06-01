@@ -211,11 +211,11 @@ async function main() {
     samples: pickSample(ccBudgets, 5),
   })
 
-  // --- Universal ULB ---
+  // --- Universal UBB ---
   const universal = budgets.filter(
     b => b.budget_scope === 'multi_user_customer' && b.budget_product_sku === 'ai_credits',
   )
-  summary('Universal ULB (multi_user_customer / ai_credits)', universal)
+  summary('Universal UBB (multi_user_customer / ai_credits)', universal)
 
   // --- User-scope ai_credits budgets ---
   const userBudgets = budgets.filter(
@@ -279,14 +279,14 @@ async function main() {
       total_budgets: budgets.length,
       enterprise_budgets: entAll.length,
       cost_center_budgets: ccBudgets.length,
-      universal_ulb_count: universal.length,
+      universal_ubb_count: universal.length,
       user_budgets: userBudgets.length,
       active_cost_centers: ccs.length,
     },
     combos: comboTable,
     enterprise_budgets_ai_credits: entBudgets,
     cost_center_budgets: ccBudgets,
-    universal_ulb: universal,
+    universal_ubb: universal,
     user_budgets_sample: userBudgets.slice(0, 10),
     cost_centers_sample: ccs.slice(0, 10),
     org_collisions_in_budgeted_ccs: orgCollisions,

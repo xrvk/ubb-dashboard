@@ -4,8 +4,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: ind-ulb-dashboard:latest
-    container_name: ind-ulb-dashboard
+    image: ubb-dashboard:latest
+    container_name: ubb-dashboard
     ports:
       - "5003:80"
     restart: unless-stopped
@@ -16,8 +16,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.dev
-    image: ind-ulb-dashboard:dev
-    container_name: ind-ulb-dashboard-dev
+    image: ubb-dashboard:dev
+    container_name: ubb-dashboard-dev
     ports:
       - "5003:5003"
     volumes:

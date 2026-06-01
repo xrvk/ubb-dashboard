@@ -2,8 +2,8 @@
  * Consumption Analysis Library
  *
  * Pure functions for analyzing per-user AIC consumption from billing CSV data.
- * Used to size the universal ULB and identify outliers ("power users") that
- * should be put on individual ULBs instead.
+ * Used to size the universal UBB and identify outliers ("power users") that
+ * should be put on individual UBBs instead.
  *
  * Vendored from octodemo/copilot-budget-command-calculator
  * (src/lib/consumptionAnalysis.ts). Adaptations:
@@ -46,7 +46,7 @@ export interface ThresholdResult {
   regularUserCount: number
   powerUserAICShare: number
   suggestedPowerUserBudget: number
-  suggestedULB: number
+  suggestedUBB: number
 }
 
 export type ThresholdMode = 'top-5' | 'top-10' | 'top-15' | 'custom'
@@ -120,10 +120,10 @@ export function applyThreshold(
   const powerSorted = powerUsers.map(u => u.totalAICs).sort((a, b) => a - b)
   const suggestedPowerUserBudget = powerSorted.length > 0 ? percentile(powerSorted, 50) : 0
 
-  // Universal ULB = P95 of regular group: covers most regulars without inflating
+  // Universal UBB = P95 of regular group: covers most regulars without inflating
   // the cap to the very top outlier. Admins can drag higher/lower.
   const regularSorted = regularUsers.map(u => u.totalAICs).sort((a, b) => a - b)
-  const suggestedULB = regularSorted.length > 0 ? percentile(regularSorted, 95) : 0
+  const suggestedUBB = regularSorted.length > 0 ? percentile(regularSorted, 95) : 0
 
   return {
     thresholdAICs,
@@ -133,7 +133,7 @@ export function applyThreshold(
     regularUserCount: regularUsers.length,
     powerUserAICShare,
     suggestedPowerUserBudget: Math.ceil(suggestedPowerUserBudget),
-    suggestedULB: Math.ceil(suggestedULB),
+    suggestedUBB: Math.ceil(suggestedUBB),
   }
 }
 

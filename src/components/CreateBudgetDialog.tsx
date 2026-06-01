@@ -34,13 +34,13 @@ export function CreateBudgetDialog({ open, onOpenChange, onSubmit, seats, existi
     login: s.login,
     orgLogin: s.orgLogin,
     disabled: existingUsernames.has(s.login),
-    disabledReason: 'already has ULB',
+    disabledReason: 'already has UBB',
   }))
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
-        <DialogTitle>Add individual ULB</DialogTitle>
+        <DialogTitle>Add individual UBB</DialogTitle>
         <DialogDescription>
           Set a per-user budget cap. Hard stop is always enforced.
         </DialogDescription>
@@ -70,7 +70,7 @@ export function CreateBudgetDialog({ open, onOpenChange, onSubmit, seats, existi
               return
             }
             if (existingUsernames.has(username.trim())) {
-              setError(`${username.trim()} already has an individual ULB. Edit it from the table.`)
+              setError(`${username.trim()} already has an individual UBB. Edit it from the table.`)
               return
             }
             if (!Number.isFinite(n) || n < 0) {

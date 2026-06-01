@@ -10,14 +10,14 @@ interface Props {
 }
 
 /**
- * Sticky contextual banner shown beneath the tab bar on the Individual ULBs
- * page after the user deep-links from a constraint action (e.g. "Reduce ULBs
- * for N members"). Re-computes effective ULB totals live from the credentials
+ * Sticky contextual banner shown beneath the tab bar on the Individual UBBs
+ * page after the user deep-links from a constraint action (e.g. "Reduce UBBs
+ * for N members"). Re-computes effective UBB totals live from the credentials
  * context so progress updates as the user edits per-user budgets without
  * having to scroll back up to a stale banner.
  */
-export function IndividualUlbTaskBanner({ task, onDismiss }: Props) {
-  const { budgets, costCenters, universalUlb } = useCredentials()
+export function IndividualUbbTaskBanner({ task, onDismiss }: Props) {
+  const { budgets, costCenters, universalUbb } = useCredentials()
 
   const progress = useMemo(() => {
     const cc = costCenters.find(c => c.id === task.costCenterId)
@@ -25,7 +25,7 @@ export function IndividualUlbTaskBanner({ task, onDismiss }: Props) {
     const memberLogins = new Set(
       cc.resources.filter(r => r.type === 'User').map(r => r.name.toLowerCase()),
     )
-    const universalAmount = universalUlb?.budgetAmount ?? 0
+    const universalAmount = universalUbb?.budgetAmount ?? 0
     const individualByUser = new Map(
       budgets.map(b => [b.user.toLowerCase(), b.budgetAmount]),
     )
@@ -35,10 +35,10 @@ export function IndividualUlbTaskBanner({ task, onDismiss }: Props) {
       sum += ind !== undefined ? ind : universalAmount
     }
     const overBy = Math.max(0, sum - task.ccBudget)
-    const reducedBy = Math.max(0, task.actualUlbSum - sum)
+    const reducedBy = Math.max(0, task.actualUbbSum - sum)
     const resolved = sum <= task.ccBudget
     return { currentSum: sum, overBy, reducedBy, resolved }
-  }, [task, costCenters, budgets, universalUlb])
+  }, [task, costCenters, budgets, universalUbb])
 
   if (!progress) return null
 
@@ -57,11 +57,11 @@ export function IndividualUlbTaskBanner({ task, onDismiss }: Props) {
           <div className="font-medium">
             {progress.resolved
               ? `Cost center "${task.costCenterName}" now fits its budget`
-              : `Reducing ULBs for cost center "${task.costCenterName}"`}
+              : `Reducing UBBs for cost center "${task.costCenterName}"`}
           </div>
           <div className="mt-0.5 text-xs opacity-90">
             {task.memberCount} member{task.memberCount === 1 ? '' : 's'},{' '}
-            effective ULBs total <span className="font-semibold">{formatCurrency(progress.currentSum)}</span>{' '}
+            effective UBBs total <span className="font-semibold">{formatCurrency(progress.currentSum)}</span>{' '}
             against a <span className="font-semibold">{formatCurrency(task.ccBudget)}</span> cost center budget.{' '}
             {progress.resolved ? (
               <span>All set.</span>
