@@ -44,6 +44,53 @@ const ccBudget = (id: string, name: string, amount: number): CostCenterBudget =>
   alertRecipients: [],
 })
 
+// Mutation-resistance: cent-boundary direction tests for proposeLower-
+// UniversalUbb. The proposal must floor to the nearest cent so applying it
+// never re-breaches. A mutation to `Math.ceil` or `Math.round` would still
+// pass integer-only tests but ship a re-breaching proposal in production.
+describe('proposeLowerUniversalUbb cent-boundary direction', () => {
+  it('floors a sub-cent maxSafe to the nearest cent below (never up)', () => {
+    const result = {
+      mode: 'umbrella',
+      maxSafeUniversalUbb: 10.999, // a `ceil`/`round` mutation would propose 11.00 and re-breach
+      checks: { perCc: [] },
+    } as unknown as Parameters<typeof proposeLowerUniversalUbb>[0]
+    const proposal = proposeLowerUniversalUbb(result, 11.5)
+    expect(proposal).not.toBeNull()
+    expect(proposal!.newValue).toBe(10.99)
+    expect(proposal!.label).toBe('Lower universal UBB to $10.99')
+    expect(proposal!.scope).toBe('universal_ubb')
+  })
+
+  it('returns null when current is already at or below the safe value', () => {
+    const result = {
+      mode: 'umbrella',
+      maxSafeUniversalUbb: 10.99,
+      checks: { perCc: [] },
+    } as unknown as Parameters<typeof proposeLowerUniversalUbb>[0]
+    expect(proposeLowerUniversalUbb(result, 10.99)).toBeNull()
+    expect(proposeLowerUniversalUbb(result, 5)).toBeNull()
+  })
+
+  it('returns null when the safe value is zero (turning the knob off is not a fix)', () => {
+    const result = {
+      mode: 'umbrella',
+      maxSafeUniversalUbb: 0,
+      checks: { perCc: [] },
+    } as unknown as Parameters<typeof proposeLowerUniversalUbb>[0]
+    expect(proposeLowerUniversalUbb(result, 50)).toBeNull()
+  })
+
+  it('returns null when maxSafeUniversalUbb is Infinity (nothing binds)', () => {
+    const result = {
+      mode: 'umbrella',
+      maxSafeUniversalUbb: Infinity,
+      checks: { perCc: [] },
+    } as unknown as Parameters<typeof proposeLowerUniversalUbb>[0]
+    expect(proposeLowerUniversalUbb(result, 50)).toBeNull()
+  })
+})
+
 const entBudget = (amount: number, excludeCostCenterUsage = false): EnterpriseBudget => ({
   id: 'ent-1',
   budgetAmount: amount,

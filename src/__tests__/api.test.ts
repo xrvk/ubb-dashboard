@@ -1,4 +1,14 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import {
+  ApiError,
+  AuthError,
+  ScopeError,
+  NotFoundError,
+  ValidationError,
+  ServerError,
+  NetworkError,
+  AbortedError,
+} from '@/lib/errors'
 import {
   buildCostCenterIndex,
   createApiFetch,
@@ -308,6 +318,198 @@ describe('createApiFetch host allowlist', () => {
     expect(() =>
       createApiFetch({ base: 'https://api.evil.com.ghe.example', ent: 'x', token: 't' }),
     ).toThrow(/untrusted host/)
+  })
+})
+
+// --- createApiFetch HTTP transport ---
+//
+// These tests stub global.fetch and exercise the typed-error mapping,
+// GET retry policy, and write-shot semantics. Backoff durations are
+// asserted as *bounds*, not exact values, so future tuning of the
+// retry constants doesn't break the suite. Math.random is pinned so
+// the jitter contribution is deterministic.
+
+interface MockResponseSpec {
+  status: number
+  body?: string
+  headers?: Record<string, string>
+}
+
+function mockFetchResponse(spec: MockResponseSpec): Response {
+  return {
+    ok: spec.status >= 200 && spec.status < 300,
+    status: spec.status,
+    headers: {
+      get: (name: string) => spec.headers?.[name.toLowerCase()] ?? null,
+    },
+    text: async () => spec.body ?? '',
+  } as unknown as Response
+}
+
+describe('createApiFetch typed-error mapping', () => {
+  let fetchSpy: ReturnType<typeof vi.spyOn>
+  const fetcher = createApiFetch({ base: 'https://api.github.com', ent: 'acme', token: 't' })
+
+  beforeEach(() => {
+    fetchSpy = vi.spyOn(globalThis, 'fetch')
+  })
+  afterEach(() => {
+    fetchSpy.mockRestore()
+  })
+
+  it.each([
+    [401, AuthError, 'auth'],
+    [403, ScopeError, 'scope'],
+    [404, NotFoundError, 'not_found'],
+    [422, ValidationError, 'validation'],
+  ])('maps %i to the right typed error (kind=%s)', async (status, ctor, kind) => {
+    fetchSpy.mockResolvedValue(mockFetchResponse({ status, body: '{"message":"nope"}' }))
+    let caught: unknown
+    try {
+      await fetcher('/budgets', { method: 'PATCH' })
+    } catch (err) {
+      caught = err
+    }
+    expect(caught).toBeInstanceOf(ctor)
+    expect(caught).toBeInstanceOf(ApiError)
+    expect((caught as ApiError).kind).toBe(kind)
+    expect((caught as ApiError).status).toBe(status)
+  })
+
+  it('captures Retry-After and x-github-request-id on 429', async () => {
+    fetchSpy.mockResolvedValue(
+      mockFetchResponse({
+        status: 429,
+        body: 'slow down',
+        headers: { 'retry-after': '7', 'x-github-request-id': 'abc-123' },
+      }),
+    )
+    // Use a non-idempotent method to skip the GET retry path (we just want
+    // to assert the captured-headers shape from a single failed call).
+    await expect(fetcher('/budgets', { method: 'PATCH' })).rejects.toMatchObject({
+      status: 429,
+      kind: 'rate_limit',
+      headers: { 'retry-after': '7', 'x-github-request-id': 'abc-123' },
+    })
+  })
+
+  it('maps 5xx to ServerError (transient)', async () => {
+    fetchSpy.mockResolvedValueOnce(mockFetchResponse({ status: 503, body: 'down' }))
+    await expect(fetcher('/budgets', { method: 'PATCH' })).rejects.toBeInstanceOf(ServerError)
+  })
+
+  it('wraps fetch rejection (offline/DNS/TLS) as NetworkError', async () => {
+    fetchSpy.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+    await expect(fetcher('/budgets', { method: 'PATCH' })).rejects.toBeInstanceOf(NetworkError)
+  })
+
+  it('maps an AbortError from fetch to AbortedError (no retry)', async () => {
+    const abortErr = new Error('aborted')
+    abortErr.name = 'AbortError'
+    fetchSpy.mockRejectedValue(abortErr)
+    // Use GET to prove the retry loop also short-circuits on abort.
+    await expect(fetcher('/budgets')).rejects.toBeInstanceOf(AbortedError)
+    // One attempt only — retry must not fire on abort.
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('sends Authorization, Accept, and X-GitHub-Api-Version headers', async () => {
+    fetchSpy.mockResolvedValueOnce(mockFetchResponse({ status: 200, body: '{}' }))
+    await fetcher('/budgets')
+    const init = fetchSpy.mock.calls[0][1] as RequestInit
+    const headers = init.headers as Record<string, string>
+    expect(headers.Authorization).toBe('Bearer t')
+    expect(headers.Accept).toBe('application/vnd.github+json')
+    expect(headers['X-GitHub-Api-Version']).toBeDefined()
+  })
+
+  it('adds Content-Type only when a body is supplied', async () => {
+    fetchSpy.mockResolvedValueOnce(mockFetchResponse({ status: 200, body: '{}' }))
+    await fetcher('/budgets', { method: 'PATCH', body: '{"foo":1}' })
+    const init = fetchSpy.mock.calls[0][1] as RequestInit
+    expect((init.headers as Record<string, string>)['Content-Type']).toBe('application/json')
+  })
+})
+
+describe('createApiFetch GET retry policy', () => {
+  let fetchSpy: ReturnType<typeof vi.spyOn>
+  let randomSpy: ReturnType<typeof vi.spyOn>
+  const fetcher = createApiFetch({ base: 'https://api.github.com', ent: 'acme', token: 't' })
+
+  beforeEach(() => {
+    fetchSpy = vi.spyOn(globalThis, 'fetch')
+    // Pin jitter to 0 so backoff durations are predictable for bound assertions.
+    randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0)
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    randomSpy.mockRestore()
+    fetchSpy.mockRestore()
+  })
+
+  it('retries a GET on 502 and succeeds on the 3rd attempt', async () => {
+    fetchSpy
+      .mockResolvedValueOnce(mockFetchResponse({ status: 502, body: 'gateway' }))
+      .mockResolvedValueOnce(mockFetchResponse({ status: 502, body: 'gateway' }))
+      .mockResolvedValueOnce(mockFetchResponse({ status: 200, body: '{"ok":true}' }))
+    const promise = fetcher('/budgets')
+    await vi.runAllTimersAsync()
+    await expect(promise).resolves.toEqual({ ok: true })
+    expect(fetchSpy).toHaveBeenCalledTimes(3)
+  })
+
+  it('does NOT retry a non-idempotent PATCH on 502 (single shot)', async () => {
+    fetchSpy.mockResolvedValue(mockFetchResponse({ status: 502, body: 'gateway' }))
+    await expect(fetcher('/budgets', { method: 'PATCH' })).rejects.toBeInstanceOf(ServerError)
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('does NOT retry a POST on 5xx (single shot)', async () => {
+    fetchSpy.mockResolvedValue(mockFetchResponse({ status: 503, body: 'down' }))
+    await expect(fetcher('/budgets', { method: 'POST', body: '{}' })).rejects.toBeInstanceOf(ServerError)
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('does NOT retry a GET on 401/403/404/422 (non-retryable)', async () => {
+    for (const status of [401, 403, 404, 422]) {
+      fetchSpy.mockResolvedValueOnce(mockFetchResponse({ status, body: '{}' }))
+    }
+    await expect(fetcher('/a')).rejects.toBeInstanceOf(AuthError)
+    await expect(fetcher('/b')).rejects.toBeInstanceOf(ScopeError)
+    await expect(fetcher('/c')).rejects.toBeInstanceOf(NotFoundError)
+    await expect(fetcher('/d')).rejects.toBeInstanceOf(ValidationError)
+    // 4 calls, one per request — no retries.
+    expect(fetchSpy).toHaveBeenCalledTimes(4)
+  })
+
+  it('gives up after the retry budget is exhausted', async () => {
+    // GET_RETRY_DEFAULTS.maxRetries = 2 → 1 initial + 2 retries = 3 attempts.
+    fetchSpy.mockResolvedValue(mockFetchResponse({ status: 502, body: 'gateway' }))
+    const promise = fetcher('/budgets')
+    // Catch the rejection upfront so unhandled-rejection warnings don't fire
+    // while we tick the fake timers.
+    const settled = promise.catch(err => err)
+    await vi.runAllTimersAsync()
+    const err = await settled
+    expect(err).toBeInstanceOf(ServerError)
+    expect(fetchSpy).toHaveBeenCalledTimes(3)
+  })
+
+  it('honors Retry-After on 429 (uses header value, not the default backoff)', async () => {
+    fetchSpy
+      .mockResolvedValueOnce(
+        mockFetchResponse({ status: 429, body: 'slow', headers: { 'retry-after': '3' } }),
+      )
+      .mockResolvedValueOnce(mockFetchResponse({ status: 200, body: '{"ok":true}' }))
+    const promise = fetcher('/budgets')
+    // Advance just under the Retry-After window — the second fetch must
+    // not have fired yet.
+    await vi.advanceTimersByTimeAsync(2_000)
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(2_000)
+    await expect(promise).resolves.toEqual({ ok: true })
+    expect(fetchSpy).toHaveBeenCalledTimes(2)
   })
 })
 

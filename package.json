@@ -17,6 +17,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:ci": "vite build",
     "typecheck": "tsc -b --pretty",
     "lint": "eslint .",
     "preview": "vite preview",
@@ -46,6 +47,9 @@
     "tailwind-merge": "^3.6.0",
     "tailwindcss": "^4.3.0",
     "vitest": "^4.1.7"
+  },
+  "engines": {
+    "node": "20.x"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

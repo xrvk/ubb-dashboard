@@ -45,6 +45,55 @@ function entBudget(amount: number, exclude = false): EnterpriseBudget {
   }
 }
 
+// Mutation-resistance: exact-boundary tests. The existing suite tends to
+// use values that are comfortably away from the boundary (e.g. budget 1000
+// with committed 600); without explicit equality cases, a `>` ↔ `>=` flip
+// in `overAllocated` or a sign swap in `headroom` slips through silently.
+describe('computePoolSplit boundaries', () => {
+  it('committed exactly equal to enterprise budget: headroom=0, NOT overAllocated', () => {
+    // 2 unassigned seats × $50 UBB = $100 committed; ent budget $100.
+    // Tests the strict `>` in overAllocated (a `>=` mutation flips this).
+    const result = computePoolSplit({
+      enterpriseBudget: entBudget(100),
+      universalUbb: null,
+      costCenters: [],
+      ccBudgetsByName: new Map(),
+      seats: [seat('alice'), seat('bob')],
+      userBudgets: [userBudget('alice', 50), userBudget('bob', 50)],
+    })
+    expect(result.unassignedTotal).toBe(100)
+    expect(result.headroom).toBe(0)
+    expect(result.overAllocated).toBe(false) // strict `>`, not `>=`
+  })
+
+  it('committed one cent over enterprise budget: headroom=0 (clamped), overAllocated=true', () => {
+    const result = computePoolSplit({
+      enterpriseBudget: entBudget(100),
+      universalUbb: null,
+      costCenters: [],
+      ccBudgetsByName: new Map(),
+      seats: [seat('alice')],
+      userBudgets: [userBudget('alice', 100.01)],
+    })
+    expect(result.unassignedTotal).toBeCloseTo(100.01, 10)
+    expect(result.headroom).toBe(0) // clamped at 0, never negative
+    expect(result.overAllocated).toBe(true)
+  })
+
+  it('null enterprise budget: headroom=0 and never reports over-allocated', () => {
+    const result = computePoolSplit({
+      enterpriseBudget: null,
+      universalUbb: null,
+      costCenters: [],
+      ccBudgetsByName: new Map(),
+      seats: [seat('alice')],
+      userBudgets: [userBudget('alice', 100)],
+    })
+    expect(result.headroom).toBe(0)
+    expect(result.overAllocated).toBe(false)
+  })
+})
+
 function universal(amount: number): UniversalUbb {
   return {
     id: 'u',

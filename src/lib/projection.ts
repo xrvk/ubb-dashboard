@@ -31,19 +31,26 @@ const LOW_CONFIDENCE_THRESHOLD_DAYS = 5
  *
  * The recommendation is rounded to the nearest whole dollar (always rounding
  * up so the user is never blocked because of cents).
+ *
+ * Inputs are defensively sanitized: a non-finite or negative `consumed` or
+ * `growthBuffer` is clamped to 0 rather than allowed to produce a NaN /
+ * Infinity recommendation that the UI would render as "$NaN" or "$Infinity"
+ * to a customer.
  */
 export function projectMonthlyBudget(
   consumed: number,
   growthBuffer: number,
   now: Date = new Date(),
 ): MonthlyProjection {
+  const safeConsumed = Number.isFinite(consumed) && consumed > 0 ? consumed : 0
+  const safeGrowth = Number.isFinite(growthBuffer) && growthBuffer > 0 ? growthBuffer : 0
   const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
   const dayOfMonth = now.getDate()
   const daysElapsed = Math.max(1, dayOfMonth)
   const daysRemaining = Math.max(0, daysInMonth - dayOfMonth)
-  const dailyRate = consumed / daysElapsed
-  const projectedMonthTotal = consumed + dailyRate * daysRemaining
-  const raw = projectedMonthTotal * (1 + growthBuffer)
+  const dailyRate = safeConsumed / daysElapsed
+  const projectedMonthTotal = safeConsumed + dailyRate * daysRemaining
+  const raw = projectedMonthTotal * (1 + safeGrowth)
   const recommendedBudget = Math.max(1, Math.ceil(raw))
   return {
     daysInMonth,
