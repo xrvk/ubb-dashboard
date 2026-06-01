@@ -8,8 +8,8 @@
  *   - uncapped: CC affects Copilot but has no per-CC budget. Highest
  *               priority — usage is only bounded by the enterprise pool.
  *   - under-min: CC has a budget, but it is less than the computed floor
- *                (sum of effective UBBs for its Copilot seats). Will block
- *                users before they reach their UBB ceilings.
+ *                (sum of effective ULBs for its Copilot seats). Will block
+ *                users before they reach their ULB ceilings.
  *   - ok: budget covers the floor, or no minimum is required.
  */
 

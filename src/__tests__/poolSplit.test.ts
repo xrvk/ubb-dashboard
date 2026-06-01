@@ -154,7 +154,7 @@ describe('computePoolSplit', () => {
     expect(r.overAllocated).toBe(false)
   })
 
-  it('uses an individual UBB amount instead of the universal when one is set', () => {
+  it('uses an individual ULB amount instead of the universal when one is set', () => {
     const r = computePoolSplit({
       enterpriseBudget: entBudget(1_000),
       universalUbb: universal(20),

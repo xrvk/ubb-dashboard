@@ -8,7 +8,7 @@ import type { TableFilters } from '@/components/BudgetsTable'
 
 export const NAV_TO_INDIVIDUAL_EVENT = 'ubb:nav-to-individual'
 
-/** Navigate to the Universal UBB tab. No payload needed today. */
+/** Navigate to the Universal ULB tab. No payload needed today. */
 export const NAV_TO_UNIVERSAL_EVENT = 'ubb:nav-to-universal'
 
 /**
@@ -24,7 +24,7 @@ export interface NavToIndividualTask {
   costCenterId: string
   costCenterName: string
   memberCount: number
-  /** Σ of effective UBBs of the CC members at the time of the click. */
+  /** Σ of effective ULBs of the CC members at the time of the click. */
   actualUbbSum: number
   /** Current CC budget the members must fit under. */
   ccBudget: number

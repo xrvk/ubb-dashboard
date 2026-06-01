@@ -52,14 +52,14 @@ const MODE_LABELS: Record<ThresholdMode, string> = {
 }
 
 /**
- * Universal-UBB planner.
+ * Universal-ULB planner.
  *
  * Three-step workflow:
  *   1. Ingest one or more monthly usage-report CSVs (UsageCsvImport).
  *   2. Drag the ConsumptionCurve threshold + UBB lines to pick a cap and
- *      classify outliers ("power users") that need individual UBBs.
- *   3. Apply the chosen universal UBB and optionally batch-create per-outlier
- *      individual UBBs (suggested at user.maxAICs × 1.10).
+ *      classify outliers ("power users") that need individual ULBs.
+ *   3. Apply the chosen universal ULB and optionally batch-create per-outlier
+ *      individual ULBs (suggested at user.maxAICs × 1.10).
  */
 export function UniversalUbbPage() {
   const {
@@ -107,7 +107,7 @@ export function UniversalUbbPage() {
     failingCcCount: number
   } | null>(null)
   /** Growth buffer (%) applied on top of each outlier's max-month spend
-   *  when computing their suggested individual UBB. */
+   *  when computing their suggested individual ULB. */
   const [outlierBufferPct, setOutlierBufferPct] = useState<number>(DEFAULT_OUTLIER_BUFFER_PCT)
   /** Cost-center filter for the outliers table.
    *  null = all, '' = unassigned (no CC), otherwise CC id. */
@@ -123,8 +123,8 @@ export function UniversalUbbPage() {
     [credentials, cacheBust],
   )
 
-  // Users already covered by an individual UBB are excluded from sizing —
-  // we're sizing the cap for users who fall under the universal UBB.
+  // Users already covered by an individual ULB are excluded from sizing —
+  // we're sizing the cap for users who fall under the universal ULB.
   const indUbbLogins = useMemo(
     () => new Set(budgets.map(b => b.user.toLowerCase())),
     [budgets],
@@ -172,9 +172,9 @@ export function UniversalUbbPage() {
     [csvUsers, thresholdMode, customPct],
   )
 
-  // UBB to display on the chart, in AICs.
+  // ULB to display on the chart, in AICs.
   // Priority: explicit drag override → suggested P95 from the current threshold.
-  // The currently saved universal UBB is shown separately in the header tile;
+  // The currently saved universal ULB is shown separately in the header tile;
   // we deliberately don't anchor the chart line to it so clicking to move the
   // threshold always re-snaps the line to the fresh P95.
   const ubbAICs = ubbOverrideAICs !== null ? ubbOverrideAICs : threshold.suggestedUBB
@@ -207,7 +207,7 @@ export function UniversalUbbPage() {
     }
   }, [threshold.regularUsers, ubbAICs])
 
-  // Eligible seats = seats not currently on an individual UBB.
+  // Eligible seats = seats not currently on an individual ULB.
   const eligibleSeatCount = useMemo(
     () => seats.filter(s => !indUbbLogins.has(s.login.toLowerCase())).length,
     [seats, indUbbLogins],
@@ -237,7 +237,7 @@ export function UniversalUbbPage() {
               alertRecipients: [],
             },
       )
-      toast.success(`Demo: universal UBB set to ${formatCurrency(newAmount)}`)
+      toast.success(`Demo: universal ULB set to ${formatCurrency(newAmount)}`)
       return
     }
     if (!apiFetch) return
@@ -248,7 +248,7 @@ export function UniversalUbbPage() {
     }
     const fresh = await fetchUniversalUBB(apiFetch)
     setUniversalUbb(fresh)
-    toast.success(`Universal UBB set to ${formatCurrency(newAmount)}`)
+    toast.success(`Universal ULB set to ${formatCurrency(newAmount)}`)
   }
 
   /** Convert the chart's UBB (AICs) → USD and write to the enterprise.
@@ -302,7 +302,7 @@ export function UniversalUbbPage() {
     }
   }
 
-  /** Create individual UBBs for selected outliers at ceil(maxAICs/100 × 1.10),
+  /** Create individual ULBs for selected outliers at ceil(maxAICs/100 × 1.10),
    * or at the admin's edited amount if they've customized the row. */
   const handleCreateOutlierUbbs = async () => {
     const targets = outlierTargets
@@ -311,8 +311,8 @@ export function UniversalUbbPage() {
       return
     }
     if (credentials?.base === 'demo://') {
-      // Sandbox: append synthetic individual UBBs to the local store. The
-      // Universal UBB sizing curve will refilter on the next render because
+      // Sandbox: append synthetic individual ULBs to the local store. The
+      // Universal ULB sizing curve will refilter on the next render because
       // its indUbbLogins set rebuilds from `budgets`.
       setBudgets(prev => {
         const existing = new Set(prev.map(b => b.user.toLowerCase()))
@@ -331,7 +331,7 @@ export function UniversalUbbPage() {
       })
       setSelectedOutlierLogins(new Set())
       setEditedOutlierUbbsEntry(null)
-      toast.success(`Demo: created ${targets.length.toLocaleString()} individual UBBs.`)
+      toast.success(`Demo: created ${targets.length.toLocaleString()} individual ULBs.`)
       return
     }
     if (!apiFetch) return
@@ -352,7 +352,7 @@ export function UniversalUbbPage() {
       )
       const failed = results.filter(r => !r.ok).length
       const ok = results.length - failed
-      if (failed === 0) toast.success(`Created ${ok.toLocaleString()} individual UBBs.`)
+      if (failed === 0) toast.success(`Created ${ok.toLocaleString()} individual ULBs.`)
       else if (ok === 0) toast.error(`Failed to create ${failed.toLocaleString()} UBBs.`)
       else toast.warning(`Created ${ok.toLocaleString()}, failed ${failed.toLocaleString()}.`)
     } finally {
@@ -512,7 +512,7 @@ export function UniversalUbbPage() {
         <Card>
           <CardContent className="flex items-start justify-between gap-3" id="uubb-cap" data-bp-target="uubb">
             <div>
-              <div className="text-xs text-neutral-500 dark:text-neutral-400">Universal UBB cap</div>
+              <div className="text-xs text-neutral-500 dark:text-neutral-400">Universal ULB cap</div>
               <div className="text-2xl font-semibold mt-1">
                 {universalUbb ? formatCurrency(universalUbb.budgetAmount) : (
                   <span className="text-neutral-400">not set</span>
@@ -541,10 +541,10 @@ export function UniversalUbbPage() {
         <Card>
           <CardContent className="flex items-start justify-between gap-3">
             <div>
-              <div className="text-xs text-neutral-500 dark:text-neutral-400">Universal-UBB coverage</div>
+              <div className="text-xs text-neutral-500 dark:text-neutral-400">Universal-ULB coverage</div>
               <div className="text-2xl font-semibold mt-1">{eligibleSeatCount.toLocaleString()}</div>
               <div className="text-xs text-neutral-500 mt-1">
-                seats not on an individual UBB
+                seats not on an individual ULB
               </div>
             </div>
             <Users size={22} weight="duotone" className="text-neutral-400" />
@@ -578,7 +578,7 @@ export function UniversalUbbPage() {
         <CardContent className="grid gap-3">
           <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <h2 className="text-sm font-semibold">Step 2 · Choose your universal UBB</h2>
+              <h2 className="text-sm font-semibold">Step 2 · Choose your universal ULB</h2>
               <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
                 Click the chart to mark where regular users end and outliers begin, then drag the
                 dashed UBB line to set the cap.
@@ -594,7 +594,7 @@ export function UniversalUbbPage() {
                     onClick={() => {
                       setThresholdMode(mode)
                       if (mode !== 'custom') setCustomThresholdEntry(null)
-                      // Snap UBB back to P95 for the new regular cohort.
+                      // Snap ULB back to P95 for the new regular cohort.
                       setUbbOverrideEntry(null)
                     }}
                   >
@@ -666,7 +666,7 @@ export function UniversalUbbPage() {
                     )
                     setThresholdMode('custom')
                     setCustomThresholdEntry({ sig: datasetSig, value: pct })
-                    // Snap UBB back to the recomputed P95 of regulars by
+                    // Snap ULB back to the recomputed P95 of regulars by
                     // clearing any manual y override.
                     setUbbOverrideEntry(null)
                   }
@@ -677,14 +677,14 @@ export function UniversalUbbPage() {
           {hasData ? (
             <div className="rounded-md border border-neutral-200 dark:border-neutral-800 p-3 text-xs grid gap-1.5 sm:grid-cols-3">
               <div>
-                <div className="text-neutral-500 dark:text-neutral-400">Suggested UBB (P95 of regulars)</div>
+                <div className="text-neutral-500 dark:text-neutral-400">Suggested ULB (P95 of regulars)</div>
                 <div className="font-semibold text-sm">
                   ${Math.ceil(threshold.suggestedUBB / AICS_PER_USD).toLocaleString()}
                   <span className="text-neutral-500 font-normal"> · ~{threshold.suggestedUBB.toLocaleString()} AICs</span>
                 </div>
               </div>
               <div>
-                <div className="text-neutral-500 dark:text-neutral-400">Chart UBB</div>
+                <div className="text-neutral-500 dark:text-neutral-400">Chart ULB</div>
                 <div className="font-semibold text-sm">
                   ${ubbDeltaUsd.toLocaleString()}
                   <span className="text-neutral-500 font-normal"> · ~{Math.round(ubbAICs).toLocaleString()} AICs</span>
@@ -706,7 +706,7 @@ export function UniversalUbbPage() {
               disabled={!hasData || applying || ubbAICs <= 0}
               title={!hasData ? 'Upload a CSV first' : undefined}
             >
-              {applying ? 'Applying…' : `Apply universal UBB ($${ubbDeltaUsd})`}
+              {applying ? 'Applying…' : `Apply universal ULB ($${ubbDeltaUsd})`}
             </Button>
           </div>
         </CardContent>
@@ -721,7 +721,7 @@ export function UniversalUbbPage() {
                 Step 3 · Outliers ({threshold.powerUsers.length.toLocaleString()})
               </h2>
               <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
-                Suggested individual UBB = max-month $. Edit rows below; a growth buffer is added when you apply.
+                Suggested individual ULB = max-month $. Edit rows below; a growth buffer is added when you apply.
               </p>
             </div>
             {threshold.powerUsers.length > 0 && (
@@ -834,7 +834,7 @@ export function UniversalUbbPage() {
                           <th className="px-3 py-2 font-medium">Cost center</th>
                           <th className="px-3 py-2 text-right font-medium">Max-month AICs</th>
                           <th className="px-3 py-2 text-right font-medium">Gross $</th>
-                          <th className="px-3 py-2 text-right font-medium">Suggested UBB</th>
+                          <th className="px-3 py-2 text-right font-medium">Suggested ULB</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -986,14 +986,14 @@ export function UniversalUbbPage() {
 
       <Dialog open={confirmCreateOpen} onOpenChange={setConfirmCreateOpen}>
         <DialogContent>
-          <DialogTitle>Create {outlierTargets.length.toLocaleString()} individual UBB{outlierTargets.length === 1 ? '' : 's'}?</DialogTitle>
+          <DialogTitle>Create {outlierTargets.length.toLocaleString()} individual ULB{outlierTargets.length === 1 ? '' : 's'}?</DialogTitle>
           <DialogDescription>
-            This will create or update an individual UBB for each selected user.
+            This will create or update an individual ULB for each selected user.
             Existing UBBs for these users would be overwritten.
           </DialogDescription>
 
           <div className="rounded-md border border-amber-300 dark:border-amber-700/60 bg-amber-50 dark:bg-amber-950/30 px-3 py-2 text-xs text-amber-900 dark:text-amber-200 mb-3">
-            Heads up: this total only reflects individual UBBs. It does not account
+            Heads up: this total only reflects individual ULBs. It does not account
             for other budgets (enterprise or cost centers) that may also apply to
             these users.
           </div>
@@ -1091,7 +1091,7 @@ export function UniversalUbbPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Pre-flight: confirm when the proposed universal UBB would breach
+      {/* Pre-flight: confirm when the proposed universal ULB would breach
           an envelope. The EnvelopeCheckCard already shows the same info
           inline; this is the safety net for admins who scroll past it. */}
       <Dialog
@@ -1101,12 +1101,12 @@ export function UniversalUbbPage() {
         }}
       >
         <DialogContent>
-          <DialogTitle>Apply universal UBB over the envelope?</DialogTitle>
+          <DialogTitle>Apply universal ULB over the envelope?</DialogTitle>
           <DialogDescription>
             {pendingOverApply ? (
               pendingOverApply.overBy > 0 ? (
                 <>
-                  Setting the universal UBB to ${pendingOverApply.usd.toLocaleString()} would
+                  Setting the universal ULB to ${pendingOverApply.usd.toLocaleString()} would
                   put projected spend{' '}
                   <span className="font-semibold">{formatCurrency(pendingOverApply.overBy)} over</span>{' '}
                   the enterprise allowance of {formatCurrency(pendingOverApply.allowance)}.
@@ -1114,7 +1114,7 @@ export function UniversalUbbPage() {
                 </>
               ) : (
                 <>
-                  Setting the universal UBB to ${pendingOverApply.usd.toLocaleString()} would
+                  Setting the universal ULB to ${pendingOverApply.usd.toLocaleString()} would
                   cause {pendingOverApply.failingCcCount} cost-center budget{pendingOverApply.failingCcCount === 1 ? '' : 's'} to be exceeded.
                 </>
               )

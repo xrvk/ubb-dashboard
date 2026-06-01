@@ -17,7 +17,7 @@ import { logDebug } from '@/lib/debugLog'
 interface Props {
   /** Subtree to protect. */
   children: ReactNode
-  /** Human-friendly label for the bounded subtree (e.g. "Individual UBBs tab"). */
+  /** Human-friendly label for the bounded subtree (e.g. "Individual ULBs tab"). */
   label?: string
   /** Optional custom fallback. Receives the error and a reset callback. */
   fallback?: (error: Error, reset: () => void) => ReactNode

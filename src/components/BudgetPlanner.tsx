@@ -328,7 +328,7 @@ export function BudgetPlanner() {
   const constraintResult = useBudgetConstraints()
   const requiredMins = useMemo(() => computeRequiredMinimums(constraintResult), [constraintResult])
 
-  // Per-CC floor: sum of effective UBBs of all Copilot seats in that CC.
+  // Per-CC floor: sum of effective ULBs of all Copilot seats in that CC.
   // For uncapped CCs this is the minimum spend that members will commit
   // (assuming they each consume their full cap). Used to render
   // "at least $X" hints + a column footer total.
@@ -862,7 +862,7 @@ export function BudgetPlanner() {
                 Cost centers
               </h2>
               <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
-                Group-level budgets for subsets of users. Each must cover its members' UBBs.
+                Group-level budgets for subsets of users. Each must cover its members' ULBs.
               </p>
             </div>
 
@@ -1192,7 +1192,7 @@ export function BudgetPlanner() {
                                         </span>
                                       </TooltipTrigger>
                                       <TooltipContent>
-                                        UBB ceiling: {row.seatCount.toLocaleString()} Copilot seat{row.seatCount === 1 ? '' : 's'} × their effective UBBs. Max this cost center could draw from the enterprise pool.
+                                        ULB ceiling: {row.seatCount.toLocaleString()} Copilot seat{row.seatCount === 1 ? '' : 's'} × their effective ULBs. Max this cost center could draw from the enterprise pool.
                                       </TooltipContent>
                                     </Tooltip>
                                   ) : null}
@@ -1280,7 +1280,7 @@ export function BudgetPlanner() {
                               )}
                               {allTotals.uncappedCount > 0 && allTotals.uncappedFloor > 0 ? (
                                 <span className="ml-1.5 text-neutral-500">
-                                  · Includes {formatCurrency(allTotals.uncappedFloor)} UBB ceiling from uncapped cost centers
+                                  · Includes {formatCurrency(allTotals.uncappedFloor)} ULB ceiling from uncapped cost centers
                                 </span>
                               ) : null}
                             </td>

@@ -12,12 +12,12 @@ import { formatCurrency, cn } from '@/lib/utils'
 import { NAV_TO_BUDGET_MODEL_EVENT } from '@/lib/navEvents'
 
 interface Props {
-  /** Proposed universal UBB in dollars (what the admin is about to apply). */
+  /** Proposed universal ULB in dollars (what the admin is about to apply). */
   proposedUsd: number
   /** Same inputs the live ConstraintsBanner uses. */
   constraintsInput: ComputeBudgetConstraintsInput
   /**
-   * Called when the admin clicks "Snap UBB to max safe". Receives the safe
+   * Called when the admin clicks "Snap ULB to max safe". Receives the safe
    * USD value, already rounded to a whole dollar so it matches what the
    * apply path will write (the planner ceils AICs→USD when applying).
    */
@@ -28,8 +28,8 @@ interface Props {
  * A leftover/perCc check counts as caused by the proposed UBB when the
  * proposed value made it strictly worse than baseline. Pure failures that
  * already existed (e.g. CC budgets > ent budget, or a CC overcommitted by
- * existing individual UBBs) belong to ConstraintsBanner on other tabs, not
- * here — surfacing them on the Universal UBB page would misattribute blame
+ * existing individual ULBs) belong to ConstraintsBanner on other tabs, not
+ * here — surfacing them on the Universal ULB page would misattribute blame
  * to the cap the admin is currently choosing.
  */
 function wasWorsenedByProposal(baseline: BudgetCheck | null, preview: BudgetCheck | null): boolean {
@@ -48,7 +48,7 @@ function perCcWorsened(
 }
 
 /**
- * Pre-flight envelope check rendered under Step 2 of the Universal-UBB
+ * Pre-flight envelope check rendered under Step 2 of the Universal-ULB
  * planner. Recomputes the constraint engine with the proposed UBB
  * substituted so the admin can see, before applying, whether the chosen
  * cap would breach the enterprise envelope or any per-cost-center budget.
@@ -84,7 +84,7 @@ export function EnvelopeCheckCard({ proposedUsd, constraintsInput, onSnapToMaxSa
 
   // Only surface failures the proposed UBB introduced or worsened — pure
   // pre-existing breaches are ConstraintsBanner's job on other tabs. Note
-  // ccVsEnterprise doesn't depend on the universal UBB at all, so we never
+  // ccVsEnterprise doesn't depend on the universal ULB at all, so we never
   // attribute it to the proposal.
   const leftover = preview.checks.unassignedLeftover
   const leftoverFail = wasWorsenedByProposal(
@@ -121,8 +121,8 @@ export function EnvelopeCheckCard({ proposedUsd, constraintsInput, onSnapToMaxSa
           <div className={cn('font-semibold', anyFail ? 'text-base' : 'text-sm')}>
             {anyFail
               ? leftoverFail
-                ? 'Proposed UBB exceeds the enterprise envelope'
-                : 'Proposed UBB exceeds a cost-center budget'
+                ? 'Proposed ULB exceeds the enterprise envelope'
+                : 'Proposed ULB exceeds a cost-center budget'
               : 'Within enterprise envelope'}
           </div>
 
@@ -167,7 +167,7 @@ export function EnvelopeCheckCard({ proposedUsd, constraintsInput, onSnapToMaxSa
                   className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-medium bg-current/10 hover:bg-current/20"
                 >
                   <ArrowsClockwise size={10} weight="bold" />
-                  Snap UBB to max safe ({formatCurrency(snap.newValue)})
+                  Snap ULB to max safe ({formatCurrency(snap.newValue)})
                 </button>
               ) : null}
               {showRaiseEnt ? (

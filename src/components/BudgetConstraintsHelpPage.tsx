@@ -38,13 +38,13 @@ export function BudgetConstraintsHelpPage({ onBack }: Props) {
             </p>
             <ul className="list-disc pl-6 space-y-1">
               <li>
-                <Term>Universal user-level budget (universal UBB)</Term>. One
+                <Term>Universal user-level budget (universal ULB)</Term>. One
                 cap applied to every regular user.
               </li>
               <li>
                 <Term>Individual user-level budget</Term>. A per-user cap for
                 exceptions who need higher (or lower) limits than the universal
-                UBB.
+                ULB.
               </li>
               <li>
                 <Term>Cost center budget</Term>. A metered-spend cap for users
@@ -63,14 +63,14 @@ export function BudgetConstraintsHelpPage({ onBack }: Props) {
             </p>
           </Section>
 
-          <Section title="Effective UBB">
-            <p>GitHub evaluates an effective UBB for each user:</p>
+          <Section title="Effective ULB">
+            <p>GitHub evaluates an effective ULB for each user:</p>
             <Formula>
-              effective UBB = max(individual UBB, universal UBB)
+              effective ULB = max(individual ULB, universal ULB)
             </Formula>
             <p>
-              <Term>Regular users</Term> are users without an individual UBB.
-              Their effective UBB is the universal UBB.
+              <Term>Regular users</Term> are users without an individual ULB.
+              Their effective ULB is the universal ULB.
             </p>
           </Section>
 
@@ -92,16 +92,16 @@ export function BudgetConstraintsHelpPage({ onBack }: Props) {
             </p>
             <p>Here&apos;s how to estimate:</p>
             <Formula>
-              max user consumption = (regular users × universal UBB) + Σ
-              individual UBBs{'\n'}
+              max user consumption = (regular users × universal ULB) + Σ
+              individual ULBs{'\n'}
               gap = max user consumption − pool value{'\n'}
               required spend coverage = Σ cost center budgets + enterprise
               budget ≥ gap
             </Formula>
             <p className="text-xs opacity-75">
-              <strong>Tip:</strong> Whenever you raise the universal UBB or any
+              <strong>Tip:</strong> Whenever you raise the universal ULB or any
               individual user-level budget, re-check this calculation. Raising
-              UBBs without raising shared budgets can block users before they
+              ULBs without raising shared budgets can block users before they
               reach their individual limits.
             </p>
           </Section>
@@ -147,7 +147,7 @@ export function BudgetConstraintsHelpPage({ onBack }: Props) {
               <li>
                 <Term>AI Credit metered spend</Term> (premium requests,
                 coding agent, model overages) is what CC budgets actually
-                gate. When a CC user's effective UBB is exhausted or the CC
+                gate. When a CC user's effective ULB is exhausted or the CC
                 budget hits its cap, further metered usage is blocked or
                 alerted per budget config.
               </li>
@@ -197,7 +197,7 @@ export function BudgetConstraintsHelpPage({ onBack }: Props) {
               <li>
                 <Term>Per-cost-center fit</Term>. For every cost center that has
                 a budget,
-                <Formula>Σ effective UBBs of CC members ≤ CC budget</Formula>
+                <Formula>Σ effective ULBs of CC members ≤ CC budget</Formula>
               </li>
               <li>
                 <Term>Cost-center vs enterprise fit</Term>. When cost center
@@ -208,7 +208,7 @@ export function BudgetConstraintsHelpPage({ onBack }: Props) {
                 <Term>Unassigned-users fit</Term>. For users not routed to a
                 budgeted cost center,
                 <Formula>
-                  Σ effective UBBs of unassigned users ≤ leftover enterprise
+                  Σ effective ULBs of unassigned users ≤ leftover enterprise
                   budget{'\n'}
                   (leftover = enterprise budget − Σ CC budgets when exclusion
                   is off, full enterprise budget when on)
@@ -222,21 +222,21 @@ export function BudgetConstraintsHelpPage({ onBack }: Props) {
             </p>
           </Section>
 
-          <Section title="Max safe universal UBB">
+          <Section title="Max safe universal ULB">
             <p>
-              The dashboard computes the highest universal UBB that keeps all
+              The dashboard computes the highest universal ULB that keeps all
               three checks passing, with budgets and individual user-level
               budgets held fixed.
             </p>
             <p>
-              Situation: You want to raise universal UBB but keep the current
+              Situation: You want to raise universal ULB but keep the current
               budgets.
             </p>
             <p>
-              Configuration: Raise universal UBB only up to the max safe
-              universal UBB value. If even universal UBB = $0 fails, individual
+              Configuration: Raise universal ULB only up to the max safe
+              universal ULB value. If even universal ULB = $0 fails, individual
               user-level budgets already exceed your current envelopes. Raise
-              budgets, lower specific individual UBBs, or reroute users between
+              budgets, lower specific individual ULBs, or reroute users between
               cost centers.
             </p>
           </Section>
@@ -244,23 +244,23 @@ export function BudgetConstraintsHelpPage({ onBack }: Props) {
           <Section title="Worked example">
             <p>
               Cost center <Term>&quot;eng&quot;</Term> has a $500 budget and 3
-              members. Two have individual UBBs of $100. The third has none.
-              With universal UBB = $50:
+              members. Two have individual ULBs of $100. The third has none.
+              With universal ULB = $50:
             </p>
             <Formula>
-              effective UBBs = max(100, 50) + max(100, 50) + max(0, 50) = 100 +
+              effective ULBs = max(100, 50) + max(100, 50) + max(0, 50) = 100 +
               100 + 50 = $250
             </Formula>
             <p>
               $250 ≤ $500, so the per-cost-center check passes. Raise universal
-              UBB to $200:
+              ULB to $200:
             </p>
             <Formula>
-              effective UBBs = max(100, 200) + max(100, 200) + max(0, 200) =
+              effective ULBs = max(100, 200) + max(100, 200) + max(0, 200) =
               200 + 200 + 200 = $600
             </Formula>
             <p>
-              $600 &gt; $500, so the check fails. The max safe universal UBB is
+              $600 &gt; $500, so the check fails. The max safe universal ULB is
               $150 ($150 + $150 + $150 = $450 ≤ $500).
             </p>
             <p className="text-xs opacity-75">
@@ -280,7 +280,7 @@ export function BudgetConstraintsHelpPage({ onBack }: Props) {
 
           <Section title="API rate limits at scale">
             <p>
-              Setting per-user UBBs in bulk hits one PATCH per user. With a
+              Setting per-user ULBs in bulk hits one PATCH per user. With a
               classic PAT the primary ceiling is{' '}
               <Term>5,000 requests per hour</Term> for the entire token, and a
               secondary "abuse" limit fires inside that window when traffic

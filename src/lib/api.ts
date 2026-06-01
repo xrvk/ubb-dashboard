@@ -561,10 +561,10 @@ export async function deleteUserBudget(apiFetch: ApiFetch, budgetId: string): Pr
   await apiFetch(`/budgets/${budgetId}`, { method: 'DELETE' })
 }
 
-// --- Universal UBB (multi_user_customer scope) ---
+// --- Universal ULB (multi_user_customer scope) ---
 
 /**
- * The "universal UBB" is the single `multi_user_customer`-scope `ai_credits`
+ * The "universal ULB" is the single `multi_user_customer`-scope `ai_credits`
  * budget that caps every enterprise user not covered by a more specific budget
  * (cost center or individual). Enterprises have at most one of these.
  */
@@ -589,7 +589,7 @@ function toUniversalUbb(b: RawBudget): UniversalUbb {
 }
 
 /**
- * Fetch the enterprise's universal UBB (multi_user_customer scope, ai_credits SKU).
+ * Fetch the enterprise's universal ULB (multi_user_customer scope, ai_credits SKU).
  * Returns null if one isn't configured.
  */
 export async function fetchUniversalUBB(apiFetch: ApiFetch): Promise<UniversalUbb | null> {
@@ -598,7 +598,7 @@ export async function fetchUniversalUBB(apiFetch: ApiFetch): Promise<UniversalUb
   return hit ? toUniversalUbb(hit) : null
 }
 
-/** Update the universal UBB's cap. Hard stop is always enforced. */
+/** Update the universal ULB's cap. Hard stop is always enforced. */
 export async function patchUniversalUBB(
   apiFetch: ApiFetch,
   budgetId: string,
@@ -613,7 +613,7 @@ export async function patchUniversalUBB(
   })
 }
 
-/** Create the universal UBB (only used if one doesn't exist yet). */
+/** Create the universal ULB (only used if one doesn't exist yet). */
 export async function createUniversalUBB(
   apiFetch: ApiFetch,
   budgetAmount: number,

@@ -10,9 +10,9 @@ interface Props {
 }
 
 /**
- * Three hero tiles at the top of the Individual UBB page that frame the
+ * Three hero tiles at the top of the Individual ULB page that frame the
  * page's forward-looking story: where we are, where we're headed, and
- * which users are headed for trouble. Mirrors the Universal UBB hero row.
+ * which users are headed for trouble. Mirrors the Universal ULB hero row.
  */
 export function ForecastHero({ forecast, onSelectProjectedOver }: Props) {
   const overDelta = forecast.projectedEom - forecast.totalBudgeted
@@ -61,10 +61,10 @@ export function ForecastHero({ forecast, onSelectProjectedOver }: Props) {
             <div className="text-xs text-neutral-500 mt-1">
               {forecast.totalBudgeted > 0 ? (
                 overDelta > 0
-                  ? `${formatCurrency(overDelta)} over UBB total`
-                  : `${formatCurrency(-overDelta)} headroom vs UBB total`
+                  ? `${formatCurrency(overDelta)} over ULB total`
+                  : `${formatCurrency(-overDelta)} headroom vs ULB total`
               ) : (
-                'no UBB caps set'
+                'no ULB caps set'
               )}
             </div>
           </div>
@@ -77,7 +77,7 @@ export function ForecastHero({ forecast, onSelectProjectedOver }: Props) {
           <button
             type="button"
             onClick={onSelectProjectedOver}
-            title="Filter to users projected to exceed their UBB by end of month"
+            title="Filter to users projected to exceed their ULB by end of month"
             className="w-full text-left cursor-pointer"
           >
             <ForecastAtRiskBody forecast={forecast} totalAtRisk={totalAtRisk} />

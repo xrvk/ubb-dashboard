@@ -107,7 +107,7 @@ describe('computeBudgetConstraints', () => {
   })
 
   describe('per-CC check (B)', () => {
-    it('passes when Σ effective UBBs ≤ CC budget', () => {
+    it('passes when Σ effective ULBs ≤ CC budget', () => {
       const ccA = cc('cc1', 'ccA', [{ type: 'User', name: 'alice' }])
       const r = computeBudgetConstraints(
         baseInput({
@@ -183,7 +183,7 @@ describe('computeBudgetConstraints', () => {
       expect(r.checks.perCc[0]?.check.overBy).toBe(5)
     })
 
-    it('individual UBB wins over universal for member effective UBB', () => {
+    it('individual ULB wins over universal for member effective ULB', () => {
       const ccA = cc('cc1', 'ccA', [{ type: 'User', name: 'alice' }])
       const r = computeBudgetConstraints(
         baseInput({
@@ -319,7 +319,7 @@ describe('computeBudgetConstraints', () => {
   })
 
   describe('warnings', () => {
-    it('warns when universal UBB has prevent_further_usage=false', () => {
+    it('warns when universal ULB has prevent_further_usage=false', () => {
       const r = computeBudgetConstraints(
         baseInput({ universalUbb: universalUbb(10, false), seats: [seat('a')] }),
       )
@@ -341,7 +341,7 @@ describe('computeBudgetConstraints', () => {
       expect(r.warnings.some(w => w.code === 'unbounded_user_coverage' && w.context?.login === 'alice')).toBe(true)
     })
 
-    it('does NOT warn unbounded when user has individual UBB', () => {
+    it('does NOT warn unbounded when user has individual ULB', () => {
       const r = computeBudgetConstraints(
         baseInput({
           seats: [seat('alice')],
@@ -397,7 +397,7 @@ describe('computeBudgetConstraints', () => {
       expect(r.maxSafeUniversalUbb).toBe(25)
     })
 
-    it('respects individual UBBs in the fixed sum', () => {
+    it('respects individual ULBs in the fixed sum', () => {
       // ent=100, no CCs, 3 seats: alice has $40 individual, b+c rely on U.
       // leftover allowed = 100; fixed = 40; n = 2 → max U = (100 - 40)/2 = 30
       const r = computeBudgetConstraints(
@@ -483,10 +483,10 @@ describe('computeBudgetConstraints', () => {
 })
 
 describe('previewConstraintsWithProposedUbb', () => {
-  it('flags the small-ent / no-CC / aggressive-UBB scenario as over', async () => {
+  it('flags the small-ent / no-CC / aggressive-ULB scenario as over', async () => {
     const { previewConstraintsWithProposedUbb } = await import('../lib/budgetConstraints')
-    // 100 seats, $500 ent budget, no CCs, no individual UBBs. Sizing the
-    // universal UBB from "top 5%" usage at $20/user proposes $2000 of
+    // 100 seats, $500 ent budget, no CCs, no individual ULBs. Sizing the
+    // universal ULB from "top 5%" usage at $20/user proposes $2000 of
     // projected leftover spend — $1500 over a $500 envelope.
     const seats: CopilotSeat[] = Array.from({ length: 100 }, (_, i) => seat(`u${i}`))
     const input = baseInput({
@@ -518,10 +518,10 @@ describe('previewConstraintsWithProposedUbb', () => {
     expect(r.checks.unassignedLeftover?.allowed).toBe(500)
   })
 
-  it('reports maxSafeUniversalUbb=0 when individual UBBs alone fill the envelope', async () => {
+  it('reports maxSafeUniversalUbb=0 when individual ULBs alone fill the envelope', async () => {
     const { previewConstraintsWithProposedUbb } = await import('../lib/budgetConstraints')
-    // 1 seat with an individual UBB at $500 already saturates the $500 ent
-    // budget. Any universal UBB > 0 covering additional seats would breach.
+    // 1 seat with an individual ULB at $500 already saturates the $500 ent
+    // budget. Any universal ULB > 0 covering additional seats would breach.
     const seats: CopilotSeat[] = [seat('alice'), seat('bob')]
     const input = baseInput({
       enterpriseBudget: entBudget(500),
@@ -562,7 +562,7 @@ describe('previewConstraintsWithProposedUbb', () => {
       newValue: 5,
       scope: 'universal_ubb',
     })
-    // When the envelope is fully consumed by individual UBBs, the snap is
+    // When the envelope is fully consumed by individual ULBs, the snap is
     // suppressed (safe=0) and the card must rely on the raise-ent action.
     const noHeadroomInput = baseInput({
       enterpriseBudget: entBudget(500),

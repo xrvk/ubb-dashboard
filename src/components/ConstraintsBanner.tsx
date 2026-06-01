@@ -55,7 +55,7 @@ function scrollToPlanner(targetId: string) {
 /**
  * Banner that surfaces the budget-constraint health for the current enterprise.
  *
- * Enforces the "golden rule": sum of effective per-user UBBs must remain the
+ * Enforces the "golden rule": sum of effective per-user ULBs must remain the
  * binding constraint, never the enterprise pool or a cost-center cap.
  *
  * Three visual states:
@@ -135,7 +135,7 @@ export function ConstraintsBanner() {
           })
         }
         actions.push({
-          label: `Reduce UBBs for ${c.memberCount} member${c.memberCount === 1 ? '' : 's'}`,
+          label: `Reduce ULBs for ${c.memberCount} member${c.memberCount === 1 ? '' : 's'}`,
           onClick: () => {
             const task: NavToIndividualTask = {
               id: `cc-over:${c.costCenterId}`,
@@ -173,7 +173,7 @@ export function ConstraintsBanner() {
         }
         arr.push({
           kind: 'cc-over',
-          message: `Cost center "${c.costCenterName}" is over by ${formatCurrency(c.check.overBy)} — ${c.memberCount} member${c.memberCount === 1 ? '' : 's'} have effective UBBs totaling ${formatCurrency(c.check.actual)} against a ${formatCurrency(c.check.allowed)} budget.`,
+          message: `Cost center "${c.costCenterName}" is over by ${formatCurrency(c.check.overBy)} — ${c.memberCount} member${c.memberCount === 1 ? '' : 's'} have effective ULBs totaling ${formatCurrency(c.check.actual)} against a ${formatCurrency(c.check.allowed)} budget.`,
           actions,
           overBy: c.check.overBy,
           costCenterName: c.costCenterName,
@@ -244,7 +244,7 @@ export function ConstraintsBanner() {
       }
       arr.push({
         kind: 'leftover',
-        message: `Users outside a budgeted cost center have effective UBBs totaling ${formatCurrency(result.checks.unassignedLeftover.actual)}, exceeding the ${result.mode === 'umbrella' ? 'leftover enterprise allowance' : 'enterprise budget'} of ${formatCurrency(result.checks.unassignedLeftover.allowed)} by ${formatCurrency(result.checks.unassignedLeftover.overBy)}.`,
+        message: `Users outside a budgeted cost center have effective ULBs totaling ${formatCurrency(result.checks.unassignedLeftover.actual)}, exceeding the ${result.mode === 'umbrella' ? 'leftover enterprise allowance' : 'enterprise budget'} of ${formatCurrency(result.checks.unassignedLeftover.allowed)} by ${formatCurrency(result.checks.unassignedLeftover.overBy)}.`,
         actions,
       })
     }
@@ -278,7 +278,7 @@ export function ConstraintsBanner() {
       : 'Budgets are well-constrained'
 
   // We expand only when there's something actionable: failures or warnings.
-  // (Previously this also expanded to surface "Max safe universal UBB" in the
+  // (Previously this also expanded to surface "Max safe universal ULB" in the
   // healthy state, but that wasn't a question users actually asked.) The
   // alt-fix line below is shown only when expanded for a failure that has a
   // viable lower-UBB workaround, so it doesn't need its own trigger.
@@ -323,7 +323,7 @@ export function ConstraintsBanner() {
                 const currentUbb = universalUbb?.budgetAmount ?? null
                 // When hasFailure && safe === 0, there's nothing useful to say
                 // here that isn't already in the failing-checks actions above.
-                // The previous "individual UBBs alone exceed per-CC budgets"
+                // The previous "individual ULBs alone exceed per-CC budgets"
                 // message was wrong when the binding cap was actually the
                 // unassigned-leftover allowance, so we just suppress it.
                 if (hasFailure && safe === 0) return null
@@ -331,9 +331,9 @@ export function ConstraintsBanner() {
                   return (
                     <div className="text-xs opacity-90">
                       <span className="font-semibold">Alternative fix:</span>{' '}
-                      lowering the universal UBB from {formatCurrency(currentUbb)} to{' '}
+                      lowering the universal ULB from {formatCurrency(currentUbb)} to{' '}
                       {formatCurrency(safe)} would satisfy the per-cost-center budgets
-                      (edit it on the Universal UBB tab).
+                      (edit it on the Universal ULB tab).
                     </div>
                   )
                 }

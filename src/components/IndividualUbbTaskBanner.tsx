@@ -10,9 +10,9 @@ interface Props {
 }
 
 /**
- * Sticky contextual banner shown beneath the tab bar on the Individual UBBs
- * page after the user deep-links from a constraint action (e.g. "Reduce UBBs
- * for N members"). Re-computes effective UBB totals live from the credentials
+ * Sticky contextual banner shown beneath the tab bar on the Individual ULBs
+ * page after the user deep-links from a constraint action (e.g. "Reduce ULBs
+ * for N members"). Re-computes effective ULB totals live from the credentials
  * context so progress updates as the user edits per-user budgets without
  * having to scroll back up to a stale banner.
  */
@@ -61,7 +61,7 @@ export function IndividualUbbTaskBanner({ task, onDismiss }: Props) {
           </div>
           <div className="mt-0.5 text-xs opacity-90">
             {task.memberCount} member{task.memberCount === 1 ? '' : 's'},{' '}
-            effective UBBs total <span className="font-semibold">{formatCurrency(progress.currentSum)}</span>{' '}
+            effective ULBs total <span className="font-semibold">{formatCurrency(progress.currentSum)}</span>{' '}
             against a <span className="font-semibold">{formatCurrency(task.ccBudget)}</span> cost center budget.{' '}
             {progress.resolved ? (
               <span>All set.</span>

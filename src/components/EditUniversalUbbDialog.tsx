@@ -35,7 +35,7 @@ export function EditUniversalUbbDialog({ universalUbb, open, onOpenChange, onSub
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
-        <DialogTitle>{universalUbb ? 'Edit universal UBB' : 'Create universal UBB'}</DialogTitle>
+        <DialogTitle>{universalUbb ? 'Edit universal ULB' : 'Create universal ULB'}</DialogTitle>
         <DialogDescription>
           {universalUbb
             ? 'Update the enterprise-wide cap that applies to every user not covered by an individual or cost-center UBB. Hard stop is always enforced.'

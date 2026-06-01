@@ -82,7 +82,7 @@ export function loadAllCachedReports(enterprise: string): CachedReport[] {
 /**
  * Per-user aggregate across multiple monthly aggregations: returns the MAX
  * single-month consumption per user. Used as the sizing input for the
- * universal UBB so that seasonal spikes drive the cap, not the average.
+ * universal ULB so that seasonal spikes drive the cap, not the average.
  */
 export function aggregateMaxMonth(
   monthlyRows: UserAicAggregate[][],

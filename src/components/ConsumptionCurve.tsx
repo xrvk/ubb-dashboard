@@ -31,7 +31,7 @@ interface ConsumptionCurveProps {
   sortedUsers: CsvUserUsage[]
   thresholdAICs: number
   powerUserCount: number
-  /** Universal UBB in AICs (the cap the admin is sizing). */
+  /** Universal ULB in AICs (the cap the admin is sizing). */
   ubbAICs: number
   /** Optional: power-user UBB in AICs. Hidden when undefined. */
   powerUbbAICs?: number
@@ -331,12 +331,12 @@ export function ConsumptionCurve({
                 textAnchor="end"
                 className="fill-amber-900 dark:fill-amber-200 text-[10px] font-medium pointer-events-none"
               >
-                Universal UBB {formatUsd(ubbAICs)}{ubbIsOverridden ? ' (custom)' : ''}
+                Universal ULB {formatUsd(ubbAICs)}{ubbIsOverridden ? ' (custom)' : ''}
               </text>
             </g>
           )}
 
-          {/* Power UBB line (draggable, optional) */}
+          {/* Power ULB line (draggable, optional) */}
           {powerUbbY !== null && powerUbbAICs !== undefined && (
             <g
               style={{ cursor: onPowerUbbChange ? 'ns-resize' : 'default' }}
@@ -376,7 +376,7 @@ export function ConsumptionCurve({
                 textAnchor="end"
                 className="fill-orange-800 dark:fill-orange-300 text-[10px] font-medium pointer-events-none"
               >
-                Power UBB {formatUsd(powerUbbAICs)}{powerUbbIsOverridden ? ' (custom)' : ''}
+                Power ULB {formatUsd(powerUbbAICs)}{powerUbbIsOverridden ? ' (custom)' : ''}
               </text>
             </g>
           )}
@@ -490,7 +490,7 @@ export function ConsumptionCurve({
         <div className="rounded-md bg-orange-50 dark:bg-orange-950/30 border border-orange-300 dark:border-orange-800 px-3 py-2">
           <div className="flex items-center gap-1.5 text-orange-800 dark:text-orange-300 font-semibold">
             <span className="w-2.5 h-2.5 rounded-sm bg-orange-500 dark:bg-orange-400" />
-            Outliers · need individual UBB
+            Outliers · need individual ULB
           </div>
           <p className="text-neutral-600 dark:text-neutral-400 mt-0.5">
             {powerUserCount} {powerUserCount === 1 ? 'user' : 'users'} at or above {formatUsd(thresholdAICs)}
@@ -514,7 +514,7 @@ export function ConsumptionCurve({
         ) : (
           <span>
             Hover the curve to inspect a user. Drag the vertical line to split regular vs outliers,
-            then drag the dashed line to set the UBB.
+            then drag the dashed line to set the ULB.
           </span>
         )}
       </div>

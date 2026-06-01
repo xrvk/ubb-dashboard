@@ -2,8 +2,8 @@
  * Consumption Analysis Library
  *
  * Pure functions for analyzing per-user AIC consumption from billing CSV data.
- * Used to size the universal UBB and identify outliers ("power users") that
- * should be put on individual UBBs instead.
+ * Used to size the universal ULB and identify outliers ("power users") that
+ * should be put on individual ULBs instead.
  *
  * Vendored from xrvk/copilot-budget-command-calculator
  * (src/lib/consumptionAnalysis.ts). Adaptations:
@@ -120,7 +120,7 @@ export function applyThreshold(
   const powerSorted = powerUsers.map(u => u.totalAICs).sort((a, b) => a - b)
   const suggestedPowerUserBudget = powerSorted.length > 0 ? percentile(powerSorted, 50) : 0
 
-  // Universal UBB = P95 of regular group: covers most regulars without inflating
+  // Universal ULB = P95 of regular group: covers most regulars without inflating
   // the cap to the very top outlier. Admins can drag higher/lower.
   const regularSorted = regularUsers.map(u => u.totalAICs).sort((a, b) => a - b)
   const suggestedUBB = regularSorted.length > 0 ? percentile(regularSorted, 95) : 0

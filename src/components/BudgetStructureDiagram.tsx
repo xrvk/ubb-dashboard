@@ -103,8 +103,8 @@ export function BudgetStructureDiagram({
     return `${seg.name} · ${suffix}`
   }
 
-  // Effective cap for an uncapped CC = its Copilot seat count × universal UBB.
-  // This is the implicit ceiling once universal UBB is set; without it the CC
+  // Effective cap for an uncapped CC = its Copilot seat count × universal ULB.
+  // This is the implicit ceiling once universal ULB is set; without it the CC
   // has no per-CC bound at all.
   function uncappedBackstopLine(seatCount: number): string | null {
     const ubb = universalUbb?.budgetAmount ?? null
