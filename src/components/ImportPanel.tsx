@@ -42,7 +42,12 @@ export function ImportPanel() {
           }}
         >
           <label className="text-sm grid gap-1">
-            <span className="text-neutral-600 dark:text-neutral-400">Enterprise URL</span>
+            <span className="text-neutral-600 dark:text-neutral-400">
+              Enterprise URL{' '}
+              <span className="text-neutral-400 dark:text-neutral-500">
+                (github.com or *.ghe.com)
+              </span>
+            </span>
             <Input
               required
               placeholder="https://github.com/enterprises/your-slug"
