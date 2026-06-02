@@ -298,7 +298,9 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
   const connect = useCallback(async (enterpriseUrl: string, token: string) => {
     const parsed = parseEnterpriseUrl(enterpriseUrl)
     if (!parsed) {
-      setError('Invalid enterprise URL. Expected e.g. https://github.com/enterprises/your-slug')
+      setError(
+        'Invalid enterprise URL. Expected e.g. https://github.com/enterprises/your-slug or https://your-tenant.ghe.com/enterprises/your-slug',
+      )
       return
     }
     const creds: Credentials = { base: parsed.base, ent: parsed.ent, token }

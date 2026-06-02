@@ -109,6 +109,13 @@ describe('parseEnterpriseUrl', () => {
       ent: 'foo',
     })
   })
+  it('accepts GHE.com API URLs (api. prefix) with trailing slash', () => {
+    // Some GHE.com docs use the API form; make sure pasting it works.
+    expect(parseEnterpriseUrl('https://api.acme.ghe.com/enterprises/acme/')).toEqual({
+      base: 'https://api.acme.ghe.com',
+      ent: 'acme',
+    })
+  })
   it('returns null on bad URL', () => {
     expect(parseEnterpriseUrl('not a url')).toBeNull()
   })
