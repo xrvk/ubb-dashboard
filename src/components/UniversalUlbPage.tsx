@@ -4,10 +4,8 @@ import { PencilSimple, Coins, ChartLine, Users } from '@phosphor-icons/react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { CostCenterCombobox, type CostCenterOption } from '@/components/ui/cost-center-combobox'
 import { useCredentials } from '@/hooks/use-credentials'
 import {
-  buildCostCenterIndex,
   apiBaseToWebBase,
   createUniversalULB,
   createUserBudget as apiCreateUserBudget,
@@ -16,7 +14,7 @@ import {
 } from '@/lib/api'
 import { describeError } from '@/lib/errors'
 import { formatCurrency, openExternal } from '@/lib/utils'
-import { previewConstraintsWithProposedUlb, computeBudgetConstraints, type ComputeBudgetConstraintsInput } from '@/lib/budgetConstraints'
+import { computeBudgetConstraints } from '@/lib/budgetConstraints'
 import {
   loadAllCachedReports,
   aggregateMaxMonth,
@@ -36,7 +34,6 @@ import {
   DialogClose,
 } from '@/components/ui/dialog'
 import { EditUniversalUlbDialog } from '@/components/EditUniversalUlbDialog'
-import { EnvelopeCheckCard } from '@/components/EnvelopeCheckCard'
 import { UsageCsvImport } from '@/components/UsageCsvImport'
 import { ConsumptionCurve } from '@/components/ConsumptionCurve'
 
@@ -71,10 +68,7 @@ export function UniversalUlbPage() {
     universalUlb,
     setUniversalUlb,
     setBudgets,
-    loginToCostCenter,
-    enterpriseBudget,
-    costCenters,
-    costCenterBudgetsByName,
+    orgBudget,
   } = useCredentials()
 
   // Deep-link to the enterprise's AI usage billing page so admins can pull
@@ -123,9 +117,6 @@ export function UniversalUlbPage() {
   /** Growth buffer (%) applied on top of each outlier's max-month spend
    *  when computing their suggested individual ULB. */
   const [outlierBufferPct, setOutlierBufferPct] = useState<number>(DEFAULT_OUTLIER_BUFFER_PCT)
-  /** Cost-center filter for the outliers table.
-   *  null = all, '' = unassigned (no CC), otherwise CC id. */
-  const [costCenterFilter, setCostCenterFilter] = useState<string | null>(null)
   /** Anchor for shift-click range selection in the outliers table. */
   const [lastClickedOutlierLogin, setLastClickedOutlierLogin] = useState<string | null>(null)
   const OUTLIERS_PER_PAGE = 25
@@ -194,21 +185,11 @@ export function UniversalUlbPage() {
   const ulbAICs = ulbOverrideAICs !== null ? ulbOverrideAICs : threshold.suggestedULB
   const ulbIsOverridden = ulbOverrideAICs !== null
 
-  // Inputs for the constraint engine — same shape useBudgetConstraints
-  // builds, but assembled inline so we can also feed it to the
-  // EnvelopeCheckCard's preview helper.
-  const constraintsInput: ComputeBudgetConstraintsInput = useMemo(() => {
-    const index = buildCostCenterIndex(costCenters, costCenterBudgetsByName)
-    return {
-      enterpriseBudget,
-      universalUlb,
-      costCenters,
-      costCenterIndex: index,
-      ccBudgetsByName: costCenterBudgetsByName,
-      seats,
-      userBudgets: budgets,
-    }
-  }, [enterpriseBudget, universalUlb, costCenters, costCenterBudgetsByName, seats, budgets])
+  // Inputs for the constraint engine.
+  const constraintsInput = useMemo(
+    () => ({ orgBudget, universalUlb, seats, userBudgets: budgets }),
+    [orgBudget, universalUlb, seats, budgets],
+  )
 
   // Coverage: how many regular users fit under the chosen ULB?
   const coverage = useMemo(() => {
@@ -265,40 +246,34 @@ export function UniversalUlbPage() {
     toast.success(`Universal ULB set to ${formatCurrency(newAmount)}`)
   }
 
-  /** Convert the chart's ULB (AICs) → USD and write to the enterprise.
-   *  When the preview engine flags the proposed value as worsening an
-   *  envelope check (relative to the current baseline) open a confirm
-   *  dialog instead of applying immediately. Pre-existing breaches that
-   *  the proposed ULB neither caused nor worsened are ignored here —
-   *  ConstraintsBanner on other tabs is responsible for those. */
+  /** Convert the chart's ULB (AICs) → USD and write to the org.
+   *  When the proposed value would push Σ effective ULBs past the org
+   *  budget, surface a confirm dialog with the over-by amount. Pre-existing
+   *  breaches (caused by current ULBs, not this change) are surfaced by
+   *  ConstraintsBanner on other tabs. */
   const handleApplyUniversalULB = async () => {
     const newUsd = Math.max(1, Math.ceil(ulbAICs / AICS_PER_USD))
-    const hasEnvelope =
-      enterpriseBudget !== null || costCenterBudgetsByName.size > 0
-    if (hasEnvelope) {
+    if (orgBudget) {
       const baseline = computeBudgetConstraints(constraintsInput)
-      const preview = previewConstraintsWithProposedUlb(constraintsInput, newUsd)
-      const baselineLeftoverActual = baseline.checks.unassignedLeftover?.actual ?? 0
-      const leftover = preview.checks.unassignedLeftover
-      const leftoverWorsened =
-        leftover && !leftover.ok && leftover.actual > baselineLeftoverActual
-      const baselineCcById = new Map(
-        baseline.checks.perCc.map(c => [c.costCenterId, c]),
-      )
-      const ccWorsened = preview.checks.perCc.filter(c => {
-        if (c.check.ok) return false
-        const base = baselineCcById.get(c.costCenterId)
-        return !base || c.check.actual > base.check.actual
-      })
-      const overBy = leftoverWorsened ? leftover.overBy : 0
-      if (leftoverWorsened || ccWorsened.length > 0) {
-        setPendingOverApply({
-          usd: newUsd,
-          overBy,
-          allowance: leftover?.allowed ?? 0,
-          failingCcCount: ccWorsened.length,
-        })
-        return
+      const baselineActual = baseline.mainCheck?.actual ?? 0
+      const baselineUniv = universalUlb?.budgetAmount ?? 0
+      // Estimate the new totals by swapping in the proposed universal cap
+      // for everyone without an individual ULB. baseline.universalSeatCount
+      // already excludes individual-ULB-bearing seats.
+      const projectedActual =
+        baselineActual + (newUsd - baselineUniv) * baseline.universalSeatCount
+      if (projectedActual > orgBudget.budgetAmount) {
+        const baselineOverBy = baseline.mainCheck?.overBy ?? 0
+        const projectedOverBy = projectedActual - orgBudget.budgetAmount
+        if (projectedOverBy > baselineOverBy) {
+          setPendingOverApply({
+            usd: newUsd,
+            overBy: projectedOverBy - baselineOverBy,
+            allowance: orgBudget.budgetAmount,
+            failingCcCount: 0,
+          })
+          return
+        }
       }
     }
     await proceedApplyUniversalULB(newUsd)
@@ -457,37 +432,10 @@ export function UniversalUlbPage() {
     })
   }
 
-  // CC resolution helpers. `loginToCostCenter` is keyed by lowercased login.
-  const getCC = (login: string) => loginToCostCenter.get(login.toLowerCase()) ?? null
-
-  // Cost centers that any outlier resolves to (used to populate the filter
-  // dropdown). Deduped by id, alphabetized by name.
-  const outlierCostCenters = useMemo(() => {
-    const byId = new Map<string, { id: string; name: string }>()
-    for (const u of threshold.powerUsers) {
-      const res = getCC(u.login)
-      if (res) byId.set(res.cc.id, { id: res.cc.id, name: res.cc.name })
-    }
-    return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [threshold.powerUsers, loginToCostCenter])
-
-  const hasAnyOutlierUnassigned = useMemo(
-    () => threshold.powerUsers.some(u => !getCC(u.login)),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [threshold.powerUsers, loginToCostCenter],
-  )
-
-  // Rows actually shown after applying the cost-center filter.
-  const filteredPowerUsers = useMemo(() => {
-    if (costCenterFilter === null) return threshold.powerUsers
-    return threshold.powerUsers.filter(u => {
-      const res = getCC(u.login)
-      if (costCenterFilter === '') return !res
-      return res?.cc.id === costCenterFilter
-    })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [threshold.powerUsers, costCenterFilter, loginToCostCenter])
+  // Org variant: no cost-center routing, so all power users are shown
+  // without a CC filter — keep the alias to avoid touching downstream
+  // pagination/select-all logic.
+  const filteredPowerUsers = threshold.powerUsers
 
   // Edited rows are treated as already configured — they're not toggled by
   // "select all" and don't affect the all/none counter. Select-all also
@@ -658,14 +606,49 @@ export function UniversalUlbPage() {
             ) : null}
           </div>
 
-          {hasData ? (
-            <EnvelopeCheckCard
-              proposedUsd={ulbDeltaUsd}
-              constraintsInput={constraintsInput}
-              onSnapToMaxSafe={usd =>
-                setUlbOverrideEntry({ sig: datasetSig, value: usd * AICS_PER_USD })
-              }
-            />
+          {hasData && orgBudget ? (
+            (() => {
+              const baseline = computeBudgetConstraints(constraintsInput)
+              const maxSafe = baseline.maxSafeUniversalUlb
+              const isFinite = Number.isFinite(maxSafe)
+              const overBy = isFinite && ulbDeltaUsd > maxSafe ? ulbDeltaUsd - maxSafe : 0
+              return (
+                <Card>
+                  <CardContent className="py-4">
+                    <div className="flex items-center justify-between gap-4 flex-wrap">
+                      <div>
+                        <div className="text-sm font-semibold">Org-budget headroom check</div>
+                        <div className="text-xs text-muted-foreground mt-1">
+                          Proposed universal ULB: <strong>{formatCurrency(ulbDeltaUsd)}</strong>
+                          {' · '}
+                          Max safe under {formatCurrency(orgBudget.budgetAmount)} org cap:{' '}
+                          <strong>{isFinite ? formatCurrency(Math.floor(maxSafe)) : '— (all seats have individual ULBs)'}</strong>
+                        </div>
+                      </div>
+                      {overBy > 0 && isFinite ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() =>
+                            setUlbOverrideEntry({
+                              sig: datasetSig,
+                              value: Math.floor(maxSafe) * AICS_PER_USD,
+                            })
+                          }
+                        >
+                          Snap to {formatCurrency(Math.floor(maxSafe))}
+                        </Button>
+                      ) : null}
+                    </div>
+                    {overBy > 0 && (
+                      <div className="mt-2 text-xs text-destructive">
+                        Over by {formatCurrency(overBy)} per uncovered seat.
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              )
+            })()
           ) : null}
 
           <ConsumptionCurve
@@ -777,57 +760,7 @@ export function UniversalUlbPage() {
               const pageRows = filteredPowerUsers.slice(pageStart, pageStart + OUTLIERS_PER_PAGE)
               return (
                 <>
-                  {(outlierCostCenters.length > 0 || hasAnyOutlierUnassigned) && (
-                    <div className="flex items-center gap-2 text-xs">
-                      <label className="text-neutral-600 dark:text-neutral-400" htmlFor="cc-filter">
-                        Cost center:
-                      </label>
-                      {(() => {
-                        const OUTLIER_UNASSIGNED = '__unassigned__'
-                        const OUTLIER_ALL = '__all__'
-                        const unassignedCount = threshold.powerUsers.filter(u => !getCC(u.login)).length
-                        const ccOptions: CostCenterOption[] = [
-                          { id: OUTLIER_ALL, label: `All`, count: threshold.powerUsers.length, emphasis: true },
-                        ]
-                        if (hasAnyOutlierUnassigned) {
-                          ccOptions.push({ id: OUTLIER_UNASSIGNED, label: 'Unassigned', count: unassignedCount })
-                        }
-                        for (const cc of outlierCostCenters) {
-                          const count = threshold.powerUsers.filter(u => getCC(u.login)?.cc.id === cc.id).length
-                          ccOptions.push({ id: cc.id, label: cc.name, count })
-                        }
-                        const comboValue =
-                          costCenterFilter === null ? OUTLIER_ALL :
-                          costCenterFilter === '' ? OUTLIER_UNASSIGNED :
-                          costCenterFilter
-                        return (
-                          <CostCenterCombobox
-                            options={ccOptions}
-                            value={comboValue}
-                            onChange={id => {
-                              setCostCenterFilter(
-                                id === OUTLIER_ALL ? null : id === OUTLIER_UNASSIGNED ? '' : id,
-                              )
-                              setOutlierPage(0)
-                            }}
-                            ariaLabel="Filter outliers by cost center"
-                          />
-                        )
-                      })()}
-                      {costCenterFilter !== null && (
-                        <button
-                          type="button"
-                          onClick={() => { setCostCenterFilter(null); setOutlierPage(0) }}
-                          className="text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200 underline"
-                        >
-                          clear
-                        </button>
-                      )}
-                      <div className="ml-auto text-neutral-500">
-                        Showing {filteredPowerUsers.length.toLocaleString()} of {threshold.powerUsers.length.toLocaleString()}
-                      </div>
-                    </div>
-                  )}
+                  {/* Org variant: no cost-center routing — CC filter dropdown removed. */}
                   <div className="flex items-center justify-between gap-2 text-xs">
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input
@@ -862,7 +795,6 @@ export function UniversalUlbPage() {
                         <tr>
                           <th className="px-3 py-2 w-8" aria-label="Select" />
                           <th className="px-3 py-2 font-medium">User</th>
-                          <th className="px-3 py-2 font-medium">Cost center</th>
                           <th className="px-3 py-2 text-right font-medium">Max-month AICs</th>
                           <th className="px-3 py-2 text-right font-medium">Gross $</th>
                           <th className="px-3 py-2 text-right font-medium">Suggested ULB</th>
@@ -893,20 +825,6 @@ export function UniversalUlbPage() {
                                 />
                               </td>
                               <td className="px-3 py-2 font-medium">{u.login}</td>
-                              <td className="px-3 py-2 text-xs">
-                                {(() => {
-                                  const res = getCC(u.login)
-                                  if (!res) return <span className="text-neutral-400">—</span>
-                                  return (
-                                    <span title={`via ${res.via}`}>
-                                      {res.cc.name}
-                                      {res.via === 'org' && (
-                                        <span className="ml-1 text-neutral-400">(org)</span>
-                                      )}
-                                    </span>
-                                  )
-                                })()}
-                              </td>
                               <td className="px-3 py-2 text-right tabular-nums">
                                 {Math.round(u.totalAICs).toLocaleString()}
                               </td>
@@ -1123,7 +1041,7 @@ export function UniversalUlbPage() {
       </Dialog>
 
       {/* Pre-flight: confirm when the proposed universal ULB would breach
-          an envelope. The EnvelopeCheckCard already shows the same info
+          the org budget. The headroom card already shows the same info
           inline; this is the safety net for admins who scroll past it. */}
       <Dialog
         open={pendingOverApply !== null}

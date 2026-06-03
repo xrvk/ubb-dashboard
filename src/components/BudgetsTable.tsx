@@ -5,22 +5,14 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { StatusBadge } from '@/components/ui/status-badge'
-import { CostCenterCombobox, type CostCenterOption } from '@/components/ui/cost-center-combobox'
 import { formatCurrency, formatPercent, cn } from '@/lib/utils'
 import { classifyStatus, utilization, type Status } from '@/lib/status'
 import { projectMonthlyBudget } from '@/lib/projection'
 import { getEffectiveDemoAsof } from '@/lib/demo'
 import { bucketForBudget } from '@/components/UtilizationHistogram'
-import type { CostCenter, CostCenterResolution, UserBudget } from '@/lib/api'
+import type { UserBudget } from '@/lib/api'
 
-type SortKey = 'user' | 'costCenter' | 'budgetAmount' | 'consumedAmount' | 'utilization' | 'status'
-
-/**
- * Sentinel filter value meaning "users with no resolved cost center
- * (neither direct nor via their Copilot-license-granting org)". Chosen so it
- * can never collide with a real CC UUID.
- */
-export const UNASSIGNED_CC = '__unassigned__'
+type SortKey = 'user' | 'budgetAmount' | 'consumedAmount' | 'utilization' | 'status'
 
 export interface TableFilters {
   status: 'all' | Status
@@ -28,11 +20,6 @@ export interface TableFilters {
   minBudget: number | null
   maxBudget: number | null
   query: string
-  /**
-   * Cost-center filter. Empty string = no filter, UNASSIGNED_CC = users with
-   * no resolved CC, any other value = a specific CC id.
-   */
-  costCenter: string
   /**
    * When true, restrict to users at risk by end-of-month: currently over OR
    * projected to exceed cap at the current burn rate. Mutually exclusive
@@ -48,7 +35,6 @@ export const EMPTY_FILTERS: TableFilters = {
   minBudget: null,
   maxBudget: null,
   query: '',
-  costCenter: '',
   atRiskByEom: false,
 }
 
@@ -59,10 +45,6 @@ interface Props {
   onEdit: (b: UserBudget) => void
   onDelete: (b: UserBudget) => void
   onBulkUnblock: (items: UserBudget[]) => void
-  /** Active cost centers, used to populate the filter dropdown. */
-  costCenters: CostCenter[]
-  /** Lowercased login → resolved CC (or null for unassigned). */
-  loginToCostCenter: Map<string, CostCenterResolution | null>
 }
 
 const STATUS_ORDER: Record<Status, number> = { over: 0, near: 1, ok: 2 }
@@ -102,7 +84,7 @@ function SortHeader({
   )
 }
 
-export function BudgetsTable({ budgets, filters, onFiltersChange, onEdit, onDelete, onBulkUnblock, costCenters, loginToCostCenter }: Props) {
+export function BudgetsTable({ budgets, filters, onFiltersChange, onEdit, onDelete, onBulkUnblock }: Props) {
   const [sortKey, setSortKey] = useState<SortKey>('utilization')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [page, setPage] = useState(0)
@@ -159,14 +141,6 @@ export function BudgetsTable({ budgets, filters, onFiltersChange, onEdit, onDele
       if (filters.minBudget !== null && b.budgetAmount < filters.minBudget) return false
       if (filters.maxBudget !== null && b.budgetAmount > filters.maxBudget) return false
       if (filters.bucketId && bucketForBudget(b).id !== filters.bucketId) return false
-      if (filters.costCenter) {
-        const resolution = loginToCostCenter.get(b.user.toLowerCase()) ?? null
-        if (filters.costCenter === UNASSIGNED_CC) {
-          if (resolution) return false
-        } else {
-          if (!resolution || resolution.cc.id !== filters.costCenter) return false
-        }
-      }
       return true
     })
     const sorted = [...filtered].sort((a, b) => {
@@ -175,16 +149,6 @@ export function BudgetsTable({ budgets, filters, onFiltersChange, onEdit, onDele
         case 'user':
           cmp = a.user.localeCompare(b.user)
           break
-        case 'costCenter': {
-          const an = loginToCostCenter.get(a.user.toLowerCase())?.cc.name ?? null
-          const bn = loginToCostCenter.get(b.user.toLowerCase())?.cc.name ?? null
-          // Unassigned rows always sort last, regardless of asc/desc.
-          if (an === null && bn !== null) return 1
-          if (an !== null && bn === null) return -1
-          if (an === null && bn === null) return 0
-          cmp = an!.localeCompare(bn!)
-          break
-        }
         case 'budgetAmount':
           cmp = a.budgetAmount - b.budgetAmount
           break
@@ -204,7 +168,7 @@ export function BudgetsTable({ budgets, filters, onFiltersChange, onEdit, onDele
       return sortDir === 'asc' ? cmp : -cmp
     })
     return sorted
-  }, [budgets, filters, sortKey, sortDir, loginToCostCenter])
+  }, [budgets, filters, sortKey, sortDir])
 
   const pageCount = Math.max(1, Math.ceil(allRows.length / PAGE_SIZE))
   const [prevAllLen, setPrevAllLen] = useState(allRows.length)
@@ -338,36 +302,6 @@ export function BudgetsTable({ budgets, filters, onFiltersChange, onEdit, onDele
                 </button>
               ) : null}
             </div>
-            {costCenters.length > 0 ? (
-              (() => {
-                const ccCounts = new Map<string, number>()
-                let unassignedCount = 0
-                for (const b of budgets) {
-                  const res = loginToCostCenter?.get(b.user)
-                  if (res) ccCounts.set(res.cc.id, (ccCounts.get(res.cc.id) ?? 0) + 1)
-                  else unassignedCount += 1
-                }
-                const ccOptions: CostCenterOption[] = [
-                  { id: '', label: 'All cost centers', count: budgets.length, emphasis: true },
-                ]
-                if (unassignedCount > 0) {
-                  ccOptions.push({ id: UNASSIGNED_CC, label: 'Unassigned', count: unassignedCount })
-                }
-                for (const cc of [...costCenters].sort((a, b) => a.name.localeCompare(b.name))) {
-                  ccOptions.push({ id: cc.id, label: cc.name, count: ccCounts.get(cc.id) ?? 0 })
-                }
-                return (
-                  <CostCenterCombobox
-                    options={ccOptions}
-                    value={filters.costCenter}
-                    onChange={id => setFilter({ costCenter: id })}
-                    placeholder="All cost centers"
-                    ariaLabel="Filter by cost center"
-                    onClear={filters.costCenter ? () => setFilter({ costCenter: '' }) : undefined}
-                  />
-                )
-              })()
-            ) : null}
             <div className="relative">
               <MagnifyingGlass size={14} weight="duotone" className="absolute left-2.5 top-1/2 -translate-y-1/2 text-neutral-400" />
               <Input
@@ -463,9 +397,6 @@ export function BudgetsTable({ budgets, filters, onFiltersChange, onEdit, onDele
                 />
               </th>
               <SortHeader k="user" {...sortProps}>User</SortHeader>
-              {costCenters.length > 0 ? (
-                <SortHeader k="costCenter" {...sortProps}>Cost center</SortHeader>
-              ) : null}
               <SortHeader k="budgetAmount" align="right" {...sortProps}>Budget</SortHeader>
               <SortHeader k="consumedAmount" align="right" {...sortProps}>Consumed</SortHeader>
               <SortHeader k="utilization" align="right" {...sortProps}>% used</SortHeader>
@@ -476,7 +407,7 @@ export function BudgetsTable({ budgets, filters, onFiltersChange, onEdit, onDele
           <tbody>
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={costCenters.length > 0 ? 8 : 7} className="px-3 py-8 text-center text-sm text-neutral-500">
+                <td colSpan={7} className="px-3 py-8 text-center text-sm text-neutral-500">
                   No matching individual ULBs.
                 </td>
               </tr>
@@ -505,40 +436,6 @@ export function BudgetsTable({ budgets, filters, onFiltersChange, onEdit, onDele
                       />
                     </td>
                     <td className="px-3 py-2.5 font-medium">{b.user}</td>
-                    {costCenters.length > 0 ? (
-                      (() => {
-                        const r = loginToCostCenter.get(b.user.toLowerCase()) ?? null
-                        if (!r) {
-                          return (
-                            <td
-                              className="px-3 py-2.5 text-neutral-400 dark:text-neutral-500"
-                              title="Unassigned (charges fall to the enterprise default)"
-                            >
-                              —
-                            </td>
-                          )
-                        }
-                        const viaOrgTitle = r.via === 'org'
-                          ? `Inherited via org "${r.viaOrg ?? '?'}"`
-                          : `Direct user assignment`
-                        return (
-                          <td className="px-3 py-2.5">
-                            <button
-                              onClick={() => setFilter({ costCenter: r.cc.id })}
-                              className="text-left text-neutral-900 dark:text-neutral-100 hover:underline"
-                              title={`${viaOrgTitle}. Click to filter to this cost center.`}
-                            >
-                              <span>{r.cc.name}</span>
-                              {r.via === 'org' ? (
-                                <span className="ml-1.5 text-[10px] uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
-                                  via org
-                                </span>
-                              ) : null}
-                            </button>
-                          </td>
-                        )
-                      })()
-                    ) : null}
                     <td className="px-3 py-2.5 text-right tabular-nums">{formatCurrency(b.budgetAmount)}</td>
                     <td className="px-3 py-2.5 text-right tabular-nums">{formatCurrency(b.consumedAmount)}</td>
                     <td

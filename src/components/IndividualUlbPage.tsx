@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { Plus } from '@phosphor-icons/react'
 import { toast } from 'sonner'
 import { useCredentials } from '@/hooks/use-credentials'
@@ -17,7 +17,6 @@ import { describeError } from '@/lib/errors'
 import { summarize, forecastSummary } from '@/lib/status'
 import { getEffectiveDemoAsof } from '@/lib/demo'
 import { openExternal } from '@/lib/utils'
-import type { NavToIndividualTask } from '@/lib/navEvents'
 import {
   createUserBudget as apiCreateUserBudget,
   deleteUserBudget as apiDeleteUserBudget,
@@ -40,18 +39,6 @@ interface Props {
   onSnapshotChange?: (snap: BulkApplySnapshot | null) => void
   pendingRevert: BulkApplySnapshot | null
   onPendingRevertChange: (snap: BulkApplySnapshot | null) => void
-  /**
-   * Optional initial filter to apply on mount or when it changes.
-   * Set by App.tsx when something elsewhere (e.g. ConstraintsBanner)
-   * deep-links to this page already filtered to a specific cost center.
-   */
-  pendingFilter?: TableFilters | null
-  /** Called after pendingFilter has been applied so the parent can clear it. */
-  onPendingFilterConsumed?: () => void
-  /** Active task that brought the user to this page (renders a contextual banner). */
-  activeTask?: NavToIndividualTask | null
-  /** Called when the user dismisses the task banner or clears the related filter. */
-  onTaskDismiss?: () => void
 }
 
 export function IndividualUlbPage({
@@ -60,18 +47,12 @@ export function IndividualUlbPage({
   onSnapshotChange,
   pendingRevert,
   onPendingRevertChange,
-  pendingFilter,
-  onPendingFilterConsumed,
-  activeTask,
-  onTaskDismiss,
 }: Props) {
   const {
     credentials,
     budgets,
     totalBudgetCount,
     seats,
-    costCenters,
-    loginToCostCenter,
     loading,
     apiFetch,
     refresh,
@@ -121,50 +102,10 @@ export function IndividualUlbPage({
     scrollToTable()
   }
 
-  // Apply a deep-link filter requested by another page (e.g. ConstraintsBanner
-  // sending the user here pre-filtered to a failing CC's members). Consume on
-  // apply so subsequent renders don't keep re-applying the same filter. The
-  // setState-in-effect is intentional: this IS the synchronization with the
-  // external nav-event state owned by App.tsx.
-  useEffect(() => {
-    if (!pendingFilter) return
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setFilters(pendingFilter)
-    scrollToTable()
-    onPendingFilterConsumed?.()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendingFilter])
-
   const updateSnapshot = (s: BulkApplySnapshot | null) => {
     setSnapshot(s)
     onSnapshotChange?.(s)
   }
-
-  // Live recompute of the active task's progress so the contextual banner
-  // updates as the user lowers ULBs on this page. The banner itself now
-  // lives in App.tsx so it persists above the page scroll; we keep just the
-  // filter-mismatch dismiss effect below.
-
-  // If the user clears the cost-center filter that brought them here, also
-  // clear the task so the banner doesn't linger over an unrelated view.
-  // Guard with a ref so we don't dismiss before the deep-link pendingFilter
-  // has had a chance to apply on first mount (otherwise activeTask gets nuked
-  // immediately because filters.costCenter is still "" while activeTask just
-  // arrived from App.tsx).
-  const taskMatchedOnceRef = useRef(false)
-  useEffect(() => {
-    if (!activeTask) {
-      taskMatchedOnceRef.current = false
-      return
-    }
-    if (filters.costCenter === activeTask.costCenterId) {
-      taskMatchedOnceRef.current = true
-      return
-    }
-    if (taskMatchedOnceRef.current) {
-      onTaskDismiss?.()
-    }
-  }, [activeTask, filters.costCenter, onTaskDismiss])
 
   const handleEdit = async (newAmount: number) => {
     if (!editing) return
@@ -467,8 +408,6 @@ export function IndividualUlbPage({
               onEdit={setEditing}
               onDelete={setDeleting}
               onBulkUnblock={items => setBulkUnblock(items)}
-              costCenters={costCenters}
-              loginToCostCenter={loginToCostCenter}
             />
           </div>
         </>

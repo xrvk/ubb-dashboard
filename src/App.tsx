@@ -6,10 +6,8 @@ import { useCredentials } from '@/hooks/use-credentials'
 import { ConnectionMenu } from '@/components/ConnectionMenu'
 import { ImportPanel } from '@/components/ImportPanel'
 import { IndividualUlbPage } from '@/components/IndividualUlbPage'
-import { IndividualUlbTaskBanner } from '@/components/IndividualUlbTaskBanner'
-import { BudgetPlannerHintBanner } from '@/components/BudgetPlannerHintBanner'
 import { LoadProgressBanner } from '@/components/LoadProgressBanner'
-import { OverviewPage } from '@/components/OverviewPage'
+import { OrgBudgetPage } from '@/components/OrgBudgetPage'
 import { DashboardPage } from '@/components/DashboardPage'
 import { UniversalUlbPage } from '@/components/UniversalUlbPage'
 import { BudgetConstraintsHelpPage } from '@/components/BudgetConstraintsHelpPage'
@@ -19,38 +17,38 @@ import { Button } from '@/components/ui/button'
 import { cn, openExternal } from '@/lib/utils'
 import { describeError, isAborted } from '@/lib/errors'
 import { buildShareableOrgUrl } from '@/lib/urlParams'
-import { EMPTY_FILTERS, type TableFilters } from '@/components/BudgetsTable'
 import {
   NAV_TO_BUDGET_MODEL_EVENT,
   NAV_TO_INDIVIDUAL_EVENT,
+  NAV_TO_ORG_BUDGET_EVENT,
   NAV_TO_UNIVERSAL_EVENT,
-  PLANNER_HIGHLIGHT_EVENT,
-  type NavToIndividualDetail,
-  type NavToIndividualTask,
-  type PlannerHighlightDetail,
 } from '@/lib/navEvents'
 import type { BulkApplySnapshot } from '@/lib/snapshot'
 
-type Tab = 'dashboard' | 'overview' | 'individual' | 'universal' | 'budget-model'
+type Tab = 'dashboard' | 'org-budget' | 'individual' | 'universal' | 'budget-model'
 
 const TAB_LABELS: Record<Tab, string> = {
   dashboard: 'Dashboard',
-  overview: 'Enterprise Budgets',
+  'org-budget': 'Org Budget',
   individual: 'Individual ULBs',
   universal: 'Universal ULB',
   'budget-model': 'Budget model',
 }
 
 export function App() {
-  const { credentials, refresh, disconnect, loading, loadProgress, devProfiles, switchProfile, partialLoadWarnings, dismissPartialLoadWarning } = useCredentials()
+  const {
+    credentials,
+    refresh,
+    disconnect,
+    loading,
+    loadProgress,
+    devProfiles,
+    switchProfile,
+    partialLoadWarnings,
+    dismissPartialLoadWarning,
+  } = useCredentials()
   const { theme, resolvedTheme, setTheme } = useTheme()
 
-  /**
-   * Cycle the theme through system → light → dark → system. Starting from
-   * "system" keeps the app tracking the OS appearance setting (Windows /
-   * macOS Auto) until the user explicitly overrides it, and lets them get
-   * back to system tracking without clearing localStorage.
-   */
   const cycleTheme = () => {
     const next = theme === 'system' ? 'light' : theme === 'light' ? 'dark' : 'system'
     setTheme(next)
@@ -76,13 +74,10 @@ export function App() {
 
   /**
    * Switch tab AND scroll the page so the sticky tab bar pins at the very
-   * top of the viewport. This lets the user re-click a tab to "jump to top"
-   * and ensures cross-tab clicks always start at the same anchor instead of
-   * dropping them into the middle of a long page.
+   * top of the viewport. Re-clicking a tab acts as a "jump to top".
    */
   const goToTab = (next: Tab) => {
     setTab(next)
-    // Defer one frame so the new tab's layout is computed before we measure.
     window.requestAnimationFrame(() => {
       const header = document.querySelector<HTMLElement>('header')
       const offset = header?.offsetHeight ?? 0
@@ -94,35 +89,16 @@ export function App() {
   // can render the Revert button regardless of which tab is active.
   const [snapshot, setSnapshot] = useState<BulkApplySnapshot | null>(null)
   const [revertCandidate, setRevertCandidate] = useState<BulkApplySnapshot | null>(null)
-  // Pending filter set by deep-link events (e.g. from ConstraintsBanner).
-  // Cleared by IndividualUlbPage once consumed.
-  const [pendingIndividualFilter, setPendingIndividualFilter] = useState<TableFilters | null>(null)
-  // Active task context shown as a contextual banner on the Individual ULBs
-  // page so the user remembers what they came to fix.
-  const [activeTask, setActiveTask] = useState<NavToIndividualTask | null>(null)
-  // Active hint surfaced under the tab bar on the Budget model page after
-  // the user deep-links from an abstract constraint action.
-  const [plannerHint, setPlannerHint] = useState<PlannerHighlightDetail | null>(null)
 
-  // Global error sinks. Without these, fire-and-forget promises (e.g. the
-  // per-CC usage fetch fan-out) that throw outside of any try/catch
-  // disappear silently — the user sees nothing, and we get no log entry to
-  // diagnose later. We filter benign browser noise so we don't toast on
-  // ResizeObserver loop warnings or cross-origin "Script error." that
-  // browser extensions trigger.
   useEffect(() => {
     const isBenignErrorEvent = (e: ErrorEvent): boolean => {
-      // Fired by browsers when layout work spans frames — harmless.
       if (typeof e.message === 'string' && e.message.includes('ResizeObserver loop')) return true
-      // Cross-origin scripts (browser extensions) surface as opaque "Script error."
       if (e.error == null && e.message === 'Script error.') return true
       return false
     }
     const onError = (e: ErrorEvent) => {
       if (isAborted(e.error)) return
       if (isBenignErrorEvent(e)) return
-      // describeError logs to the debug buffer as a side effect, so we don't
-      // call logDebug ourselves — doing so would duplicate every entry.
       const desc = describeError(e.error ?? e.message, 'window.onerror')
       toast.error(desc.title, { description: desc.body })
     }
@@ -140,13 +116,7 @@ export function App() {
   }, [])
 
   useEffect(() => {
-    const handler = (e: Event) => {
-      const detail = (e as CustomEvent<NavToIndividualDetail>).detail
-      if (!detail) return
-      setPendingIndividualFilter(detail.filter ?? EMPTY_FILTERS)
-      setActiveTask(detail.task ?? null)
-      setTab('individual')
-    }
+    const handler = () => setTab('individual')
     window.addEventListener(NAV_TO_INDIVIDUAL_EVENT, handler)
     return () => window.removeEventListener(NAV_TO_INDIVIDUAL_EVENT, handler)
   }, [])
@@ -158,39 +128,15 @@ export function App() {
   }, [])
 
   useEffect(() => {
-    const handler = (e: Event) => {
-      const detail = (e as CustomEvent<PlannerHighlightDetail>).detail
-      if (!detail) return
-      setPlannerHint(detail)
-      setTab('budget-model')
-      // Defer two frames so the planner tab has mounted before scrolling /
-      // flashing the target card.
-      const flashTarget = detail.target === 'cc-card' ? 'bp-cc-card' : 'bp-ent-card'
-      window.requestAnimationFrame(() => {
-        window.requestAnimationFrame(() => {
-          const el = document.getElementById(flashTarget)
-          if (!el) return
-          el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-          const cls = [
-            'ring-2',
-            'ring-amber-400',
-            'ring-offset-2',
-            'dark:ring-offset-neutral-950',
-          ]
-          el.classList.add(...cls)
-          window.setTimeout(() => el.classList.remove(...cls), 2000)
-        })
-      })
-    }
-    window.addEventListener(PLANNER_HIGHLIGHT_EVENT, handler)
-    return () => window.removeEventListener(PLANNER_HIGHLIGHT_EVENT, handler)
+    const handler = () => setTab('org-budget')
+    window.addEventListener(NAV_TO_ORG_BUDGET_EVENT, handler)
+    return () => window.removeEventListener(NAV_TO_ORG_BUDGET_EVENT, handler)
   }, [])
 
   useEffect(() => {
     const handler = () => {
       setTab('universal')
-      // Wait for the tab content to render, then flash the cap card so the
-      // user sees where to act after clicking 'Lower universal ULB to $X'.
+      // Wait for the tab content to render, then flash the cap card.
       window.requestAnimationFrame(() => {
         window.requestAnimationFrame(() => {
           const el = document.getElementById('uulb-cap')
@@ -258,7 +204,7 @@ export function App() {
         <div className="sticky top-0 z-10 border-b border-neutral-200 dark:border-neutral-800 bg-white/95 dark:bg-neutral-950/95 backdrop-blur supports-[backdrop-filter]:bg-white/80 dark:supports-[backdrop-filter]:bg-neutral-950/80">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 py-2 flex items-center gap-3">
             <div className="flex flex-1 sm:flex-initial gap-1 p-1 rounded-md bg-neutral-100 dark:bg-neutral-800">
-              {(['dashboard', 'overview', 'universal', 'individual'] as const).map(t => (
+              {(['dashboard', 'org-budget', 'universal', 'individual'] as const).map(t => (
                 <button
                   key={t}
                   onClick={() => goToTab(t)}
@@ -324,7 +270,7 @@ export function App() {
                           .then(() =>
                             toast.success('Link copied', {
                               description:
-                                'Recipients will see your enterprise URL pre-filled but still need their own PAT.',
+                                'Recipients will see your org URL pre-filled but still need their own PAT.',
                             }),
                           )
                           .catch(() =>
@@ -346,22 +292,6 @@ export function App() {
         </div>
       ) : null}
 
-      {credentials && !loading && tab === 'individual' && activeTask ? (
-        <div className="sticky top-[49px] z-10 border-b border-neutral-200 dark:border-neutral-800 bg-white/95 dark:bg-neutral-950/95 backdrop-blur supports-[backdrop-filter]:bg-white/80 dark:supports-[backdrop-filter]:bg-neutral-950/80">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 py-2">
-            <IndividualUlbTaskBanner task={activeTask} onDismiss={() => setActiveTask(null)} />
-          </div>
-        </div>
-      ) : null}
-
-      {credentials && !loading && tab === 'budget-model' && plannerHint ? (
-        <div className="sticky top-[49px] z-10 border-b border-neutral-200 dark:border-neutral-800 bg-white/95 dark:bg-neutral-950/95 backdrop-blur supports-[backdrop-filter]:bg-white/80 dark:supports-[backdrop-filter]:bg-neutral-950/80">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 py-2">
-            <BudgetPlannerHintBanner hint={plannerHint} onDismiss={() => setPlannerHint(null)} />
-          </div>
-        </div>
-      ) : null}
-
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 grid gap-6">
         <ImportPanel />
 
@@ -372,8 +302,8 @@ export function App() {
         {credentials ? (
           tab === 'dashboard' ? (
             <ErrorBoundary label="Dashboard tab"><DashboardPage /></ErrorBoundary>
-          ) : tab === 'overview' ? (
-            <ErrorBoundary label="Enterprise Budgets tab"><OverviewPage /></ErrorBoundary>
+          ) : tab === 'org-budget' ? (
+            <ErrorBoundary label="Org Budget tab"><OrgBudgetPage /></ErrorBoundary>
           ) : tab === 'individual' ? (
             <ErrorBoundary label="Individual ULBs tab">
               <IndividualUlbPage
@@ -382,15 +312,11 @@ export function App() {
                 onSnapshotChange={setSnapshot}
                 pendingRevert={revertCandidate}
                 onPendingRevertChange={setRevertCandidate}
-                pendingFilter={pendingIndividualFilter}
-                onPendingFilterConsumed={() => setPendingIndividualFilter(null)}
-                activeTask={activeTask}
-                onTaskDismiss={() => setActiveTask(null)}
               />
             </ErrorBoundary>
           ) : tab === 'budget-model' ? (
             <ErrorBoundary label="Budget model tab">
-              <BudgetConstraintsHelpPage onBack={() => goToTab('overview')} />
+              <BudgetConstraintsHelpPage onBack={() => goToTab('org-budget')} />
             </ErrorBoundary>
           ) : (
             <ErrorBoundary label="Universal ULB tab"><UniversalUlbPage /></ErrorBoundary>

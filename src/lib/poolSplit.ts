@@ -1,131 +1,88 @@
 /**
- * Pool-allocation math shared between the Budget Planner and the Dashboard
- * donut. Without a single source these surfaces drift; the planner uses
- * `row.floor` (= Σ effective ULBs in the CC) while the donut needs the
- * same number framed as a "ULB ceiling" slice of the enterprise pool.
+ * Pool-allocation math shared between the Dashboard donut and the planner
+ * surfaces. In the org variant the model collapses to three slices of the
+ * org budget:
+ *
+ *   org budget
+ *     ├─ Σ individual ULBs   (sum of every UserBudget.budgetAmount)
+ *     ├─ universal ULB pool  (universalUlb.budgetAmount × N seats without
+ *     │                        an individual override; capped at the
+ *     │                        remaining org budget so we don't lie about
+ *     │                        having more than the cap allows)
+ *     └─ headroom             (whatever's left, or 0 if over-allocated)
+ *
+ * Without cost centers there is no per-CC bucket — the only fan-out is
+ * by individual ULB. Compared to the GHEC variant this is dramatically
+ * simpler and a single source of truth for both the dashboard donut and
+ * any future planner re-build.
  */
 
-import {
-  buildCostCenterIndex,
-  resolveCostCenter,
-  type CopilotSeat,
-  type CostCenter,
-  type CostCenterBudget,
-  type EnterpriseBudget,
-  type UniversalUlb,
-  type UserBudget,
+import type {
+  CopilotSeat,
+  OrgBudget,
+  UniversalUlb,
+  UserBudget,
 } from './api'
 
 export interface PoolSplitInput {
-  enterpriseBudget: EnterpriseBudget | null
+  orgBudget: OrgBudget | null
   universalUlb: UniversalUlb | null
-  costCenters: CostCenter[]
-  ccBudgetsByName: ReadonlyMap<string, CostCenterBudget>
   seats: CopilotSeat[]
   userBudgets: UserBudget[]
 }
 
-export interface CcSlice {
-  costCenterId: string
-  name: string
-  /** Configured CC budget, or null if uncapped. */
-  budgetAmount: number | null
-  /** Σ effective ULBs of seats routed to this CC. The "ULB ceiling". */
-  ulbCeiling: number
-  seatCount: number
-  /**
-   * What this CC could realistically draw from the enterprise pool:
-   *   - capped:   min(budget, ulbCeiling) — ULBs may bind below the budget
-   *   - uncapped: ulbCeiling              — the only thing bounding it
-   */
-  effectiveDraw: number
-}
-
 export interface PoolSplit {
-  enterpriseBudget: number | null
-  /** Active CCs that actually route Copilot seats. Sorted by effectiveDraw desc. */
-  costCenters: CcSlice[]
-  /** Σ effectiveDraw of capped CCs. */
-  cappedTotal: number
-  /** Σ effectiveDraw of uncapped (but ULB-bounded) CCs. */
-  uncappedTotal: number
-  /** Σ effectiveDraw of seats not routed to any CC (consumed from ent pool directly). */
-  unassignedTotal: number
-  /** enterpriseBudget − (cappedTotal + uncappedTotal + unassignedTotal); 0 if negative or no budget. */
+  /** The org budget cap, or null if no org budget is configured. */
+  orgBudget: number | null
+  /** Σ individual ULB amounts. */
+  individualUlbTotal: number
+  /** Effective universal ULB draw: universal × (seats without an individual ULB). */
+  universalUlbDraw: number
+  /** orgBudget − (individualUlbTotal + universalUlbDraw); 0 if negative or no budget. */
   headroom: number
-  /** True when the sum of effective draws already exceeds the enterprise budget. */
+  /** True when the sum of effective draws exceeds the org budget. */
   overAllocated: boolean
 }
 
 /**
- * Derive the enterprise-pool split: how much of the ent budget each CC is
- * committed to draw (capped by either its own budget or its ULB ceiling),
- * plus the un-assigned bucket and remaining headroom.
+ * Derive the org-pool split: how much of the org budget the individual ULBs
+ * and the universal ULB pool are committed to draw, plus any remaining
+ * headroom.
+ *
+ * Seats with an individual ULB are subtracted from the universal pool. If
+ * a user has both a seat AND no individual ULB they're counted under the
+ * universal pool at `universalUlb.budgetAmount` each.
  */
 export function computePoolSplit(input: PoolSplitInput): PoolSplit {
-  const { enterpriseBudget, universalUlb, costCenters, ccBudgetsByName, seats, userBudgets } = input
+  const { orgBudget, universalUlb, seats, userBudgets } = input
 
-  const individualByLogin = new Map<string, number>()
+  let individualUlbTotal = 0
+  const individualLogins = new Set<string>()
   for (const ub of userBudgets) {
-    if (ub.user) individualByLogin.set(ub.user.toLowerCase(), ub.budgetAmount)
+    individualUlbTotal += ub.budgetAmount
+    if (ub.user) individualLogins.add(ub.user.toLowerCase())
   }
+
   const universal = universalUlb?.budgetAmount ?? 0
-
-  const index = buildCostCenterIndex(costCenters, ccBudgetsByName)
-
-  const ulbByCcId = new Map<string, number>()
-  const seatsByCcId = new Map<string, number>()
-  let unassignedTotal = 0
-  for (const seat of seats) {
-    const login = seat.login.toLowerCase()
-    const eff = individualByLogin.get(login) ?? universal
-    const r = resolveCostCenter(seat.login, seat.orgLogin, index)
-    if (!r) {
-      unassignedTotal += eff
-      continue
+  let universalSeatCount = 0
+  if (universal > 0) {
+    for (const seat of seats) {
+      if (!individualLogins.has(seat.login.toLowerCase())) {
+        universalSeatCount += 1
+      }
     }
-    ulbByCcId.set(r.cc.id, (ulbByCcId.get(r.cc.id) ?? 0) + eff)
-    seatsByCcId.set(r.cc.id, (seatsByCcId.get(r.cc.id) ?? 0) + 1)
   }
+  const universalUlbDraw = universal * universalSeatCount
 
-  const slices: CcSlice[] = []
-  let cappedTotal = 0
-  let uncappedTotal = 0
-  for (const cc of costCenters) {
-    const seatCount = seatsByCcId.get(cc.id) ?? 0
-    if (seatCount === 0) continue // CC has no Copilot seats today; doesn't draw from pool
-    const ulbCeiling = ulbByCcId.get(cc.id) ?? 0
-    const budget = ccBudgetsByName.get(cc.name.toLowerCase())
-    const budgetAmount = budget?.budgetAmount ?? null
-    const effectiveDraw =
-      budgetAmount === null ? ulbCeiling : Math.min(budgetAmount, ulbCeiling)
-    if (budgetAmount === null) {
-      uncappedTotal += effectiveDraw
-    } else {
-      cappedTotal += effectiveDraw
-    }
-    slices.push({
-      costCenterId: cc.id,
-      name: cc.name,
-      budgetAmount,
-      ulbCeiling,
-      seatCount,
-      effectiveDraw,
-    })
-  }
-  slices.sort((a, b) => b.effectiveDraw - a.effectiveDraw)
-
-  const entAmount = enterpriseBudget?.budgetAmount ?? null
-  const committed = cappedTotal + uncappedTotal + unassignedTotal
-  const headroom = entAmount === null ? 0 : Math.max(0, entAmount - committed)
-  const overAllocated = entAmount !== null && committed > entAmount
+  const orgAmount = orgBudget?.budgetAmount ?? null
+  const committed = individualUlbTotal + universalUlbDraw
+  const headroom = orgAmount === null ? 0 : Math.max(0, orgAmount - committed)
+  const overAllocated = orgAmount !== null && committed > orgAmount
 
   return {
-    enterpriseBudget: entAmount,
-    costCenters: slices,
-    cappedTotal,
-    uncappedTotal,
-    unassignedTotal,
+    orgBudget: orgAmount,
+    individualUlbTotal,
+    universalUlbDraw,
     headroom,
     overAllocated,
   }

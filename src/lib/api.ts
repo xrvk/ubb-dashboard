@@ -299,9 +299,12 @@ export async function fetchRateLimit(creds: Credentials): Promise<RateLimitSnaps
 export function parseOrgUrl(url: string): { base: string; org: string } | null {
   const trimmed = url.trim()
   if (!trimmed) return null
+  // Reserved single-segment names that look like org slugs but aren't.
+  const reserved = new Set(['settings', 'orgs', 'organizations', 'enterprises', 'notifications', 'features', 'pricing', 'about'])
   // Bare slug fallback: a single segment of valid org-name characters.
   // GitHub org slugs are 1–39 chars, alphanumeric + hyphens, no leading hyphen.
   if (/^[a-zA-Z0-9][a-zA-Z0-9-]{0,38}$/.test(trimmed)) {
+    if (reserved.has(trimmed.toLowerCase())) return null
     return { base: 'https://api.github.com', org: trimmed }
   }
   try {
@@ -313,8 +316,6 @@ export function parseOrgUrl(url: string): { base: string; org: string } | null {
     if (segments.length !== 1) return null
     const org = segments[0]
     if (!/^[a-zA-Z0-9][a-zA-Z0-9-]{0,38}$/.test(org)) return null
-    // Reject reserved single-segment paths that are not orgs.
-    const reserved = new Set(['settings', 'orgs', 'organizations', 'enterprises', 'notifications', 'features', 'pricing', 'about'])
     if (reserved.has(org.toLowerCase())) return null
     return { base: 'https://api.github.com', org }
   } catch {
@@ -339,17 +340,11 @@ export interface RawBudget {
   budget_entity_name: string
   budget_alerting: BudgetAlerting
   /**
-   * Not returned on enterprise- or cost_center-scope budgets in practice
-   * (only user-scope). Treat as optional.
+   * Not returned on `organization`-scope budgets in practice (only user-scope
+   * and multi_user_customer). Treat as optional.
    */
   consumed_amount?: number
   user?: string
-  /**
-   * Only present on `budget_scope === 'enterprise'` budgets. Controls whether
-   * cost-center spend rolls up into the enterprise pool (umbrella, default)
-   * or is tracked independently (when true). See docs/budget-constraints.md.
-   */
-  exclude_cost_center_usage?: boolean
 }
 
 export interface UserBudget {
@@ -369,10 +364,10 @@ interface BudgetsResponse {
 /**
  * Predicate for "this is a budget that our ULB constraint math should consider."
  *
- * We intentionally only match `BundlePricing / ai_credits`. The enterprise can
- * also have parallel `SkuPricing / copilot_ai_credit` budgets — that's a
- * different pricing track and is out of scope here. See
- * docs/budget-constraints.md ("SKU drift") for context.
+ * We intentionally only match `BundlePricing / ai_credits`. The org may also
+ * have parallel `SkuPricing / copilot_ai_credit` budgets — that's a different
+ * pricing track and is out of scope here. See docs/budget-constraints.md
+ * ("SKU drift") for context.
  */
 export function isCopilotBudget(b: RawBudget): boolean {
   return b.budget_product_sku === 'ai_credits' && b.budget_type === 'BundlePricing'
@@ -427,9 +422,9 @@ async function fetchPagesInParallel<T>(
 }
 
 /**
- * Internal: page through ALL budgets across the enterprise account (every
- * scope, type, and SKU). Used by every higher-level fetcher to avoid making
- * multiple full scans of the budgets endpoint.
+ * Internal: page through ALL budgets across the organization (every scope,
+ * type, and SKU). Used by every higher-level fetcher to avoid making multiple
+ * full scans of the budgets endpoint.
  *
  * Strategy: fetch page 1, then if `total_count` and the page-1 length tell
  * us more pages remain, fetch them all in parallel via
@@ -437,12 +432,11 @@ async function fetchPagesInParallel<T>(
  * missing (defensive — the budgets endpoint always returns it today, but
  * a server change shouldn't quietly truncate our results).
  *
- * Note: the enterprise billing budgets endpoint historically ignored
- * `per_page` and returned ~10 items per page; recent versions honor it.
- * Either path handles both — parallel just uses the page-1 length as the
- * effective page size, so a 10/page response just means we issue more
- * (still-parallel) requests. Capped at 1500 pages to support enterprises
- * at the platform cap (~10k budgets).
+ * Note: the organization billing budgets endpoint caps `per_page` at 10
+ * (vs 100 on the enterprise variant), so even a modestly-sized list takes
+ * several round-trips. The parallel-fetch path uses the actual page-1
+ * length as the effective page size, so this is automatic. Capped at 1500
+ * pages (~15k budgets) as a paranoia limit.
  */
 // Shared safety limit for paginators. Picked to comfortably cover the platform
 // caps (~10k budgets at 100/page, ~250–1k cost centers, large seat counts)
@@ -456,7 +450,8 @@ async function paginateAllBudgets(
   onProgress?: (loaded: number, totalCount: number | undefined) => void,
 ): Promise<{ budgets: RawBudget[]; totalCount: number }> {
   const fetchBudgetPage = async (page: number): Promise<{ list: RawBudget[]; totalCount: number | undefined }> => {
-    const data = (await apiFetch(`/budgets?per_page=100&page=${page}`)) as BudgetsResponse | RawBudget[]
+    // Org budgets endpoint caps per_page at 10 (vs 100 enterprise).
+    const data = (await apiFetch(`/budgets?per_page=10&page=${page}`)) as BudgetsResponse | RawBudget[]
     const list = Array.isArray(data) ? data : (data?.budgets ?? [])
     const totalCount = !Array.isArray(data) && typeof data?.total_count === 'number' ? data.total_count : undefined
     return { list, totalCount }
@@ -518,8 +513,8 @@ export interface FetchUserBudgetsResult {
   /** User-scope Copilot (ai_credits) budgets only. What this dashboard manages. */
   userBudgets: UserBudget[]
   /**
-   * Total budgets across the whole enterprise account (every type, scope, and SKU).
-   * Used to surface the per-account 10,000 budget cap.
+   * Total budgets across the whole organization (every type, scope, and SKU).
+   * Used to surface the per-org 10,000 budget cap.
    * See https://docs.github.com/en/billing/concepts/budgets-and-alerts#budget-limitation
    */
   totalBudgetCount: number
@@ -650,29 +645,27 @@ export async function createUniversalULB(
   })
 }
 
-// --- Enterprise + cost-center budgets (envelope for the constraint check) ---
+// --- Org-scope budget (the top of the constraint envelope) ---
 // See docs/budget-constraints.md for the constraint model these power.
 
 /**
- * The enterprise-scope `ai_credits` budget. There is at most one we care
- * about (filter is `BundlePricing/ai_credits`); if multiple are returned we
- * take the first and warn.
+ * The org's single ai_credits budget (the org-level cap on Copilot AI-credit
+ * spend). In the org variant there is at most one such budget — the API
+ * tolerates multiples in theory, but the UI treats the first as authoritative
+ * and logs a warning if it sees more than one.
  */
-export interface EnterpriseBudget {
+export interface OrgBudget {
   id: string
   budgetAmount: number
-  /** `false` (default) = umbrella mode, `true` = independent mode. */
-  excludeCostCenterUsage: boolean
   preventFurtherUsage: boolean
   willAlert: boolean
   alertRecipients: string[]
 }
 
-function toEnterpriseBudget(b: RawBudget): EnterpriseBudget {
+function toOrgBudget(b: RawBudget): OrgBudget {
   return {
     id: b.id,
     budgetAmount: b.budget_amount,
-    excludeCostCenterUsage: b.exclude_cost_center_usage ?? false,
     preventFurtherUsage: b.prevent_further_usage,
     willAlert: b.budget_alerting?.will_alert ?? false,
     alertRecipients: b.budget_alerting?.alert_recipients ?? [],
@@ -680,75 +673,23 @@ function toEnterpriseBudget(b: RawBudget): EnterpriseBudget {
 }
 
 /**
- * Fetch the enterprise's ai_credits enterprise-scope budget, if any. Returns
- * `null` if none exists.
+ * Fetch the org's ai_credits org-scope budget, if any. Returns `null` if
+ * none exists.
  */
-export async function fetchEnterpriseBudget(apiFetch: ApiFetch): Promise<EnterpriseBudget | null> {
+export async function fetchOrgBudget(apiFetch: ApiFetch): Promise<OrgBudget | null> {
   const { budgets } = await paginateAllBudgets(apiFetch)
-  return pickEnterpriseBudget(budgets)
+  return pickOrgBudget(budgets)
 }
 
-function pickEnterpriseBudget(budgets: RawBudget[]): EnterpriseBudget | null {
-  const matches = budgets.filter(b => b.budget_scope === 'enterprise' && isCopilotBudget(b))
+function pickOrgBudget(budgets: RawBudget[]): OrgBudget | null {
+  const matches = budgets.filter(b => b.budget_scope === 'organization' && isCopilotBudget(b))
   if (matches.length === 0) return null
   if (matches.length > 1) {
     console.warn(
-      `[ubb-dashboard] Multiple enterprise-scope ai_credits budgets found (${matches.length}); using the first.`,
+      `[ubb-dashboard-org] Multiple organization-scope ai_credits budgets found (${matches.length}); using the first.`,
     )
   }
-  return toEnterpriseBudget(matches[0])
-}
-
-/**
- * One cost-center-scope `ai_credits` budget. Keyed by the cost center NAME
- * (which is what `budget_entity_name` carries — verified empirically against
- * the live API, not the CC's UUID).
- */
-export interface CostCenterBudget {
-  id: string
-  costCenterName: string
-  budgetAmount: number
-  preventFurtherUsage: boolean
-  willAlert: boolean
-  alertRecipients: string[]
-}
-
-function toCostCenterBudget(b: RawBudget): CostCenterBudget {
-  return {
-    id: b.id,
-    costCenterName: b.budget_entity_name,
-    budgetAmount: b.budget_amount,
-    preventFurtherUsage: b.prevent_further_usage,
-    willAlert: b.budget_alerting?.will_alert ?? false,
-    alertRecipients: b.budget_alerting?.alert_recipients ?? [],
-  }
-}
-
-/**
- * Fetch every cost-center-scope ai_credits budget, keyed by lowercased CC
- * name. Use this with `fetchCostCenters` and join on `cc.name` (lowercased).
- */
-export async function fetchCostCenterBudgets(
-  apiFetch: ApiFetch,
-): Promise<Map<string, CostCenterBudget>> {
-  const { budgets } = await paginateAllBudgets(apiFetch)
-  return buildCostCenterBudgetMap(budgets)
-}
-
-function buildCostCenterBudgetMap(budgets: RawBudget[]): Map<string, CostCenterBudget> {
-  const map = new Map<string, CostCenterBudget>()
-  for (const b of budgets) {
-    if (b.budget_scope !== 'cost_center' || !isCopilotBudget(b)) continue
-    const key = b.budget_entity_name.toLowerCase()
-    if (map.has(key)) {
-      console.warn(
-        `[ubb-dashboard] Multiple cost-center budgets target name "${b.budget_entity_name}"; using the first.`,
-      )
-      continue
-    }
-    map.set(key, toCostCenterBudget(b))
-  }
-  return map
+  return toOrgBudget(matches[0])
 }
 
 /**
@@ -760,9 +701,8 @@ function buildCostCenterBudgetMap(budgets: RawBudget[]): Map<string, CostCenterB
  * one piece. Internally they all share `paginateAllBudgets`.
  */
 export interface AiCreditsBudgets {
-  enterprise: EnterpriseBudget | null
+  org: OrgBudget | null
   universal: UniversalUlb | null
-  costCenterBudgetsByName: Map<string, CostCenterBudget>
   userBudgets: UserBudget[]
   totalBudgetCount: number
 }
@@ -774,16 +714,15 @@ export async function fetchAllAiCreditsBudgets(
   const { budgets, totalCount } = await paginateAllBudgets(apiFetch, onProgress)
   const universalRaw = budgets.find(b => b.budget_scope === 'multi_user_customer' && isCopilotBudget(b))
   return {
-    enterprise: pickEnterpriseBudget(budgets),
+    org: pickOrgBudget(budgets),
     universal: universalRaw ? toUniversalUlb(universalRaw) : null,
-    costCenterBudgetsByName: buildCostCenterBudgetMap(budgets),
     userBudgets: budgets.filter(b => b.budget_scope === 'user' && isCopilotBudget(b)).map(toUserBudget),
     totalBudgetCount: totalCount,
   }
 }
 
 /**
- * Patch fields for an enterprise- or cost-center-scope `ai_credits` budget.
+ * Patch fields for an organization-scope `ai_credits` budget.
  *
  * Each field is independently optional; the API accepts partial updates. We
  * send one PATCH per defined field rather than batching, mirroring the
@@ -816,18 +755,8 @@ async function patchBudgetFields(
   }
 }
 
-/** Update an existing enterprise-scope ai_credits budget. */
-export async function patchEnterpriseBudget(
-  apiFetch: ApiFetch,
-  budgetId: string,
-  patch: BudgetPatch | number,
-): Promise<void> {
-  const normalized: BudgetPatch = typeof patch === 'number' ? { budgetAmount: patch } : patch
-  await patchBudgetFields(apiFetch, budgetId, normalized)
-}
-
-/** Update an existing cost-center-scope ai_credits budget. */
-export async function patchCostCenterBudget(
+/** Update an existing org-scope ai_credits budget. */
+export async function patchOrgBudget(
   apiFetch: ApiFetch,
   budgetId: string,
   patch: BudgetPatch | number,
@@ -837,18 +766,14 @@ export async function patchCostCenterBudget(
 }
 
 /**
- * Create a new ai_credits budget for an existing cost center.
- *
- * `costCenterEntityName` is what gets sent as `budget_entity_name`. Our read
- * path (see `buildCostCenterBudgetMap`) treats `budget_entity_name` as the CC
- * NAME — verified empirically against the live API — so we send the name
- * here too. Alerts are off by default; admins configure them via the GHEC
- * budget edit page (see `budgetEditUrl`).
+ * Create the organization's single ai_credits org-scope budget. Errors if
+ * one already exists (the API will return 422). Alerts default to off;
+ * admins configure them via the org budgets UI (see `budgetEditUrl`).
  */
-export async function createCostCenterBudget(
+export async function createOrgBudget(
   apiFetch: ApiFetch,
   args: {
-    costCenterEntityName: string
+    orgSlug: string
     budgetAmount: number
     preventFurtherUsage: boolean
   },
@@ -858,8 +783,8 @@ export async function createCostCenterBudget(
     body: JSON.stringify({
       budget_type: 'BundlePricing',
       budget_product_sku: 'ai_credits',
-      budget_scope: 'cost_center',
-      budget_entity_name: args.costCenterEntityName,
+      budget_scope: 'organization',
+      budget_entity_name: args.orgSlug,
       budget_amount: args.budgetAmount,
       prevent_further_usage: args.preventFurtherUsage,
       budget_alerting: { will_alert: false, alert_recipients: [] },
@@ -867,7 +792,7 @@ export async function createCostCenterBudget(
   })
 }
 
-// --- GHEC web UI deep-links (alerts are managed in the GHEC UI, not the API) ---
+// --- Org-admin web UI deep-links (alerts are managed in the org UI, not the API) ---
 
 /** Convert the API base host (e.g. `https://api.github.com`) to the web UI base (e.g. `https://github.com`). */
 export function apiBaseToWebBase(apiBase: string): string {
@@ -907,8 +832,7 @@ export interface RawUsageItem {
 
 interface RawUsageSummary {
   timePeriod?: { year?: number; month?: number; day?: number }
-  enterprise?: string
-  costCenter?: { id: string; name: string }
+  organization?: string
   product?: string
   usageItems?: RawUsageItem[]
 }
@@ -916,8 +840,6 @@ interface RawUsageSummary {
 export interface CopilotUsageSummary {
   year: number
   month: number
-  /** `null` when this summary is enterprise-wide (no cost_center_id filter). */
-  costCenterId: string | null
   /** Net (post-discount) MTD spend, $. */
   aiCreditsNet: number
   /** Gross (pre-discount) MTD spend, $. Useful for "before discounts" framing. */
@@ -934,19 +856,17 @@ export interface CopilotUsageSummary {
 
 /**
  * Fetch the Copilot billing usage summary for the current (or specified)
- * billing month. Optionally filter by `costCenterId` — pass the literal
- * string `'none'` to get usage NOT attributed to any cost center
- * (a.k.a. the universal/default pool from a billing perspective).
+ * billing month. The org variant has no cost-center dimension, so this is
+ * always organization-wide.
  */
 export async function fetchCopilotUsageSummary(
   apiFetch: ApiFetch,
-  opts: { costCenterId?: string | 'none'; year?: number; month?: number } = {},
+  opts: { year?: number; month?: number } = {},
 ): Promise<CopilotUsageSummary> {
   const params = new URLSearchParams()
   params.set('product', 'Copilot')
   if (opts.year) params.set('year', String(opts.year))
   if (opts.month) params.set('month', String(opts.month))
-  if (opts.costCenterId) params.set('cost_center_id', opts.costCenterId)
   const data = (await apiFetch(`/usage/summary?${params.toString()}`)) as RawUsageSummary
   const items = data.usageItems ?? []
   const sumNet = (sku: string) =>
@@ -957,7 +877,6 @@ export async function fetchCopilotUsageSummary(
   return {
     year: data.timePeriod?.year ?? now.getFullYear(),
     month: data.timePeriod?.month ?? now.getMonth() + 1,
-    costCenterId: opts.costCenterId ?? null,
     aiCreditsNet: sumNet('copilot_ai_unit'),
     aiCreditsGross: sumGross('copilot_ai_unit'),
     codingAgentNet: sumNet('coding_agent_ai_unit'),
@@ -991,21 +910,6 @@ export function orgCopilotSeatsUrl(apiBase: string, org: string): string {
   return `${apiBaseToWebBase(apiBase)}/organizations/${org}/settings/copilot`
 }
 
-/**
- * @deprecated Cost-center URLs are unused in the org variant and will be
- * deleted along with the rest of the cost-center surface. Kept as stubs
- * temporarily so legacy `BudgetPlanner` code still typechecks while we
- * delete it.
- */
-export function costCentersUrl(apiBase: string, org: string): string {
-  return `${apiBaseToWebBase(apiBase)}/organizations/${org}/settings/billing`
-}
-
-/** @deprecated see costCentersUrl */
-export function costCenterUrl(apiBase: string, org: string, _ccId: string): string {
-  return `${apiBaseToWebBase(apiBase)}/organizations/${org}/settings/billing`
-}
-
 // --- Copilot seats (used as the source of truth for "add ULB" autocomplete) ---
 
 export interface CopilotSeat {
@@ -1027,193 +931,17 @@ interface SeatsResponse {
   seats?: RawSeat[]
 }
 
-// --- Cost centers ---
-
-/**
- * A resource attached to a cost center. We care about `User` and `Org`
- * entries; `Repository` and any other future types are preserved on the type
- * but ignored by the resolver.
- *
- * TODO(team-cc-linkage, ~2 months): the GH platform plans to add `Team` as a
- * resource type (enterprise team → cost center binding). The type already
- * accepts it as a string fallthrough; `resolveCostCenter` will need a new
- * branch when that ships.
- */
-export interface CostCenterResource {
-  type: 'User' | 'Org' | 'Repository' | string
-  name: string
-}
-
-export interface CostCenter {
-  id: string
-  name: string
-  state: string
-  resources: CostCenterResource[]
-}
-
-/**
- * How a user resolved to a cost center.
- * - `user`: the user's login is directly in the CC.
- * - `org`: the user's Copilot-license-granting org is in the CC.
- *
- * Per https://docs.github.com/en/billing/reference/cost-center-allocation
- * user-direct membership wins over org-inherited.
- */
-export type CostCenterResolutionVia = 'user' | 'org'
-
-export interface CostCenterResolution {
-  cc: CostCenter
-  via: CostCenterResolutionVia
-  /** When via === 'org', the login slug of the org that contributed the CC. */
-  viaOrg?: string
-}
-
-interface CostCentersResponse {
-  costCenters?: CostCenter[]
-  cost_centers?: CostCenter[]
-}
-
-/**
- * Fetch every active cost center in the enterprise.
- *
- * Uses page-based pagination (`?page=N&per_page=100`) and stops on the first
- * short or empty page, matching `fetchUserBudgets`. We accept both
- * `costCenters` (current shape) and `cost_centers` (snake_case) just in case
- * the API normalizes naming across hosts.
- *
- * Returns only `state === 'active'` entries since this dashboard only cares
- * about live attribution.
- */
-export async function fetchCostCenters(apiFetch: ApiFetch): Promise<CostCenter[]> {
-  // Cost-center cap is 250 standard / ~1k for sweetheart customers. 200 pages
-  // at 100/page = 20k headroom; named separately from PAGE_SAFETY_LIMIT
-  // (budgets) since the underlying scale is different.
-  const CC_PAGE_SAFETY_LIMIT = 200
-  const PER_PAGE = 100
-  const all: CostCenter[] = []
-  let page = 1
-  while (page <= CC_PAGE_SAFETY_LIMIT) {
-    // Note: we intentionally omit `state=active` from the query — the GitHub
-    // billing API has been observed to hang (>75s timeout on at least one
-    // enterprise) when that filter is applied to enterprises with many cost
-    // centers. Instead we fetch all states and filter to `active` client-side
-    // below.
-    const data = (await apiFetch(
-      `enterprise:/settings/billing/cost-centers?per_page=${PER_PAGE}&page=${page}`,
-    )) as CostCentersResponse | CostCenter[]
-    const list: CostCenter[] = Array.isArray(data)
-      ? data
-      : (data?.costCenters ?? data?.cost_centers ?? [])
-    if (list.length === 0) break
-    all.push(...list)
-    // Two stop conditions:
-    //   1. list.length < PER_PAGE: normal end-of-pagination.
-    //   2. list.length > PER_PAGE: the server is ignoring our pagination
-    //      params and returning the full set every call (observed on at least
-    //      one enterprise when `state=active` is omitted — see comment above).
-    //      Treat the first response as authoritative.
-    if (list.length !== PER_PAGE) break
-    page += 1
-  }
-  if (page > CC_PAGE_SAFETY_LIMIT) {
-    console.warn(
-      `[ubb-dashboard] Cost-center pagination safety limit hit at ${CC_PAGE_SAFETY_LIMIT} pages; loaded ${all.length}.`,
-    )
-  }
-  return all.filter(cc => cc.state === 'active')
-}
-
-export interface CostCenterIndex {
-  userToCC: Map<string, CostCenter>
-  orgToCC: Map<string, CostCenter>
-  /**
-   * Orgs that appear in multiple ai-credits-budgeted CCs. Surface this as a
-   * soft warning; the index itself uses first-wins-by-CC-id. Only populated
-   * when `costCenterBudgetsByName` is passed.
-   */
-  orgBudgetedCollisions: Array<{ org: string; costCenterNames: string[] }>
-}
-
-/**
- * Build lookup maps from a list of cost centers. Keys are lowercased logins
- * / org slugs.
- *
- * - User resources: the API enforces uniqueness across active CCs, so we
- *   never collide. (Older code warned about User collisions; that branch was
- *   dead and has been removed.)
- * - Org resources: an org CAN be in multiple CCs. We use first-wins by CC ID
- *   (deterministic). We only flag collisions where BOTH colliding CCs have
- *   an ai_credits budget — that's the only case where ambiguity affects the
- *   constraint math (see docs/budget-constraints.md). Pass
- *   `costCenterBudgetsByName` (lowercased keys) from
- *   `fetchCostCenterBudgets()` to enable that check.
- */
-export function buildCostCenterIndex(
-  costCenters: CostCenter[],
-  costCenterBudgetsByName?: ReadonlyMap<string, CostCenterBudget>,
-): CostCenterIndex {
-  const userToCC = new Map<string, CostCenter>()
-  const orgToCC = new Map<string, CostCenter>()
-  const orgToBudgetedCCs = new Map<string, CostCenter[]>()
-  const sortedCCs = [...costCenters].sort((a, b) => a.id.localeCompare(b.id))
-  for (const cc of sortedCCs) {
-    if (cc.state !== 'active') continue
-    const ccHasAiCreditsBudget = costCenterBudgetsByName?.has(cc.name.toLowerCase()) ?? false
-    for (const r of cc.resources ?? []) {
-      if (!r.name) continue
-      const key = r.name.toLowerCase()
-      if (r.type === 'User') {
-        // API enforces uniqueness; no collision branch needed.
-        userToCC.set(key, cc)
-      } else if (r.type === 'Org') {
-        if (!orgToCC.has(key)) orgToCC.set(key, cc)
-        if (ccHasAiCreditsBudget) {
-          const arr = orgToBudgetedCCs.get(key) ?? []
-          arr.push(cc)
-          orgToBudgetedCCs.set(key, arr)
-        }
-      }
-    }
-  }
-  const orgBudgetedCollisions = [...orgToBudgetedCCs.entries()]
-    .filter(([, ccs]) => ccs.length > 1)
-    .map(([org, ccs]) => ({ org, costCenterNames: ccs.map(c => c.name) }))
-  for (const c of orgBudgetedCollisions) {
-    console.warn(
-      `[ubb-dashboard] Org "${c.org}" is in multiple ai-credits-budgeted cost centers (${c.costCenterNames.join(', ')}); using the first by CC id.`,
-    )
-  }
-  return { userToCC, orgToCC, orgBudgetedCollisions }
-}
-
-/**
- * Resolve a user to their effective cost center for Copilot billing.
- *
- * Priority (per cost-center-allocation docs):
- *   1. Direct User membership
- *   2. Org membership (via the org that granted the user's Copilot license)
- *   3. null (enterprise default — surfaced as "Unassigned")
- */
-export function resolveCostCenter(
-  login: string,
-  orgLogin: string | null | undefined,
-  index: CostCenterIndex,
-): CostCenterResolution | null {
-  const userHit = index.userToCC.get(login.toLowerCase())
-  if (userHit) return { cc: userHit, via: 'user' }
-  if (orgLogin) {
-    const orgHit = index.orgToCC.get(orgLogin.toLowerCase())
-    if (orgHit) return { cc: orgHit, via: 'org', viaOrg: orgLogin }
-  }
-  return null
-}
 
 // --- Copilot seats: fetcher ---
 
 /**
- * Fetch every Copilot seat in the enterprise. Used to power the username
+ * Fetch every Copilot seat in the org. Used to power the username
  * autocomplete in the "Add ULB" dialog so admins don't have to remember
  * GitHub handles.
+ *
+ * Note: on some orgs that DO have ai_credits budgets, the seats endpoint
+ * may report `{total_seats: 0}` — treat seats as best-effort enrichment,
+ * not authoritative.
  */
 export async function fetchAllCopilotSeats(apiFetch: ApiFetch): Promise<CopilotSeat[]> {
   const fetchSeatPage = async (page: number): Promise<{ list: RawSeat[]; totalSeats: number | undefined }> => {
