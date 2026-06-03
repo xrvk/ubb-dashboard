@@ -64,7 +64,7 @@ export function clearDebugEntries(): void {
  */
 export function formatDebugBundle(entries: readonly DebugEntry[] = buffer): string {
   const lines: string[] = []
-  lines.push(`# ULB dashboard error log`)
+  lines.push(`# UBB dashboard error log`)
   lines.push(`# Generated at ${new Date().toISOString()}`)
   lines.push(`# User agent: ${typeof navigator !== 'undefined' ? navigator.userAgent : 'n/a'}`)
   lines.push(`# Entries: ${entries.length}`)
