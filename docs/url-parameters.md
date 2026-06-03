@@ -1,7 +1,7 @@
 # URL parameters
 
 The app reads a handful of query parameters off its URL
-(`/ubb-dashboard/?param=value&...`). There are two end-user params
+(`/ubb-dashboard-org/?param=value&...`). There is one end-user param
 worth knowing about; everything else is for local development,
 screenshots, and deterministic test scenarios.
 
@@ -13,30 +13,31 @@ does not auto-submit.
 
 ## For end users
 
-### `?ent=...` — Prefill enterprise URL
+### `?org=...` — Prefill organization URL
 
-Prefills the **Enterprise URL** field on the connect form. Useful when
+Prefills the **Organization URL** field on the connect form. Useful when
 sharing onboarding links or pointing a colleague at the right
-enterprise. The user still has to paste their PAT and click Connect.
+organization. The user still has to paste their PAT and click Connect.
 
 The easiest way to generate one of these links is to connect to your
-enterprise, open the connection menu in the top-right, and choose
-**Copy shareable link** — it builds the right form for your host
-automatically.
+org, open the connection menu in the top-right, and choose
+**Copy shareable link**.
 
 Manual construction supports two shapes:
 
-- **Bare slug** (github.com only): `?ent=acme` →
-  `https://github.com/enterprises/acme`
-- **Full URL** (any trusted host, including GHE.com):
-  - `?ent=https://github.com/enterprises/acme`
-  - `?ent=https://customer.ghe.com/enterprises/acme`
+- **Bare slug** (recommended): `?org=logans-lounge` →
+  `https://github.com/logans-lounge`
+- **Full URL** (github.com only):
+  - `?org=https://github.com/logans-lounge`
 
-GHE.com tenants always use the full-URL form so the link routes to
-the correct host. Invalid values (random garbage, non-GitHub hosts,
-slugs with disallowed characters) are silently ignored — the form
-stays usable and falls back to the `VITE_DEV_ENTERPRISE_URL` default
-if one is set, or empty otherwise.
+Invalid values (random garbage, non-github.com hosts, slugs with
+disallowed characters, or reserved names like `settings`) are silently
+ignored — the form stays usable and falls back to the
+`VITE_DEV_ORG_URL` default if one is set, or empty otherwise.
+
+> **GHES is not supported in this variant.** If you need to point at a
+> GitHub Enterprise Server host, use the
+> [enterprise variant](https://github.com/xrvk/ind-ulb-dashboard) instead.
 
 ## For developers and testing
 
@@ -54,28 +55,17 @@ Common values:
 
 | URL | What it does |
 |---|---|
-| `?demo=50` | Small, realistic enterprise |
-| `?demo=900` | Mid-size: paginated table, full histogram |
-| `?demo=9800` | Stress test: rate-limit pre-flight, progress UI |
+| `?demo=50` | Small org, realistic distribution |
+| `?demo=300` | Mid-size: paginated table, full histogram |
+| `?demo=900` | Larger: bulk-apply progress UI, rate-limit pre-flight |
 
 The remaining params in this section only take effect when `?demo=N`
 is also set.
-
-### `?cc=N`
-
-Override the demo cost-center count (1–5000). The first 4 stay the
-"story" CCs (`platform-eng`, `data-platform`, `devx`, `security`) so
-constraint scenarios remain consistent.
 
 ### `?pool=N`
 
 Override pool fill % (0–200). Scales `consumedAmount` on every budget
 so the pool tile shows roughly `N%` drawn.
-
-### `?exclude=0` / `?exclude=1`
-
-Include (`0`) or exclude (`1`) CC-bucketed usage from the individual
-list. Default is `1` since CC users aren't individually-budgeted.
 
 ### `?asof=YYYY-MM-DD`
 
@@ -93,8 +83,8 @@ exposes.
 
 Params stack. Examples:
 
-- `?demo=150&pool=75` — demo mode, 150 users, pool 75% full.
+- `?demo=150&pool=75` — demo mode, 150 users, pool 75 % full.
 - `?demo=150&debug=1` — demo mode with the data overlay on.
 
-Demo mode bypasses the connect form, so `?ent=…&demo=N` is valid but
-the `?ent` value is unused.
+Demo mode bypasses the connect form, so `?org=…&demo=N` is valid but
+the `?org` value is unused.

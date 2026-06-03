@@ -8,15 +8,15 @@ import { readOrgUrlFromUrl } from '@/lib/urlParams'
 
 export function ImportPanel() {
   const { credentials, connect, loading, error } = useCredentials()
-  // Priority: ?ent= URL param (any environment) > .env.local fallback (dev only).
+  // Priority: ?org= URL param (any environment) > .env.local fallback (dev only).
   // The env-var read is gated on `import.meta.env.DEV` so the bundler tree-shakes
   // it away in production builds — without this guard, the bundle would inline
-  // the dev enterprise URL into the shipped JS.
+  // the dev org URL into the shipped JS.
   const [url, setUrl] = useState(
     () =>
       readOrgUrlFromUrl() ??
       (import.meta.env.DEV
-        ? ((import.meta.env.VITE_DEV_ENTERPRISE_URL as string | undefined) ?? '')
+        ? ((import.meta.env.VITE_DEV_ORG_URL as string | undefined) ?? '')
         : ''),
   )
   const [token, setToken] = useState('')
@@ -32,7 +32,7 @@ export function ImportPanel() {
       <CardContent>
         <div className="flex items-center gap-2 mb-3">
           <Plug size={20} weight="duotone" />
-          <h2 className="text-base font-semibold">Connect to enterprise</h2>
+          <h2 className="text-base font-semibold">Connect to organization</h2>
         </div>
         <form
           className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end"
@@ -43,14 +43,14 @@ export function ImportPanel() {
         >
           <label className="text-sm grid gap-1">
             <span className="text-neutral-600 dark:text-neutral-400">
-              Enterprise URL{' '}
+              Organization URL{' '}
               <span className="text-neutral-400 dark:text-neutral-500">
-                (github.com or *.ghe.com)
+                (github.com only)
               </span>
             </span>
             <Input
               required
-              placeholder="https://github.com/enterprises/your-slug"
+              placeholder="https://github.com/your-org"
               value={url}
               onChange={e => setUrl(e.target.value)}
             />
@@ -59,7 +59,7 @@ export function ImportPanel() {
             <span className="flex items-center justify-between gap-2 text-neutral-600 dark:text-neutral-400">
               <span>Personal access token (classic)</span>
               <a
-                href="https://github.com/settings/tokens/new?description=Enterprise+Copilot+Dashboard&scopes=manage_billing:enterprise,read:org"
+                href="https://github.com/settings/tokens/new?description=Org+Copilot+Dashboard&scopes=admin:org,manage_billing:enterprise"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-xs font-normal text-blue-600 hover:underline dark:text-blue-400"
@@ -96,25 +96,19 @@ export function ImportPanel() {
           <ul className="ml-4 list-disc space-y-0.5">
             <li>
               <code className="rounded bg-neutral-100 px-1 py-0.5 font-mono text-[11px] dark:bg-neutral-800">
-                manage_billing:enterprise
+                admin:org
               </code>{' '}
-              — budgets, usage, and cost centers
-            </li>
-            <li>
-              <code className="rounded bg-neutral-100 px-1 py-0.5 font-mono text-[11px] dark:bg-neutral-800">
-                read:org
-              </code>{' '}
-              — Copilot seat assignments
+              — org budgets, usage, and Copilot seats
             </li>
           </ul>
           <p>
-            Fine-grained PATs are not supported for enterprise billing endpoints. Credentials stay
-            in memory and are sent directly to GitHub's API.
+            Fine-grained PATs are not supported for the org billing endpoints. Credentials stay
+            in memory and are sent directly to GitHub's API (github.com only).
           </p>
         </div>
         <div className="mt-4 pt-4 border-t border-neutral-200 dark:border-neutral-800 flex items-center justify-between gap-3 flex-wrap">
           <div className="text-xs text-neutral-500">
-            No enterprise handy? Explore the dashboard with deterministic fake data.
+            No organization handy? Explore the dashboard with deterministic fake data.
           </div>
           <Button
             type="button"
