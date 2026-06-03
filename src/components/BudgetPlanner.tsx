@@ -51,7 +51,7 @@ import {
   createCostCenterBudget,
   budgetEditUrl,
   costCenterUrl,
-  enterpriseSeatsUrl,
+  orgCopilotSeatsUrl,
 } from '@/lib/api'
 import { runBatch } from '@/lib/batch'
 
@@ -836,10 +836,10 @@ export function BudgetPlanner() {
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <a
-                            href={budgetEditUrl(credentials.base, credentials.ent, enterpriseBudget.id)}
+                            href={budgetEditUrl(credentials.base, credentials.org, enterpriseBudget.id)}
                             target="_blank"
                             rel="noopener noreferrer"
-                            onClick={openExternal(budgetEditUrl(credentials.base, credentials.ent, enterpriseBudget.id))}
+                            onClick={openExternal(budgetEditUrl(credentials.base, credentials.org, enterpriseBudget.id))}
                             className="inline-flex items-center gap-1 rounded border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-200 px-1.5 py-0.5 text-[11px] font-medium hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors"
                           >
                             CC exclusion on
@@ -854,7 +854,7 @@ export function BudgetPlanner() {
                     ) : null}
                     {credentials ? (
                       <AlertsLink
-                        href={budgetEditUrl(credentials.base, credentials.ent, enterpriseBudget.id)}
+                        href={budgetEditUrl(credentials.base, credentials.org, enterpriseBudget.id)}
                         willAlert={enterpriseBudget.willAlert}
                         alertRecipients={enterpriseBudget.alertRecipients}
                       />
@@ -864,7 +864,7 @@ export function BudgetPlanner() {
                 <div className="text-center text-xs px-3">
                   <SeatsLink
                     seats={seats.length}
-                    href={credentials ? enterpriseSeatsUrl(credentials.base, credentials.ent) : null}
+                    href={credentials ? orgCopilotSeatsUrl(credentials.base, credentials.org) : null}
                   />
                 </div>
                 <div className="px-3 flex items-center gap-1.5 justify-end">
@@ -1175,7 +1175,7 @@ export function BudgetPlanner() {
                                 ) : null}
                                 {row.budgetId && credentials ? (
                                   <AlertsLink
-                                    href={budgetEditUrl(credentials.base, credentials.ent, row.budgetId)}
+                                    href={budgetEditUrl(credentials.base, credentials.org, row.budgetId)}
                                     willAlert={row.willAlert}
                                     alertRecipients={row.alertRecipients}
                                   />
@@ -1188,7 +1188,7 @@ export function BudgetPlanner() {
                             <td className="px-3 py-2 text-center">
                               <SeatsLink
                                 seats={row.seatCount}
-                                href={credentials ? costCenterUrl(credentials.base, credentials.ent, row.ccId) : null}
+                                href={credentials ? costCenterUrl(credentials.base, credentials.org, row.ccId) : null}
                               />
                             </td>
                             <td className="px-3 py-2">

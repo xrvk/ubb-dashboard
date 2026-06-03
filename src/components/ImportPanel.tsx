@@ -4,7 +4,7 @@ import { useCredentials } from '@/hooks/use-credentials'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent } from '@/components/ui/card'
-import { readEnterpriseUrlFromUrl } from '@/lib/urlParams'
+import { readOrgUrlFromUrl } from '@/lib/urlParams'
 
 export function ImportPanel() {
   const { credentials, connect, loading, error } = useCredentials()
@@ -14,7 +14,7 @@ export function ImportPanel() {
   // the dev enterprise URL into the shipped JS.
   const [url, setUrl] = useState(
     () =>
-      readEnterpriseUrlFromUrl() ??
+      readOrgUrlFromUrl() ??
       (import.meta.env.DEV
         ? ((import.meta.env.VITE_DEV_ENTERPRISE_URL as string | undefined) ?? '')
         : ''),

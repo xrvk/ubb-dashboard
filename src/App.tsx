@@ -18,7 +18,7 @@ import { PartialLoadBanner } from '@/components/PartialLoadBanner'
 import { Button } from '@/components/ui/button'
 import { cn, openExternal } from '@/lib/utils'
 import { describeError, isAborted } from '@/lib/errors'
-import { buildShareableEnterpriseUrl } from '@/lib/urlParams'
+import { buildShareableOrgUrl } from '@/lib/urlParams'
 import { EMPTY_FILTERS, type TableFilters } from '@/components/BudgetsTable'
 import {
   NAV_TO_BUDGET_MODEL_EVENT,
@@ -222,9 +222,9 @@ export function App() {
           <div className="flex items-center gap-2.5">
             <Gauge size={26} weight="duotone" className="text-emerald-600" />
             <div>
-              <h1 className="text-base font-semibold leading-tight">UBB Dashboard</h1>
+              <h1 className="text-base font-semibold leading-tight">UBB Dashboard for Organizations</h1>
               <p className="text-xs text-neutral-500 leading-tight">
-                Monitor Copilot AI-credit budgets across your enterprise
+                Monitor Copilot AI-credit budgets for your organization
               </p>
             </div>
           </div>
@@ -289,7 +289,7 @@ export function App() {
                 isDemo={credentials.base === 'demo://'}
                 label={
                   credentials.base === 'demo://'
-                    ? `Demo · ${credentials.ent.replace('demo-', '')} users`
+                    ? `Demo · ${credentials.org.replace('demo-', '')} users`
                     : new URL(credentials.base).host
                 }
                 loading={loading}
@@ -310,7 +310,7 @@ export function App() {
                   credentials.base === 'demo://'
                     ? undefined
                     : () => {
-                        const link = buildShareableEnterpriseUrl(
+                        const link = buildShareableOrgUrl(
                           credentials,
                           window.location.origin,
                           window.location.pathname,
@@ -429,10 +429,10 @@ export function App() {
             </a>
             {' · '}
             <a
-              href="https://github.com/xrvk/ubb-dashboard"
+              href="https://github.com/xrvk/ubb-dashboard-org"
               target="_blank"
               rel="noopener noreferrer"
-              onClick={openExternal('https://github.com/xrvk/ubb-dashboard')}
+              onClick={openExternal('https://github.com/xrvk/ubb-dashboard-org')}
               className="hover:text-neutral-900 dark:hover:text-neutral-100 hover:underline underline-offset-2 transition-colors"
             >
               Source

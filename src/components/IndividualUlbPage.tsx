@@ -103,7 +103,7 @@ export function IndividualUlbPage({
 
   // Load the most recent snapshot for the connected enterprise.
   const [snapshotFor, setSnapshotFor] = useState<string | null>(null)
-  const currentEnt = credentials?.ent ?? null
+  const currentEnt = credentials?.org ?? null
   if (snapshotFor !== currentEnt) {
     setSnapshotFor(currentEnt)
     const next = currentEnt ? loadSnapshot(currentEnt) : null
@@ -277,7 +277,7 @@ export function IndividualUlbPage({
     if (succeededEntries.length > 0) {
       const snap: BulkApplySnapshot = {
         id: `snap-${Date.now()}`,
-        enterprise: credentials.ent,
+        enterprise: credentials.org,
         appliedAt: Date.now(),
         cycleEndsAt: endOfMonth().getTime(),
         entries: succeededEntries,

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from 'vitest'
-import { buildShareableEnterpriseUrl, readEnterpriseUrlFromUrl } from '@/lib/urlParams'
+import { buildShareableOrgUrl, readOrgUrlFromUrl } from '@/lib/urlParams'
 import type { Credentials } from '@/lib/api'
 
 function setSearch(search: string) {
@@ -11,68 +11,68 @@ afterEach(() => {
   setSearch('')
 })
 
-describe('readEnterpriseUrlFromUrl', () => {
-  it('normalizes a bare slug to a full github.com enterprises URL', () => {
-    setSearch('?ent=acme')
-    expect(readEnterpriseUrlFromUrl()).toBe('https://github.com/enterprises/acme')
+describe('readOrgUrlFromUrl', () => {
+  it('normalizes a bare org slug to a full github.com URL', () => {
+    setSearch('?org=acme')
+    expect(readOrgUrlFromUrl()).toBe('https://github.com/acme')
   })
 
-  it('passes through a full github.com enterprise URL unchanged', () => {
-    setSearch('?ent=https%3A%2F%2Fgithub.com%2Fenterprises%2Focto')
-    expect(readEnterpriseUrlFromUrl()).toBe('https://github.com/enterprises/octo')
+  it('passes through a full github.com org URL unchanged', () => {
+    setSearch('?org=https%3A%2F%2Fgithub.com%2Focto')
+    expect(readOrgUrlFromUrl()).toBe('https://github.com/octo')
   })
 
-  it('passes through a full GHE.com enterprise URL unchanged', () => {
-    setSearch('?ent=https%3A%2F%2Facme.ghe.com%2Fenterprises%2Facme')
-    expect(readEnterpriseUrlFromUrl()).toBe('https://acme.ghe.com/enterprises/acme')
+  it('rejects a URL on an untrusted host (no GHES/GHE.com support)', () => {
+    setSearch('?org=https%3A%2F%2Facme.ghe.com%2Facme')
+    expect(readOrgUrlFromUrl()).toBeNull()
   })
 
-  it('rejects a URL on an untrusted host', () => {
-    setSearch('?ent=https%3A%2F%2Fexample.com%2Ffoo')
-    expect(readEnterpriseUrlFromUrl()).toBeNull()
+  it('rejects a URL on an arbitrary host', () => {
+    setSearch('?org=https%3A%2F%2Fexample.com%2Ffoo')
+    expect(readOrgUrlFromUrl()).toBeNull()
   })
 
   it('rejects a slug with disallowed characters', () => {
-    setSearch('?ent=not%20a%20slug')
-    expect(readEnterpriseUrlFromUrl()).toBeNull()
+    setSearch('?org=not%20a%20slug')
+    expect(readOrgUrlFromUrl()).toBeNull()
   })
 
-  it('rejects a malformed URL', () => {
-    setSearch('?ent=https%3A%2F%2Fnot-a-real-url')
-    expect(readEnterpriseUrlFromUrl()).toBeNull()
+  it('rejects a reserved single-segment path (settings)', () => {
+    setSearch('?org=https%3A%2F%2Fgithub.com%2Fsettings')
+    expect(readOrgUrlFromUrl()).toBeNull()
   })
 
   it('returns null when the param is missing', () => {
     setSearch('')
-    expect(readEnterpriseUrlFromUrl()).toBeNull()
+    expect(readOrgUrlFromUrl()).toBeNull()
   })
 
   it('returns null when the param is empty', () => {
-    setSearch('?ent=')
-    expect(readEnterpriseUrlFromUrl()).toBeNull()
+    setSearch('?org=')
+    expect(readOrgUrlFromUrl()).toBeNull()
   })
 })
 
-describe('buildShareableEnterpriseUrl', () => {
+describe('buildShareableOrgUrl', () => {
   const origin = 'https://xrvk.github.io'
-  const pathname = '/ubb-dashboard/'
+  const pathname = '/ubb-dashboard-org/'
 
-  it('uses the short slug form for github.com tenants', () => {
-    const creds: Credentials = { base: 'https://api.github.com', ent: 'acme-corp', token: 't' }
-    expect(buildShareableEnterpriseUrl(creds, origin, pathname)).toBe(
-      'https://xrvk.github.io/ubb-dashboard/?ent=acme-corp',
+  it('emits the short ?org=<slug> form', () => {
+    const creds: Credentials = { base: 'https://api.github.com', org: 'acme-corp', token: 't' }
+    expect(buildShareableOrgUrl(creds, origin, pathname)).toBe(
+      'https://xrvk.github.io/ubb-dashboard-org/?org=acme-corp',
     )
   })
 
-  it('uses the full-URL form for GHE.com tenants', () => {
-    const creds: Credentials = { base: 'https://api.acme.ghe.com', ent: 'acme-corp', token: 't' }
-    expect(buildShareableEnterpriseUrl(creds, origin, pathname)).toBe(
-      'https://xrvk.github.io/ubb-dashboard/?ent=https%3A%2F%2Facme.ghe.com%2Fenterprises%2Facme-corp',
+  it('URL-encodes slugs with special characters', () => {
+    const creds: Credentials = { base: 'https://api.github.com', org: 'acme org', token: 't' }
+    expect(buildShareableOrgUrl(creds, origin, pathname)).toBe(
+      'https://xrvk.github.io/ubb-dashboard-org/?org=acme%20org',
     )
   })
 
   it('returns null for demo credentials', () => {
-    const creds: Credentials = { base: 'demo://', ent: 'demo-150', token: 'demo' }
-    expect(buildShareableEnterpriseUrl(creds, origin, pathname)).toBeNull()
+    const creds: Credentials = { base: 'demo://', org: 'demo-150', token: 'demo' }
+    expect(buildShareableOrgUrl(creds, origin, pathname)).toBeNull()
   })
 })

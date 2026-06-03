@@ -1,8 +1,12 @@
 /**
- * GitHub Enterprise Billing API client.
+ * GitHub Copilot Organization Billing API client.
  *
- * All calls go to `{base}/enterprises/{ent}/settings/billing/...`.
+ * All calls go to `{base}/orgs/{org}/settings/billing/...`.
  * apiFetch automatically adds Authorization, Accept, and X-GitHub-Api-Version headers.
+ *
+ * github.com only — this client deliberately does not support GHE.com or GHES
+ * hosts. The org-level Copilot AI-credit budgets API is a github.com-only
+ * surface today. If you need an enterprise variant, see xrvk/ind-ulb-dashboard.
  */
 
 import {
@@ -19,7 +23,7 @@ const API_VERSION = '2026-03-10'
 
 export interface Credentials {
   base: string
-  ent: string
+  org: string
   token: string
 }
 
@@ -85,13 +89,14 @@ export function _resetRateLimitCache(): void {
 export type ApiFetch = (path: string, init?: RequestInit) => Promise<unknown>
 
 /**
- * Build a path under the enterprise. Paths starting with `/copilot` (or any
- * non-`settings/billing` enterprise endpoint) should pass `enterpriseScoped: true`
- * via the init.headers (we read it from a custom header below). For ergonomics,
- * a path can also start with `enterprise:` to skip the billing prefix.
+ * Build a path under the org's billing API.
+ * Most paths target `{base}/orgs/{org}/settings/billing/{path}`. For
+ * non-billing org endpoints (e.g. `/copilot/billing/seats` which is rooted
+ * at `/orgs/{org}/copilot/...`, NOT under `/settings/billing/`), prefix the
+ * path with `org:` to skip the billing prefix.
  */
 /**
- * Validate that a base URL points at a real GitHub host before we send a
+ * Validate that a base URL points at api.github.com before we send a
  * bearer token to it. This is both a real defense-in-depth measure (a typo'd
  * `.env.local` or stored credential can't exfiltrate the token to a random
  * host) and a CodeQL sanitizer that breaks the `js/file-access-to-http` taint
@@ -99,9 +104,10 @@ export type ApiFetch = (path: string, init?: RequestInit) => Promise<unknown>
  *
  * Allowed:
  *   - https://api.github.com
- *   - https://api.<anything>.ghe.com   (GHE.com tenants)
+ *
+ * GHE.com / GHES hosts are deliberately rejected. See file header.
  */
-const ALLOWED_API_HOST = /^api\.(github\.com|[a-z0-9-]+\.ghe\.com)$/i
+const ALLOWED_API_HOST = /^api\.github\.com$/i
 
 function assertTrustedApiBase(base: string): string {
   let host: string
@@ -180,16 +186,16 @@ function delayWithAbort(ms: number, signal?: AbortSignal): Promise<void> {
 
 export function createApiFetch(creds: Credentials): ApiFetch {
   const safeBase = assertTrustedApiBase(creds.base)
-  const safeEnt = encodeURIComponent(creds.ent)
+  const safeOrg = encodeURIComponent(creds.org)
   // Re-stringify the token through a primitive to drop any inherited taint
   // before it crosses the fetch boundary (host has already been allowlisted).
   const safeToken = String(creds.token)
   return async (path: string, init?: RequestInit) => {
-    const useEnterpriseRoot = path.startsWith('enterprise:')
-    const cleanPath = useEnterpriseRoot ? path.slice('enterprise:'.length) : path
-    const url = useEnterpriseRoot
-      ? `${safeBase}/enterprises/${safeEnt}${cleanPath}`
-      : `${safeBase}/enterprises/${safeEnt}/settings/billing${cleanPath}`
+    const useOrgRoot = path.startsWith('org:')
+    const cleanPath = useOrgRoot ? path.slice('org:'.length) : path
+    const url = useOrgRoot
+      ? `${safeBase}/orgs/${safeOrg}${cleanPath}`
+      : `${safeBase}/orgs/${safeOrg}/settings/billing${cleanPath}`
     const method = (init?.method ?? 'GET').toUpperCase()
     const isIdempotent = method === 'GET' || method === 'HEAD'
 
@@ -284,20 +290,33 @@ export async function fetchRateLimit(creds: Credentials): Promise<RateLimitSnaps
 }
 
 /**
- * Parse an enterprise URL like `https://acme.ghe.com/enterprises/acme`
- * into `{ base, ent }`. Also accepts `https://github.com/enterprises/foo`.
+ * Parse an organization URL like `https://github.com/{org}` (the URL the
+ * user pastes from their browser) into `{ base, org }`. Also accepts a bare
+ * org slug for power users who don't want to copy a full URL. Returns null
+ * for any input that doesn't match those two shapes or that targets a
+ * non-github.com host.
  */
-export function parseEnterpriseUrl(url: string): { base: string; ent: string } | null {
+export function parseOrgUrl(url: string): { base: string; org: string } | null {
+  const trimmed = url.trim()
+  if (!trimmed) return null
+  // Bare slug fallback: a single segment of valid org-name characters.
+  // GitHub org slugs are 1–39 chars, alphanumeric + hyphens, no leading hyphen.
+  if (/^[a-zA-Z0-9][a-zA-Z0-9-]{0,38}$/.test(trimmed)) {
+    return { base: 'https://api.github.com', org: trimmed }
+  }
   try {
-    const u = new URL(url.trim())
-    const m = u.pathname.match(/\/enterprises\/([^/]+)/)
-    if (!m) return null
-    const ent = m[1]
-    // api subdomain: api.<host> for GHE.com, api.github.com for github.com
-    let host = u.host
-    if (host === 'github.com') host = 'api.github.com'
-    else if (!host.startsWith('api.')) host = `api.${host}`
-    return { base: `${u.protocol}//${host}`, ent }
+    const u = new URL(trimmed)
+    if (u.host !== 'github.com') return null
+    // Pathname is `/{org}` (optionally with trailing slash). Reject deeper
+    // paths to avoid silently treating `/{org}/{repo}/...` as just `/{org}`.
+    const segments = u.pathname.split('/').filter(Boolean)
+    if (segments.length !== 1) return null
+    const org = segments[0]
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9-]{0,38}$/.test(org)) return null
+    // Reject reserved single-segment paths that are not orgs.
+    const reserved = new Set(['settings', 'orgs', 'organizations', 'enterprises', 'notifications', 'features', 'pricing', 'about'])
+    if (reserved.has(org.toLowerCase())) return null
+    return { base: 'https://api.github.com', org }
   } catch {
     return null
   }
@@ -948,24 +967,43 @@ export async function fetchCopilotUsageSummary(
   }
 }
 
-/** GHEC edit page for a specific budget — admins configure alert thresholds + recipients here. */
-export function budgetEditUrl(apiBase: string, ent: string, budgetId: string): string {
-  return `${apiBaseToWebBase(apiBase)}/enterprises/${ent}/billing/budgets/${budgetId}/edit`
+/**
+ * Admin edit page for a specific budget — admins configure cap, alert
+ * thresholds, and recipients here. Org variant uses the
+ * /organizations/{org}/settings/billing/budgets/{id} surface.
+ */
+export function budgetEditUrl(apiBase: string, org: string, budgetId: string): string {
+  return `${apiBaseToWebBase(apiBase)}/organizations/${org}/settings/billing/budgets/${budgetId}/edit`
 }
 
-/** GHEC cost-centers list — useful when a CC has no budget yet (no ID to deep-link to). */
-export function costCentersUrl(apiBase: string, ent: string): string {
-  return `${apiBaseToWebBase(apiBase)}/enterprises/${ent}/billing/cost_centers`
+/** Admin Org Budgets list page. */
+export function orgBudgetsUrl(apiBase: string, org: string): string {
+  return `${apiBaseToWebBase(apiBase)}/organizations/${org}/settings/billing/budgets`
 }
 
-/** GHEC single cost-center page — drill into a specific CC's resources & members. */
-export function costCenterUrl(apiBase: string, ent: string, ccId: string): string {
-  return `${apiBaseToWebBase(apiBase)}/enterprises/${ent}/billing/cost_centers/${ccId}`
+/** Admin Copilot AI Usage page (drives the "view AI usage" deep-link). */
+export function orgAiUsageUrl(apiBase: string, org: string): string {
+  return `${apiBaseToWebBase(apiBase)}/organizations/${org}/settings/billing/ai_usage?period=3&group=7&chart_selection=2&view=models`
 }
 
-/** GHEC enterprise members / Copilot seats page. */
-export function enterpriseSeatsUrl(apiBase: string, ent: string): string {
-  return `${apiBaseToWebBase(apiBase)}/enterprises/${ent}/people`
+/** Admin Copilot seats / access page for the org. */
+export function orgCopilotSeatsUrl(apiBase: string, org: string): string {
+  return `${apiBaseToWebBase(apiBase)}/organizations/${org}/settings/copilot`
+}
+
+/**
+ * @deprecated Cost-center URLs are unused in the org variant and will be
+ * deleted along with the rest of the cost-center surface. Kept as stubs
+ * temporarily so legacy `BudgetPlanner` code still typechecks while we
+ * delete it.
+ */
+export function costCentersUrl(apiBase: string, org: string): string {
+  return `${apiBaseToWebBase(apiBase)}/organizations/${org}/settings/billing`
+}
+
+/** @deprecated see costCentersUrl */
+export function costCenterUrl(apiBase: string, org: string, _ccId: string): string {
+  return `${apiBaseToWebBase(apiBase)}/organizations/${org}/settings/billing`
 }
 
 // --- Copilot seats (used as the source of truth for "add ULB" autocomplete) ---
@@ -1180,7 +1218,7 @@ export function resolveCostCenter(
 export async function fetchAllCopilotSeats(apiFetch: ApiFetch): Promise<CopilotSeat[]> {
   const fetchSeatPage = async (page: number): Promise<{ list: RawSeat[]; totalSeats: number | undefined }> => {
     const data = (await apiFetch(
-      `enterprise:/copilot/billing/seats?per_page=100&page=${page}`,
+      `org:/copilot/billing/seats?per_page=100&page=${page}`,
     )) as SeatsResponse
     const list = data?.seats ?? []
     const totalSeats = typeof data?.total_seats === 'number' ? data.total_seats : undefined

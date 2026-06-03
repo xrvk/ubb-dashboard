@@ -76,7 +76,7 @@ function devProfiles(): Plugin {
 }
 
 export default defineConfig({
-  base: '/ubb-dashboard/',
+  base: '/ubb-dashboard-org/',
   plugins: [react(), tailwindcss(), legacyBasePathRedirect(), devProfiles()],
   resolve: {
     alias: {

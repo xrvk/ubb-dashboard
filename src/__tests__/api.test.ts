@@ -289,37 +289,37 @@ describe('fetchCostCenters', () => {
 describe('createApiFetch host allowlist', () => {
   it('accepts api.github.com', () => {
     expect(() =>
-      createApiFetch({ base: 'https://api.github.com', ent: 'acme', token: 't' }),
+      createApiFetch({ base: 'https://api.github.com', org: 'acme', token: 't' }),
     ).not.toThrow()
   })
 
-  it('accepts ghe.com tenants', () => {
+  it('rejects ghe.com tenants (this variant is github.com-only)', () => {
     expect(() =>
-      createApiFetch({ base: 'https://api.acme.ghe.com', ent: 'x', token: 't' }),
-    ).not.toThrow()
+      createApiFetch({ base: 'https://api.acme.ghe.com', org: 'x', token: 't' }),
+    ).toThrow(/untrusted host/)
   })
 
   it('rejects non-github hosts', () => {
     expect(() =>
-      createApiFetch({ base: 'https://attacker.com', ent: 'x', token: 't' }),
+      createApiFetch({ base: 'https://attacker.com', org: 'x', token: 't' }),
     ).toThrow(/untrusted host/)
   })
 
   it('rejects http (non-TLS) base URLs', () => {
     expect(() =>
-      createApiFetch({ base: 'http://api.github.com', ent: 'x', token: 't' }),
+      createApiFetch({ base: 'http://api.github.com', org: 'x', token: 't' }),
     ).toThrow(/https/)
   })
 
   it('rejects malformed base URLs', () => {
     expect(() =>
-      createApiFetch({ base: 'not a url', ent: 'x', token: 't' }),
+      createApiFetch({ base: 'not a url', org: 'x', token: 't' }),
     ).toThrow(/Invalid API base/)
   })
 
   it('rejects look-alike hosts (ghe.com suffix only)', () => {
     expect(() =>
-      createApiFetch({ base: 'https://api.evil.com.ghe.example', ent: 'x', token: 't' }),
+      createApiFetch({ base: 'https://api.evil.com.ghe.example', org: 'x', token: 't' }),
     ).toThrow(/untrusted host/)
   })
 })
@@ -351,7 +351,7 @@ function mockFetchResponse(spec: MockResponseSpec): Response {
 
 describe('createApiFetch typed-error mapping', () => {
   let fetchSpy: ReturnType<typeof vi.spyOn>
-  const fetcher = createApiFetch({ base: 'https://api.github.com', ent: 'acme', token: 't' })
+  const fetcher = createApiFetch({ base: 'https://api.github.com', org: 'acme', token: 't' })
 
   beforeEach(() => {
     fetchSpy = vi.spyOn(globalThis, 'fetch')
@@ -437,7 +437,7 @@ describe('createApiFetch typed-error mapping', () => {
 describe('createApiFetch GET retry policy', () => {
   let fetchSpy: ReturnType<typeof vi.spyOn>
   let randomSpy: ReturnType<typeof vi.spyOn>
-  const fetcher = createApiFetch({ base: 'https://api.github.com', ent: 'acme', token: 't' })
+  const fetcher = createApiFetch({ base: 'https://api.github.com', org: 'acme', token: 't' })
 
   beforeEach(() => {
     fetchSpy = vi.spyOn(globalThis, 'fetch')
@@ -531,7 +531,7 @@ describe('rate limit header capture', () => {
         },
       }),
     )
-    const apiFetch = createApiFetch({ base: 'https://api.github.com', ent: 'x', token: 't' })
+    const apiFetch = createApiFetch({ base: 'https://api.github.com', org: 'x', token: 't' })
     await apiFetch('/budgets')
     const snap = getLastKnownRateLimit()
     expect(snap?.remaining).toBe(4200)
@@ -554,7 +554,7 @@ describe('rate limit header capture', () => {
         },
       }),
     )
-    const apiFetch = createApiFetch({ base: 'https://api.github.com', ent: 'x', token: 't' })
+    const apiFetch = createApiFetch({ base: 'https://api.github.com', org: 'x', token: 't' })
     try {
       await apiFetch('/budgets')
       throw new Error('should have thrown')

@@ -85,9 +85,9 @@ export function UniversalUlbPage() {
   const aiUsageReportUrl = useMemo(() => {
     const docsUrl =
       'https://docs.github.com/en/billing/how-tos/products/view-productlicense-use#downloading-usage-reports'
-    if (!credentials || credentials.base === 'demo://' || !credentials.ent) return docsUrl
+    if (!credentials || credentials.base === 'demo://' || !credentials.org) return docsUrl
     const webBase = apiBaseToWebBase(credentials.base)
-    return `${webBase}/enterprises/${encodeURIComponent(credentials.ent)}/billing/ai_usage?period=3&group=7&chart_selection=2&view=models`
+    return `${webBase}/enterprises/${encodeURIComponent(credentials.org)}/billing/ai_usage?period=3&group=7&chart_selection=2&view=models`
   }, [credentials])
 
   const [editing, setEditing] = useState(false)
@@ -132,7 +132,7 @@ export function UniversalUlbPage() {
 
   // Reload cached months whenever import changes them.
   const cachedMonths = useMemo<CachedReport[]>(
-    () => (credentials ? loadAllCachedReports(credentials.ent) : []),
+    () => (credentials ? loadAllCachedReports(credentials.org) : []),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [credentials, cacheBust],
   )
@@ -154,7 +154,7 @@ export function UniversalUlbPage() {
   }, [cachedMonths, indUlbLogins])
 
   // Dataset signature — invalidates overrides when the input data changes.
-  const datasetSig = `${credentials?.ent ?? ''}:${csvUsers.length}`
+  const datasetSig = `${credentials?.org ?? ''}:${csvUsers.length}`
   const customPct =
     customThresholdEntry?.sig === datasetSig ? customThresholdEntry.value : null
   const ulbOverrideAICs =
@@ -596,7 +596,7 @@ export function UniversalUlbPage() {
           </div>
           {credentials ? (
             <UsageCsvImport
-              enterprise={credentials.ent}
+              enterprise={credentials.org}
               months={cachedMonths}
               onChanged={() => setCacheBust(n => n + 1)}
             />

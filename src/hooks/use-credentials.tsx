@@ -8,7 +8,7 @@ import {
   fetchAllCopilotSeats,
   fetchCopilotUsageSummary,
   fetchCostCenters,
-  parseEnterpriseUrl,
+  parseOrgUrl,
   resolveCostCenter,
   type ApiFetch,
   type CopilotSeat,
@@ -253,7 +253,7 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
           poolExhausted: poolPct === null ? true : poolPct >= 100,
         }),
       )
-      for (const report of generateDemoCachedReports(credentials.ent, demoSeats)) {
+      for (const report of generateDemoCachedReports(credentials.org, demoSeats)) {
         saveCachedReport(report)
       }
       return
@@ -295,15 +295,15 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
     }
   }, [apiFetch, credentials, applyWarnings])
 
-  const connect = useCallback(async (enterpriseUrl: string, token: string) => {
-    const parsed = parseEnterpriseUrl(enterpriseUrl)
+  const connect = useCallback(async (orgUrl: string, token: string) => {
+    const parsed = parseOrgUrl(orgUrl)
     if (!parsed) {
       setError(
-        'Invalid enterprise URL. Expected e.g. https://github.com/enterprises/your-slug or https://your-tenant.ghe.com/enterprises/your-slug',
+        'Invalid organization URL. Expected e.g. https://github.com/your-org or the bare slug "your-org".',
       )
       return
     }
-    const creds: Credentials = { base: parsed.base, ent: parsed.ent, token }
+    const creds: Credentials = { base: parsed.base, org: parsed.org, token }
     setLoading(true)
     setLoadProgress({ loaded: 0, total: undefined })
     setError(null)
@@ -374,7 +374,7 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
     if (demoCount !== null) {
       autoConnectRef.current = true
       void Promise.resolve().then(() => {
-        setCredentials({ base: 'demo://', ent: `demo-${demoCount}`, token: 'demo' })
+        setCredentials({ base: 'demo://', org: `demo-${demoCount}`, token: 'demo' })
         const demoBudgets = generateDemoBudgets(demoCount)
         const demoCcCount = readDemoCcCountFromUrl() ?? undefined
         const demoSeats = generateDemoSeats(demoCount, demoCcCount)

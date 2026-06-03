@@ -167,7 +167,7 @@ export function ConstraintsBanner() {
         if (ccBudget && credentials) {
           actions.push({
             label: 'Edit on github.com',
-            href: budgetEditUrl(credentials.base, credentials.ent, ccBudget.id),
+            href: budgetEditUrl(credentials.base, credentials.org, ccBudget.id),
             icon: 'external',
           })
         }
@@ -208,7 +208,7 @@ export function ConstraintsBanner() {
       if (enterpriseBudget && credentials) {
         actions.push({
           label: 'Edit on github.com',
-          href: budgetEditUrl(credentials.base, credentials.ent, enterpriseBudget.id),
+          href: budgetEditUrl(credentials.base, credentials.org, enterpriseBudget.id),
           icon: 'external',
         })
       }
@@ -238,7 +238,7 @@ export function ConstraintsBanner() {
       if (enterpriseBudget && credentials) {
         actions.push({
           label: 'Edit on github.com',
-          href: budgetEditUrl(credentials.base, credentials.ent, enterpriseBudget.id),
+          href: budgetEditUrl(credentials.base, credentials.org, enterpriseBudget.id),
           icon: 'external',
         })
       }

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { classifyStatus, forecastSummary, summarize, utilization } from '@/lib/status'
-import { parseEnterpriseUrl } from '@/lib/api'
+import { parseOrgUrl } from '@/lib/api'
 import type { UserBudget } from '@/lib/api'
 
 function ub(over: number, budget: number): UserBudget {
@@ -96,27 +96,28 @@ describe('forecastSummary', () => {
   })
 })
 
-describe('parseEnterpriseUrl', () => {
-  it('parses GHE.com URLs and adds api. subdomain', () => {
-    expect(parseEnterpriseUrl('https://acme.ghe.com/enterprises/acme')).toEqual({
-      base: 'https://api.acme.ghe.com',
-      ent: 'acme',
-    })
-  })
-  it('parses github.com URLs', () => {
-    expect(parseEnterpriseUrl('https://github.com/enterprises/foo')).toEqual({
+describe('parseOrgUrl', () => {
+  it('parses a github.com org URL', () => {
+    expect(parseOrgUrl('https://github.com/acme')).toEqual({
       base: 'https://api.github.com',
-      ent: 'foo',
+      org: 'acme',
     })
   })
-  it('accepts GHE.com API URLs (api. prefix) with trailing slash', () => {
-    // Some GHE.com docs use the API form; make sure pasting it works.
-    expect(parseEnterpriseUrl('https://api.acme.ghe.com/enterprises/acme/')).toEqual({
-      base: 'https://api.acme.ghe.com',
-      ent: 'acme',
+  it('parses a github.com org URL with a trailing slash', () => {
+    expect(parseOrgUrl('https://github.com/acme/')).toEqual({
+      base: 'https://api.github.com',
+      org: 'acme',
     })
+  })
+  it('rejects non-github.com hosts (no GHES/GHE.com support in this variant)', () => {
+    expect(parseOrgUrl('https://acme.ghe.com/acme')).toBeNull()
+    expect(parseOrgUrl('https://example.com/acme')).toBeNull()
+  })
+  it('rejects reserved single-segment paths', () => {
+    expect(parseOrgUrl('https://github.com/settings')).toBeNull()
+    expect(parseOrgUrl('https://github.com/orgs')).toBeNull()
   })
   it('returns null on bad URL', () => {
-    expect(parseEnterpriseUrl('not a url')).toBeNull()
+    expect(parseOrgUrl('not a url')).toBeNull()
   })
 })
