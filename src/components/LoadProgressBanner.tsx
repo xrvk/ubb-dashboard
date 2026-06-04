@@ -38,11 +38,11 @@ export function LoadProgressBanner({ loaded, total }: Props) {
 
   const knownTotal = typeof total === 'number' && total > 0
   const finalizing = knownTotal && loaded >= total
-  const isLargeEnterprise = knownTotal && total > LARGE_ENTERPRISE_BUDGET_THRESHOLD
+  const isLargeOrg = knownTotal && total > LARGE_ENTERPRISE_BUDGET_THRESHOLD
   const pct = knownTotal ? Math.min(100, (loaded / total) * 100) : null
 
   const message = finalizing
-    ? 'Finalizing enterprise data…'
+    ? 'Finalizing organization data…'
     : knownTotal
       ? `Loading budgets… ${loaded.toLocaleString()} of ${total.toLocaleString()}`
       : `Loading budgets… ${loaded.toLocaleString()}`
@@ -57,9 +57,9 @@ export function LoadProgressBanner({ loaded, total }: Props) {
         <CircleNotch size={18} weight="duotone" className="mt-0.5 shrink-0 animate-spin" />
         <div className="flex-1 min-w-0">
           <div className="font-medium">{message}</div>
-          {isLargeEnterprise ? (
+          {isLargeOrg ? (
             <div className="mt-0.5 text-xs opacity-90">
-              Large enterprise — initial load may take ~1 min.
+              Large organization — initial load may take ~1 min.
             </div>
           ) : null}
           {pct !== null ? (

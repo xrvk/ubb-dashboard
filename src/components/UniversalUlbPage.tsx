@@ -6,10 +6,10 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useCredentials } from '@/hooks/use-credentials'
 import {
-  apiBaseToWebBase,
   createUniversalULB,
   createUserBudget as apiCreateUserBudget,
   fetchUniversalULB,
+  orgAiUsageUrl,
   patchUniversalULB,
 } from '@/lib/api'
 import { describeError } from '@/lib/errors'
@@ -76,12 +76,14 @@ export function UniversalUlbPage() {
   // `https://api.acme.ghe.com` → `https://acme.ghe.com`, so this works for
   // both github.com and ghe.com tenants. Falls back to docs when there's no
   // real enterprise (demo / unauthenticated).
+  // Build a deep-link to the native AI-usage chart, scoped to the connected
+  // organization. Falls back to the GitHub docs URL when no real connection
+  // exists (demo / unauthenticated).
   const aiUsageReportUrl = useMemo(() => {
     const docsUrl =
       'https://docs.github.com/en/billing/how-tos/products/view-productlicense-use#downloading-usage-reports'
     if (!credentials || credentials.base === 'demo://' || !credentials.org) return docsUrl
-    const webBase = apiBaseToWebBase(credentials.base)
-    return `${webBase}/enterprises/${encodeURIComponent(credentials.org)}/billing/ai_usage?period=3&group=7&chart_selection=2&view=models`
+    return orgAiUsageUrl(credentials.base, credentials.org)
   }, [credentials])
 
   const [editing, setEditing] = useState(false)
@@ -112,7 +114,6 @@ export function UniversalUlbPage() {
     usd: number
     overBy: number
     allowance: number
-    failingCcCount: number
   } | null>(null)
   /** Growth buffer (%) applied on top of each outlier's max-month spend
    *  when computing their suggested individual ULB. */
@@ -270,7 +271,6 @@ export function UniversalUlbPage() {
             usd: newUsd,
             overBy: projectedOverBy - baselineOverBy,
             allowance: orgBudget.budgetAmount,
-            failingCcCount: 0,
           })
           return
         }
@@ -529,7 +529,7 @@ export function UniversalUlbPage() {
               >
                 Generate a detailed billing usage report
               </a>{' '}
-              for this enterprise on GitHub for one or more recent months, then upload the CSV(s)
+              for this organization on GitHub for one or more recent months, then upload the CSV(s)
               below. Sizing uses each user's biggest single month across everything you load.{' '}
               <a
                 href="https://docs.github.com/en/billing/how-tos/products/view-productlicense-use#downloading-usage-reports"
@@ -942,9 +942,8 @@ export function UniversalUlbPage() {
           </DialogDescription>
 
           <div className="rounded-md border border-amber-300 dark:border-amber-700/60 bg-amber-50 dark:bg-amber-950/30 px-3 py-2 text-xs text-amber-900 dark:text-amber-200 mb-3">
-            Heads up: this total only reflects individual ULBs. It does not account
-            for other budgets (enterprise or cost centers) that may also apply to
-            these users.
+            Heads up: this total only reflects individual ULBs. The org-level
+            budget cap may also constrain these users beyond what is shown here.
           </div>
 
           <div className="rounded-md border border-neutral-200 dark:border-neutral-800 p-3 text-xs grid gap-3 sm:grid-cols-3 mb-3">
@@ -1050,23 +1049,16 @@ export function UniversalUlbPage() {
         }}
       >
         <DialogContent>
-          <DialogTitle>Apply universal ULB over the envelope?</DialogTitle>
+          <DialogTitle>Apply universal ULB over the org budget?</DialogTitle>
           <DialogDescription>
             {pendingOverApply ? (
-              pendingOverApply.overBy > 0 ? (
-                <>
-                  Setting the universal ULB to ${pendingOverApply.usd.toLocaleString()} would
-                  put projected spend{' '}
-                  <span className="font-semibold">{formatCurrency(pendingOverApply.overBy)} over</span>{' '}
-                  the enterprise allowance of {formatCurrency(pendingOverApply.allowance)}.
-                  The enterprise budget would become the binding cap instead of the ULB.
-                </>
-              ) : (
-                <>
-                  Setting the universal ULB to ${pendingOverApply.usd.toLocaleString()} would
-                  cause {pendingOverApply.failingCcCount} cost-center budget{pendingOverApply.failingCcCount === 1 ? '' : 's'} to be exceeded.
-                </>
-              )
+              <>
+                Setting the universal ULB to ${pendingOverApply.usd.toLocaleString()} would
+                put committed ULBs{' '}
+                <span className="font-semibold">{formatCurrency(pendingOverApply.overBy)} over</span>{' '}
+                the org budget of {formatCurrency(pendingOverApply.allowance)}.
+                The org budget would become the binding cap instead of the ULB.
+              </>
             ) : null}
           </DialogDescription>
 

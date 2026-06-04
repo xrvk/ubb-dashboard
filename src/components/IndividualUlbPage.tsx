@@ -333,7 +333,7 @@ export function IndividualUlbPage({
           <strong className="font-medium">
             {totalBudgetCount >= 10000 ? 'Budget limit reached:' : 'Approaching budget limit:'}
           </strong>{' '}
-          {totalBudgetCount.toLocaleString()} of 10,000 budgets used across this enterprise (all types).{' '}
+          {totalBudgetCount.toLocaleString()} of 10,000 budgets used across this organization (all types).{' '}
           {totalBudgetCount >= 10000
             ? 'New budgets cannot be created until existing ones are removed.'
             : `${(10000 - totalBudgetCount).toLocaleString()} remaining.`}{' '}
@@ -395,7 +395,7 @@ export function IndividualUlbPage({
                 onClick={() => onCreatingChange(true)}
                 size="sm"
                 disabled={totalBudgetCount >= 10000}
-                title={totalBudgetCount >= 10000 ? 'Budget limit of 10,000 reached for this enterprise' : undefined}
+                title={totalBudgetCount >= 10000 ? 'Budget limit of 10,000 reached for this organization' : undefined}
               >
                 <Plus size={16} weight="bold" />
                 Add ULB
@@ -413,7 +413,7 @@ export function IndividualUlbPage({
         </>
       ) : (
         <div className="rounded-lg border border-dashed border-neutral-300 dark:border-neutral-700 p-12 text-center">
-          <p className="text-sm text-neutral-500">No individual ULBs found for this enterprise.</p>
+          <p className="text-sm text-neutral-500">No individual ULBs found for this organization.</p>
           <Button className="mt-4" onClick={() => onCreatingChange(true)}>
             <Plus size={16} weight="bold" />
             Add the first one

@@ -24,17 +24,17 @@ describe('LoadProgressBanner', () => {
     expect(screen.queryByRole('status')).toBeNull()
   })
 
-  it('renders count + total with thousands separators for a small enterprise', () => {
+  it('renders count + total with thousands separators for a small org', () => {
     render(<LoadProgressBanner loaded={3200} total={4500} />)
     reveal()
     expect(screen.getByRole('status')).toHaveTextContent('Loading budgets… 3,200 of 4,500')
-    expect(screen.queryByText(/Large enterprise/)).toBeNull()
+    expect(screen.queryByText(/Large organization/)).toBeNull()
   })
 
-  it('shows the "large enterprise" hint when total exceeds the threshold', () => {
+  it('shows the "large organization" hint when total exceeds the threshold', () => {
     render(<LoadProgressBanner loaded={1000} total={9800} />)
     reveal()
-    expect(screen.getByText(/Large enterprise — initial load may take ~1 min\./)).toBeInTheDocument()
+    expect(screen.getByText(/Large organization — initial load may take ~1 min\./)).toBeInTheDocument()
   })
 
   it('omits the progress bar and uses the loaded-only message when total is unknown', () => {
@@ -48,6 +48,6 @@ describe('LoadProgressBanner', () => {
   it('switches to "Finalizing…" when budgets are done but loading is still true', () => {
     render(<LoadProgressBanner loaded={500} total={500} />)
     reveal()
-    expect(screen.getByRole('status')).toHaveTextContent('Finalizing enterprise data…')
+    expect(screen.getByRole('status')).toHaveTextContent('Finalizing organization data…')
   })
 })

@@ -12,6 +12,10 @@ interface Props {
  * dashboard. Lives in-app (rather than a static markdown file) so it can
  * deep-link to other tabs in the future and stays in sync with the actual
  * implementation in `src/lib/budgetConstraints.ts`.
+ *
+ * Org variant: 3 layers (org budget → universal ULB → individual ULBs),
+ * no enterprise envelope, no cost centers. The dashboard enforces a single
+ * golden rule rather than a layered cascade of checks.
  */
 export function BudgetConstraintsHelpPage({ onBack }: Props) {
   return (
@@ -29,298 +33,152 @@ export function BudgetConstraintsHelpPage({ onBack }: Props) {
 
       <Card>
         <CardContent className="p-6 space-y-6 text-sm leading-relaxed">
-          <Section title="The four budget controls">
+          <Section title="The three budget controls">
             <p>
-              Before you adjust budgets, make sure you understand how the four
-              budget controls work and how this dashboard evaluates them. This
-              page focuses on what the red banner checks before it warns about
-              blocking risk.
+              GitHub Copilot's usage-based billing for a single organization
+              exposes three layered controls. The dashboard treats them as a
+              hierarchy and validates them against one golden rule.
             </p>
             <ul className="list-disc pl-6 space-y-1">
               <li>
+                <Term>Individual user-level budget (individual ULB)</Term>. A
+                per-user metered-spend cap. Use these for outliers who need
+                higher (or lower) limits than the org-wide default.
+              </li>
+              <li>
                 <Term>Universal user-level budget (universal ULB)</Term>. One
-                cap applied to every regular user.
+                cap applied to every Copilot seat that doesn't have an
+                individual ULB.
               </li>
               <li>
-                <Term>Individual user-level budget</Term>. A per-user cap for
-                exceptions who need higher (or lower) limits than the universal
-                ULB.
-              </li>
-              <li>
-                <Term>Cost center budget</Term>. A metered-spend cap for users
-                assigned to that cost center.
-              </li>
-              <li>
-                <Term>Enterprise budget</Term>. A metered-spend cap for the
-                enterprise.
+                <Term>Organization budget</Term>. A metered-spend cap covering
+                all Copilot AI-credit consumption in the org — the highest
+                envelope in the hierarchy.
               </li>
             </ul>
             <p className="text-xs opacity-75">
               Each budget can alert only, or{' '}
               <Term>Stop usage when budget limit is reached</Term>. The banner
-              checks are most important when stop usage is enabled, because that
-              is when users can be blocked.
+              raises a warning if the org budget is configured as alerts-only,
+              since the hard-cap check below stops being enforced.
             </p>
           </Section>
 
-          <Section title="Effective ULB">
-            <p>GitHub evaluates an effective ULB for each user:</p>
-            <Formula>
-              effective ULB = max(individual ULB, universal ULB)
-            </Formula>
+          <Section title="The AI-credit pool">
             <p>
-              <Term>Regular users</Term> are users without an individual ULB.
-              Their effective ULB is the universal ULB.
+              Included credits are an org-wide <Term>shared pool</Term>. Every
+              assigned Copilot Business seat contributes a monthly allowance
+              (1,900 AI credits = $19 at list price; promotional rates apply
+              through Sept 1, 2026). The pool is consumed first, before any
+              metered charges hit the org budget.
+            </p>
+            <Formula>{`pool value = Copilot Business seats × $19 (standard)
+            = Copilot Business seats × $30 (promo, through Sept 1, 2026)`}</Formula>
+            <p>
+              Once the pool is drained, every subsequent AI-credit dollar is a{' '}
+              <Term>metered charge</Term> that draws against the per-user ULBs
+              and ultimately the org budget.
             </p>
           </Section>
 
-          <Section title="Shared AI Credit Pool and metered charges">
+          <Section title="The golden rule">
             <p>
-              Included credits are one enterprise-wide <Term>shared pool</Term>.
-              There is no per-user included allowance. There is no per-user plan
-              default.
+              The dashboard enforces a single invariant on every edit:
             </p>
-            <Formula>
-              pool value = (Copilot Business seats × $19) + (Copilot Enterprise
-              seats × $39)
-            </Formula>
+            <Formula>Σ effective ULB(seat) ≤ org budget</Formula>
+            <p>where, for each Copilot seat, the <Term>effective ULB</Term> is:</p>
+            <ul className="list-disc pl-6 space-y-1">
+              <li>the user's <Term>individual ULB</Term> if one is set,</li>
+              <li>otherwise the <Term>universal ULB</Term> amount,</li>
+              <li>otherwise <Term>$0</Term> (the seat is unbounded only up to the org cap, then blocked).</li>
+            </ul>
             <p>
-              If user-level budgets collectively allow more consumption than the
-              pool value provides, the difference becomes{' '}
-              <Term>metered charges</Term>. Cost center budgets and enterprise
-              budget need to be high enough to cover that gap.
+              When the sum exceeds the org budget, the configuration is{' '}
+              <Term>overcommitted</Term>: every user could theoretically draw
+              up to their ULB and the org would breach its top-level cap. The
+              red banner surfaces this with two one-click fixes:
             </p>
-            <p>Here&apos;s how to estimate:</p>
-            <Formula>
-              max user consumption = (regular users × universal ULB) + Σ
-              individual ULBs{'\n'}
-              gap = max user consumption − pool value{'\n'}
-              required spend coverage = Σ cost center budgets + enterprise
-              budget ≥ gap
-            </Formula>
-            <p className="text-xs opacity-75">
-              <strong>Tip:</strong> Whenever you raise the universal ULB or any
-              individual user-level budget, re-check this calculation. Raising
-              ULBs without raising shared budgets can block users before they
-              reach their individual limits.
-            </p>
-          </Section>
-
-          <Section title="Cost center exclusion">
-            <p>
-              The enterprise budget has a <Term>cost center exclusion</Term>{' '}
-              setting that changes scope.
-            </p>
-            <p>Here&apos;s how it works:</p>
             <ul className="list-disc pl-6 space-y-1">
               <li>
-                <Term>Cost center exclusion off</Term> (default). Cost center
-                spend also draws from enterprise budget capacity. If the sum of
-                cost center budgets is above the enterprise budget, the
-                enterprise budget can block cost center users early.
+                <Term>Raise org budget to $X</Term> — sets the org cap to
+                exactly cover current commitments (Σ effective ULBs).
               </li>
               <li>
-                <Term>Cost center exclusion on</Term>. Cost centers are capped
-                by their own budgets, and enterprise budget covers only users
-                outside budgeted cost centers.
+                <Term>Lower universal ULB to $Y</Term> — drops the universal
+                cap to the largest value that satisfies the rule, holding
+                individual ULBs constant.
+              </li>
+            </ul>
+            <p>
+              The "lower universal ULB" fix is hidden when individual ULBs
+              alone already exceed the cap — in that case raising the org
+              budget (or reducing some individual ULBs) is the only way out.
+            </p>
+          </Section>
+
+          <Section title="Max-safe universal ULB">
+            <p>
+              The Universal ULB tab shows an inline headroom card with the max
+              value that keeps the golden rule passing:
+            </p>
+            <Formula>{`max safe universal ULB =
+  (org budget − Σ individual ULBs) ÷ (seats without an individual ULB)`}</Formula>
+            <p>
+              When every seat has an individual ULB, the universal ULB is
+              decoupled from the org budget (the denominator is zero), so the
+              max-safe value is reported as unbounded.
+            </p>
+            <p>
+              When there is no org budget configured, the dashboard skips the
+              hard check entirely and only surfaces soft warnings (e.g. seats
+              with no ULB coverage). Sizing the universal ULB then falls back
+              to per-user heuristics on the CSV upload page.
+            </p>
+          </Section>
+
+          <Section title="Soft warnings">
+            <p>The banner also raises non-blocking warnings:</p>
+            <ul className="list-disc pl-6 space-y-1">
+              <li>
+                <Term>Prevent further usage is off</Term>. The org budget is
+                set to alert only, so the hard cap is not enforced and the
+                golden rule becomes advisory rather than enforced.
+              </li>
+              <li>
+                <Term>Unbounded user coverage</Term>. One or more Copilot seats
+                have neither an individual nor a universal ULB. Those users
+                can consume AI credits up to the org budget without a
+                per-user ceiling.
               </li>
             </ul>
           </Section>
 
-          <Section title="Cost centers and Copilot billing">
-            <p>
-              A cost center groups users and/or organizations so their
-              Copilot spend can be tracked and capped separately from the
-              enterprise pool. Each cost center has its own ai_credits
-              budget; users routed through a CC draw from the CC's budget
-              before falling back to the enterprise budget (subject to{' '}
-              <Term>cost center exclusion</Term> above).
-            </p>
-            <p>How CCs interact with each GitHub Copilot product:</p>
-            <ul className="list-disc pl-6 space-y-1">
-              <li>
-                <Term>Copilot Business / Enterprise seat licenses</Term> are
-                billed per seat regardless of CC assignment. The CC budget
-                does <em>not</em> cap license cost; it caps metered AI Credit
-                consumption (premium requests, coding-agent units, etc.).
-              </li>
-              <li>
-                <Term>AI Credit metered spend</Term> (premium requests,
-                coding agent, model overages) is what CC budgets actually
-                gate. When a CC user's effective ULB is exhausted or the CC
-                budget hits its cap, further metered usage is blocked or
-                alerted per budget config.
-              </li>
-              <li>
-                <Term>Users not assigned to a CC</Term> draw from the
-                enterprise budget directly. If the enterprise budget is
-                missing or undersized, those users can be blocked even when
-                CC users still have headroom.
-              </li>
-            </ul>
+          <Section title="What this dashboard does not check">
             <p className="text-xs opacity-75">
-              The Dashboard's "Cost centers" card and the "Budget filter"
-              dropdowns elsewhere in the app show CCs that have at least
-              one Copilot seat. CCs with zero Copilot seats are filtered
-              out automatically since they don't draw from the pool.
+              The golden rule is a <em>commitment</em> check, not a <em>consumption</em>
+              {' '}check. It treats every ULB as fully used, which is the worst
+              case. In practice, real spend depends on how much each user
+              actually consumes — see the Dashboard tab for spend-to-date and
+              the projected end-of-month forecast.
+            </p>
+            <p className="text-xs opacity-75">
+              The dashboard also does not enforce minimum ULB amounts, alert
+              recipient lists, or notification cadence — those live in the
+              native GitHub admin UI.
             </p>
             <p className="text-xs">
-              GitHub Docs:{' '}
+              Further reading:{' '}
               <a
-                href="https://docs.github.com/en/enterprise-cloud@latest/billing/managing-billing/about-cost-centers"
+                href="https://docs.github.com/en/copilot/managing-copilot/managing-github-copilot-in-your-organization/managing-the-spending-policy-for-github-copilot-in-your-organization"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="underline hover:opacity-80"
               >
-                About cost centers
+                Managing the spending policy for GitHub Copilot in your organization
               </a>
               {', '}
               <a
-                href="https://docs.github.com/en/enterprise-cloud@latest/copilot/managing-copilot/managing-copilot-as-an-administrator/managing-your-companys-spending-on-github-copilot"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline hover:opacity-80"
-              >
-                Managing Copilot spending
-              </a>
-              .
-            </p>
-          </Section>
-
-          <Section title="The three coherence checks">
-            <p>
-              The red banner appears when any check fails. This means your
-              configuration can block usage earlier than intended.
-            </p>
-            <p>Here&apos;s how to read it:</p>
-            <ol className="list-decimal pl-6 space-y-2">
-              <li>
-                <Term>Per-cost-center fit</Term>. For every cost center that has
-                a budget,
-                <Formula>Σ effective ULBs of CC members ≤ CC budget</Formula>
-              </li>
-              <li>
-                <Term>Cost-center vs enterprise fit</Term>. When cost center
-                exclusion is off,
-                <Formula>Σ cost center budgets ≤ enterprise budget</Formula>
-              </li>
-              <li>
-                <Term>Unassigned-users fit</Term>. For users not routed to a
-                budgeted cost center,
-                <Formula>
-                  Σ effective ULBs of unassigned users ≤ leftover enterprise
-                  budget{'\n'}
-                  (leftover = enterprise budget − Σ CC budgets when exclusion
-                  is off, full enterprise budget when on)
-                </Formula>
-              </li>
-            </ol>
-            <p className="text-xs opacity-75">
-              <strong>Tip:</strong> Start by fixing per-cost-center fit, then
-              check cost-center vs enterprise fit (when exclusion is off), then
-              re-check unassigned-users fit.
-            </p>
-          </Section>
-
-          <Section title="Max safe universal ULB">
-            <p>
-              The dashboard computes the highest universal ULB that keeps all
-              three checks passing, with budgets and individual user-level
-              budgets held fixed.
-            </p>
-            <p>
-              Situation: You want to raise universal ULB but keep the current
-              budgets.
-            </p>
-            <p>
-              Configuration: Raise universal ULB only up to the max safe
-              universal ULB value. If even universal ULB = $0 fails, individual
-              user-level budgets already exceed your current envelopes. Raise
-              budgets, lower specific individual ULBs, or reroute users between
-              cost centers.
-            </p>
-          </Section>
-
-          <Section title="Worked example">
-            <p>
-              Cost center <Term>&quot;eng&quot;</Term> has a $500 budget and 3
-              members. Two have individual ULBs of $100. The third has none.
-              With universal ULB = $50:
-            </p>
-            <Formula>
-              effective ULBs = max(100, 50) + max(100, 50) + max(0, 50) = 100 +
-              100 + 50 = $250
-            </Formula>
-            <p>
-              $250 ≤ $500, so the per-cost-center check passes. Raise universal
-              ULB to $200:
-            </p>
-            <Formula>
-              effective ULBs = max(100, 200) + max(100, 200) + max(0, 200) =
-              200 + 200 + 200 = $600
-            </Formula>
-            <p>
-              $600 &gt; $500, so the check fails. The max safe universal ULB is
-              $150 ($150 + $150 + $150 = $450 ≤ $500).
-            </p>
-            <p className="text-xs opacity-75">
-              <strong>Tip:</strong> This example is a per-cost-center fit check.
-              If cost center exclusion is off, you still need the other two
-              checks to pass.
-            </p>
-          </Section>
-
-          <Section title="Alerts and hard stops">
-            <p>
-              Alerts and limits are separate. Alerts notify. Blocking only
-              happens when <Term>Stop usage when budget limit is reached</Term>{' '}
-              is enabled.
-            </p>
-          </Section>
-
-          <Section title="API rate limits at scale">
-            <p>
-              Setting per-user ULBs in bulk hits one PATCH per user. With a
-              classic PAT the primary ceiling is{' '}
-              <Term>5,000 requests per hour</Term> for the entire token, and a
-              secondary "abuse" limit fires inside that window when traffic
-              bursts. At 4,500 users a single bulk apply consumes nearly the
-              full hourly quota, leaving little room for the dashboard's own
-              reads.
-            </p>
-            <p>
-              The bulk-unblock dialog throttles to 5 in-flight requests with
-              50ms spacing and backs off on 429s automatically. When the
-              hourly 5,000 ceiling is exhausted (GitHub returns 403 with{' '}
-              <code>x-ratelimit-remaining: 0</code>) the runner stops cleanly
-              and surfaces the reset time, so you can resume from where it
-              left off rather than waiting blind. See{' '}
-              <a
-                href="https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline hover:opacity-80"
-              >
-                GitHub Docs: Rate limits for the REST API
-              </a>{' '}
-              for the authoritative limits.
-            </p>
-          </Section>
-
-          <Section title="See also">
-            <p className="text-xs">
-              GitHub Docs:{' '}
-              <a
-                href="https://docs.github.com/en/enterprise-cloud@latest/billing/managing-your-billing/budgets-for-usage-based-billing"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline hover:opacity-80"
-              >
-                Budgets for usage-based billing
-              </a>
-              {', '}
-              <a
-                href="https://docs.github.com/en/enterprise-cloud@latest/billing/managing-your-billing/about-budgets-and-spending-limits"
+                href="https://docs.github.com/en/billing/managing-your-billing/about-budgets-and-spending-limits"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="underline hover:opacity-80"
