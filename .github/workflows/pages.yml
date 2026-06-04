@@ -26,6 +26,11 @@ jobs:
       - run: npm ci --prefer-offline --no-audit --no-fund
       - run: npm run build:ci
       - uses: actions/configure-pages@v5
+        with:
+          # Auto-enable Pages on first run for a freshly created repo so the
+          # build doesn't fail with "Get Pages site failed" before someone
+          # toggles the setting in the UI.
+          enablement: true
       - uses: actions/upload-pages-artifact@v5
         with:
           path: dist
