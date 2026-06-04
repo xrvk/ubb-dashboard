@@ -128,7 +128,7 @@ Demo mode generates believable user distributions (~70 % low / 15 % moderate / 7
 The Import panel needs two things:
 
 1. **Organization URL or slug** — e.g. `https://github.com/logans-lounge` or just `logans-lounge`.
-2. **Classic personal access token** with the `admin:org` scope (and `manage_billing` where applicable).
+2. **Classic personal access token** with `manage_billing:copilot` (required for the budgets endpoint) plus `read:org` and `copilot` (for seats). `admin:org` alone is **not enough** — the org billing endpoints check for the dedicated billing scope, and a `write:org`-only token will get a 404 on `GET /orgs/{org}/settings/billing/budgets`.
 
 > Fine-grained tokens are **not** supported on the org billing API. This is a platform limitation, not an app limitation.
 
@@ -232,7 +232,7 @@ git fetch upstream
 - **No analytics, no telemetry, no third-party scripts.** Open Network → DevTools to verify.
 - **No remote logging.** Errors stay in your console.
 
-The token only needs `admin:org` (and `manage_billing` where applicable) on a classic PAT.
+The token needs `manage_billing:copilot` (for the budgets endpoint) plus `read:org` and `copilot` (for seats) on a classic PAT.
 
 For vulnerability reports, see [SECURITY.md](SECURITY.md).
 
