@@ -278,7 +278,7 @@ export function describeError(err: unknown, source = 'app'): ErrorDescription {
     return {
       title: 'Insufficient scope',
       body:
-        'Your PAT lacks the required permission for this resource. Classic PATs need `manage_billing:enterprise`.',
+        'Your PAT lacks the required permission for this resource. Classic PATs need `admin:org` (the full parent scope, not the `read:org`/`write:org` sub-scopes).',
       recoverable: false,
       suggestedAction: 'Reconnect with an upgraded PAT',
     }

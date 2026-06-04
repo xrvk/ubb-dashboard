@@ -219,7 +219,7 @@ function PoolAndLicensesCard({
     return (
       <Card>
         <CardContent className="text-sm text-neutral-500 pt-6">
-          No Copilot Business or Enterprise seats.
+          No Copilot Business seats.
         </CardContent>
       </Card>
     )
@@ -269,19 +269,21 @@ function PoolAndLicensesCard({
             />
           </div>
         </div>
-        <div className="grid gap-2 sm:grid-cols-3 text-xs text-neutral-500">
+        <div className="grid gap-2 sm:grid-cols-2 text-xs text-neutral-500">
           <div>
             <div className="uppercase tracking-wide">Business seats</div>
             <div className="text-neutral-700 dark:text-neutral-300 tabular-nums">
               {seatCost.business.toLocaleString()}
             </div>
           </div>
-          <div>
-            <div className="uppercase tracking-wide">Enterprise seats</div>
-            <div className="text-neutral-700 dark:text-neutral-300 tabular-nums">
-              {seatCost.enterprise.toLocaleString()}
+          {seatCost.enterprise > 0 ? (
+            <div>
+              <div className="uppercase tracking-wide">Enterprise seats</div>
+              <div className="text-neutral-700 dark:text-neutral-300 tabular-nums">
+                {seatCost.enterprise.toLocaleString()}
+              </div>
             </div>
-          </div>
+          ) : null}
           <div>
             <div className="uppercase tracking-wide">License cost (MTD)</div>
             <div className="text-neutral-700 dark:text-neutral-300 tabular-nums">

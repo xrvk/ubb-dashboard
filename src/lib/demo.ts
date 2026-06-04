@@ -93,12 +93,6 @@ export function readDemoCountFromUrl(): number | null {
 
 
 /**
- * Toggle for the "cost center exclusion" mode in demo. When set
- * (`?exclude=1`), the demo enterprise budget is created with
- * excludeCostCenterUsage=true so CCs become independent pools instead of
- * sub-allocations of the umbrella.
- */
-/**
  * Optional `?pool=N` query param (0-100) — target % drawn from the shared
  * AI credit pool for the demo. When set, demo individual-budget and
  * universal-ULB consumed amounts are scaled so total ULB consumption
@@ -262,9 +256,10 @@ export function generateDemoUsageSummary(
     ? Math.round(totalPoolDraw * 1.05 * 100) / 100
     : totalPoolDraw
   const now = new Date()
-  const seatCount = Math.max(budgets.length, 1)
-  const cbSeats = Math.round(seatCount * 0.7)
-  const ceSeats = seatCount - cbSeats
+  // Org-variant audience has no enterprise account, so Copilot Enterprise
+  // seats are impossible. Treat every demo seat as Copilot Business.
+  const cbSeats = Math.max(budgets.length, 1)
+  const ceSeats = 0
   return {
     year: now.getFullYear(),
     month: now.getMonth() + 1,
@@ -286,14 +281,14 @@ export function generateDemoUsageSummary(
  *   ~5% heavy ($80-$200/mo), ~10% high ($30-$80), ~25% mid ($5-$30),
  *   ~35% low ($0-$5), ~25% idle. With ~75 universal-only seats (demo=150),
  *   the Top 5% threshold lands a proposed ULB in the $80-$200 band, which
- *   collides with the small demo enterprise envelope ($9k) and exercises
- *   the new pre-flight envelope check end-to-end.
+ *   collides with the small demo org budget ($9k) and exercises the
+ *   pre-flight envelope check end-to-end.
  *
  * The second month is jittered down so aggregateMaxMonth has a meaningful
  * choice to make per user.
  */
 export function generateDemoCachedReports(
-  enterprise: string,
+  org: string,
   seats: Array<{ login: string }>,
   seed = 99,
 ): CachedReport[] {
@@ -339,7 +334,10 @@ export function generateDemoCachedReports(
   const ingestedAt = Date.now()
   return [
     {
-      enterprise,
+      // CachedReport still uses `enterprise` as its opaque cache-key field;
+      // kept to minimize churn from the parent repo (the value is a slug,
+      // the field name is just historical).
+      enterprise: org,
       monthKey: prior,
       reportId: null,
       ingestedAt,
@@ -347,7 +345,7 @@ export function generateDemoCachedReports(
       rows: monthRows(prior, 0.7),
     },
     {
-      enterprise,
+      enterprise: org,
       monthKey: last,
       reportId: null,
       ingestedAt,

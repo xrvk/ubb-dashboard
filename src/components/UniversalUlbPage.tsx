@@ -72,10 +72,6 @@ export function UniversalUlbPage() {
   } = useCredentials()
 
   // Deep-link to the enterprise's AI usage billing page so admins can pull
-  // the CSV from the right tenant directly. `apiBaseToWebBase` converts e.g.
-  // `https://api.acme.ghe.com` → `https://acme.ghe.com`, so this works for
-  // both github.com and ghe.com tenants. Falls back to docs when there's no
-  // real enterprise (demo / unauthenticated).
   // Build a deep-link to the native AI-usage chart, scoped to the connected
   // organization. Falls back to the GitHub docs URL when no real connection
   // exists (demo / unauthenticated).

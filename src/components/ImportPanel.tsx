@@ -59,7 +59,7 @@ export function ImportPanel() {
             <span className="flex items-center justify-between gap-2 text-neutral-600 dark:text-neutral-400">
               <span>Personal access token (classic)</span>
               <a
-                href="https://github.com/settings/tokens/new?description=Org+Copilot+Dashboard&scopes=admin:org,manage_billing:enterprise"
+                href="https://github.com/settings/tokens/new?description=Org+Copilot+Dashboard&scopes=admin:org"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-xs font-normal text-blue-600 hover:underline dark:text-blue-400"
