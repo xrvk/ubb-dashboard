@@ -77,6 +77,24 @@ export function IndUlbStatusDonut({ budgets }: Props) {
     return counts
   }, [budgets])
 
+  // Top users at or near cap — the natural "what now?" follow-up to the
+  // band summary. We sort by utilization desc (Infinity-utilization users
+  // with no budget but spend rank first), then break ties by raw consumed
+  // amount so two 100%+ users with the same ratio show the bigger spender
+  // first. Cap at 5 to keep the panel scannable. Computed before the
+  // empty-state early return so hook order stays stable across renders.
+  const topAtRisk = useMemo(() => {
+    const eligible = budgets.filter(b => bandForBudget(b).id !== 'ok')
+    return [...eligible]
+      .sort((a, b) => {
+        const ua = utilization(a)
+        const ub = utilization(b)
+        if (ua !== ub) return ub - ua
+        return b.consumedAmount - a.consumedAmount
+      })
+      .slice(0, 5)
+  }, [budgets])
+
   const total = budgets.length
 
   // Empty state: no individual ULBs to chart. Render a card-shaped CTA so
@@ -114,24 +132,6 @@ export function IndUlbStatusDonut({ budgets }: Props) {
   // it still renders fine. If `total > 0` then by construction at least one
   // band has count > 0 so we don't need a separate guard.
   const nearOrAt = data.filter(d => d.id !== 'ok').reduce((sum, d) => sum + d.count, 0)
-
-  // Top users at or near cap — the natural "what now?" follow-up to the
-  // band summary. We sort by utilization desc (Infinity-utilization users
-  // with no budget but spend rank first), then break ties by raw consumed
-  // amount so two 100%+ users with the same ratio show the bigger spender
-  // first. Cap at 5 to keep the panel scannable; the empty state appears
-  // when no users are at/near cap and is itself reassuring signal.
-  const topAtRisk = useMemo(() => {
-    const eligible = budgets.filter(b => bandForBudget(b).id !== 'ok')
-    return [...eligible]
-      .sort((a, b) => {
-        const ua = utilization(a)
-        const ub = utilization(b)
-        if (ua !== ub) return ub - ua
-        return b.consumedAmount - a.consumedAmount
-      })
-      .slice(0, 5)
-  }, [budgets])
 
   return (
     <Card>
