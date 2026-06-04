@@ -199,27 +199,25 @@ export function IndUlbStatusDonut({ budgets }: Props) {
                   type="button"
                   onClick={() => handleBandClick(band)}
                   className={cn(
-                    'group flex w-fit items-center gap-6 rounded-md border border-transparent px-2.5 py-1.5',
+                    'group grid w-full grid-cols-[auto_1fr_auto] items-center gap-3 rounded-md border border-transparent px-2.5 py-1.5',
                     'text-left transition-colors',
                     'hover:bg-neutral-50 dark:hover:bg-neutral-900 hover:border-neutral-200 dark:hover:border-neutral-800',
                     'focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500',
                   )}
                   aria-label={`Filter Individual ULBs to ${band.label} (${band.count} users)`}
                 >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <span
-                      className="inline-block h-3 w-3 rounded-sm shrink-0"
-                      style={{ backgroundColor: band.color }}
-                      aria-hidden
-                    />
-                    <div className="min-w-0">
-                      <div className="text-sm font-medium leading-tight">{band.label}</div>
-                      <div className="text-[11px] text-neutral-500 leading-tight truncate">
-                        {band.description}
-                      </div>
+                  <span
+                    className="inline-block h-3 w-3 rounded-sm shrink-0"
+                    style={{ backgroundColor: band.color }}
+                    aria-hidden
+                  />
+                  <div className="min-w-0 text-center">
+                    <div className="text-sm font-medium leading-tight">{band.label}</div>
+                    <div className="text-[11px] text-neutral-500 leading-tight truncate">
+                      {band.description}
                     </div>
                   </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
+                  <div className="flex items-center gap-1.5 shrink-0 justify-self-end">
                     <div className="text-right">
                       <div className="text-sm font-semibold tabular-nums">{pct}%</div>
                       <div className="text-[11px] text-neutral-500 tabular-nums">
