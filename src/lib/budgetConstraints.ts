@@ -35,6 +35,15 @@ export interface ComputeBudgetConstraintsInput {
   seats: CopilotSeat[]
   /** User-scope ai_credits budgets. Keyed-by-login lookup is built internally. */
   userBudgets: UserBudget[]
+  /**
+   * Dollar value of the shared AI-credit pool for this billing cycle. ULBs cap
+   * gross pool draw per user, while CC and enterprise budgets only meter the
+   * post-pool (net) spend. The engine subtracts each bucket's per-seat share
+   * of this pool from its gross ULB sum before comparing to the bucket's net
+   * envelope, so the two ledgers stay comparable. Defaults to 0 when the
+   * caller doesn't know — that recovers the legacy gross-vs-net comparison.
+   */
+  poolDollars?: number
 }
 
 // --- Outputs ---
@@ -42,15 +51,26 @@ export interface ComputeBudgetConstraintsInput {
 /**
  * Result of one of the three hard checks. `ok=true` means the check passes.
  * `actual ≤ allowed` always when `ok=true`. When `ok=false`, `overBy = actual - allowed`.
+ *
+ * For checks that compare ULB exposure (gross) to a net budget envelope
+ * (`perCc`, `unassignedLeftover`), `actual` is the **post-pool** ULB sum:
+ * `max(0, Σ effectiveUlb − bucketPoolShare)`. `grossUlbs` and `poolShare`
+ * carry the unadjusted numbers so the UI can explain the math. For
+ * `ccVsEnterprise` (budget-vs-budget) the pool fields are 0 and `actual`
+ * already equals `grossUlbs`.
  */
 export interface BudgetCheck {
   ok: boolean
-  /** Σ effective ULBs (or Σ CC budgets, for ccVsEnterprise). */
+  /** Post-pool ULB sum (or Σ CC budgets, for ccVsEnterprise). */
   actual: number
   /** The envelope being checked against. */
   allowed: number
   /** How far over `allowed` we are. 0 when `ok=true`. */
   overBy: number
+  /** Σ effective ULBs before subtracting the bucket's pool share. */
+  grossUlbs: number
+  /** Bucket's per-seat share of the shared AI-credit pool. */
+  poolShare: number
 }
 
 export interface PerCcCheck {
@@ -110,7 +130,27 @@ export interface BudgetConstraintsResult {
 
 function checkLe(actual: number, allowed: number): BudgetCheck {
   const ok = actual <= allowed
-  return { ok, actual, allowed, overBy: ok ? 0 : actual - allowed }
+  return { ok, actual, allowed, overBy: ok ? 0 : actual - allowed, grossUlbs: actual, poolShare: 0 }
+}
+
+/**
+ * Build a BudgetCheck for a bucket whose LHS is gross ULB exposure compared
+ * against a net (post-pool) envelope. The pool share is subtracted from the
+ * gross sum before comparison, but both raw numbers are echoed back so the UI
+ * can render "$grossUlbs in caps − $poolShare from the pool = $actual against
+ * a $allowed envelope".
+ */
+function checkLeNet(grossUlbs: number, poolShare: number, allowed: number): BudgetCheck {
+  const actual = Math.max(0, grossUlbs - poolShare)
+  const ok = actual <= allowed
+  return {
+    ok,
+    actual,
+    allowed,
+    overBy: ok ? 0 : actual - allowed,
+    grossUlbs,
+    poolShare,
+  }
 }
 
 function effectiveUlbFor(
@@ -143,6 +183,7 @@ export function computeBudgetConstraints(
     ccBudgetsByName,
     seats,
     userBudgets,
+    poolDollars = 0,
   } = input
 
   const warnings: BudgetWarning[] = []
@@ -184,6 +225,15 @@ export function computeBudgetConstraints(
     }
   })
 
+  // --- Pool attribution: every seat gets the same dollar share of the
+  // shared AI-credit pool, regardless of plan. ULBs cap gross pool draw
+  // but CC + enterprise budgets only meter post-pool spend, so each bucket
+  // (per-CC member set, leftover) gets its seat-share offset before the
+  // gross ULB sum is compared to the bucket's budget. `ccVsEnterprise` is
+  // budget-vs-budget and stays pool-agnostic.
+  const totalSeats = routings.length
+  const poolPerSeat = totalSeats > 0 ? poolDollars / totalSeats : 0
+
   // --- B: per-CC check.
   const ccIdToMembers = new Map<string, SeatRouting[]>()
   for (const r of routings) {
@@ -197,12 +247,13 @@ export function computeBudgetConstraints(
     const budget = ccBudgetsByName.get(lower(cc.name))
     if (!budget) continue
     const members = ccIdToMembers.get(cc.id) ?? []
-    const actual = members.reduce((s, m) => s + m.effectiveUlb, 0)
+    const grossUlbs = members.reduce((s, m) => s + m.effectiveUlb, 0)
+    const ccPoolShare = poolPerSeat * members.length
     perCc.push({
       costCenterId: cc.id,
       costCenterName: cc.name,
       memberCount: members.length,
-      check: checkLe(actual, budget.budgetAmount),
+      check: checkLeNet(grossUlbs, ccPoolShare, budget.budgetAmount),
       memberLogins: members.map(m => m.login),
     })
   }
@@ -228,13 +279,14 @@ export function computeBudgetConstraints(
   // --- D: leftover for users not in a budgeted CC.
   const leftoverUsers = routings.filter(r => !r.isInBudgetedCc)
   const sumLeftoverUlbs = leftoverUsers.reduce((s, r) => s + r.effectiveUlb, 0)
+  const leftoverPoolShare = poolPerSeat * leftoverUsers.length
   let unassignedLeftover: BudgetCheck | null = null
   if (enterpriseBudget) {
     const allowed =
       mode === 'umbrella'
         ? Math.max(0, enterpriseBudget.budgetAmount - sumCcBudgets)
         : enterpriseBudget.budgetAmount
-    unassignedLeftover = checkLe(sumLeftoverUlbs, allowed)
+    unassignedLeftover = checkLeNet(sumLeftoverUlbs, leftoverPoolShare, allowed)
   }
 
   // --- Warnings.
@@ -297,7 +349,8 @@ export function computeBudgetConstraints(
 
   const caps: number[] = []
   // Per-CC binding: for each budgeted CC,
-  // sumIndividual(members) + n_universal_members * U ≤ ccBudget
+  //   max(0, sumIndividual(members) + n_universal_members * U − ccPoolShare) ≤ ccBudget
+  // ⇒ U ≤ (ccBudget + ccPoolShare − sumIndividual) / n_universal_members
   for (const cc of costCenters) {
     const budget = ccBudgetsByName.get(lower(cc.name))
     if (!budget) continue
@@ -308,15 +361,22 @@ export function computeBudgetConstraints(
       // No universal-reliant members; this CC doesn't constrain U. Skip.
       continue
     }
-    caps.push(Math.max(0, (budget.budgetAmount - fixed) / n))
+    const ccMembers = routings.filter(isMember).length
+    const ccPoolShare = poolPerSeat * ccMembers
+    caps.push(Math.max(0, (budget.budgetAmount + ccPoolShare - fixed) / n))
   }
-  // Leftover binding: same shape with the "not in budgeted CC" filter.
+  // Leftover binding: same shape with the "not in budgeted CC" filter. The
+  // pool share is added to the allowance because the inequality is
+  // `max(0, ΣULBs − leftoverPoolShare) ≤ allowed`, i.e.
+  // `ΣULBs ≤ allowed + leftoverPoolShare`.
   if (unassignedLeftover) {
     const isLeftover = (r: SeatRouting) => !r.isInBudgetedCc
     const n = seatsWithoutIndividual(isLeftover)
     const fixed = sumIndividualWhere(isLeftover)
     if (n > 0) {
-      caps.push(Math.max(0, (unassignedLeftover.allowed - fixed) / n))
+      caps.push(
+        Math.max(0, (unassignedLeftover.allowed + unassignedLeftover.poolShare - fixed) / n),
+      )
     }
   }
   // ccVsEnterprise does NOT depend on U — it's budget vs budget.

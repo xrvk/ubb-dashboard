@@ -607,3 +607,99 @@ describe('previewConstraintsWithProposedUlb', () => {
     expect(r.warnings.some(w => w.code === 'prevent_further_usage_off')).toBe(false)
   })
 })
+
+describe('pool-aware constraint checks', () => {
+  it('subtracts the per-seat pool share from the leftover ULB sum before comparing to the enterprise budget', () => {
+    // 4 seats, $25 universal ULB each ⇒ $100 gross ULB exposure.
+    // Pool = $40 ⇒ $10/seat ⇒ $40 absorbed by the pool ⇒ post-pool exposure $60.
+    // Enterprise budget = $50 ⇒ over by $10 (not $50, as the gross check would say).
+    const r = computeBudgetConstraints(
+      baseInput({
+        enterpriseBudget: entBudget(50),
+        universalUlb: universalUlb(25),
+        seats: [seat('a'), seat('b'), seat('c'), seat('d')],
+        poolDollars: 40,
+      }),
+    )
+    expect(r.checks.unassignedLeftover?.grossUlbs).toBe(100)
+    expect(r.checks.unassignedLeftover?.poolShare).toBe(40)
+    expect(r.checks.unassignedLeftover?.actual).toBe(60)
+    expect(r.checks.unassignedLeftover?.allowed).toBe(50)
+    expect(r.checks.unassignedLeftover?.ok).toBe(false)
+    expect(r.checks.unassignedLeftover?.overBy).toBe(10)
+  })
+
+  it('passes the leftover check when the pool fully absorbs ULB exposure', () => {
+    const r = computeBudgetConstraints(
+      baseInput({
+        enterpriseBudget: entBudget(50),
+        universalUlb: universalUlb(25),
+        seats: [seat('a'), seat('b')],
+        poolDollars: 100,
+      }),
+    )
+    expect(r.checks.unassignedLeftover?.actual).toBe(0)
+    expect(r.checks.unassignedLeftover?.ok).toBe(true)
+    expect(r.checks.unassignedLeftover?.overBy).toBe(0)
+  })
+
+  it('recovers the pre-pool behavior when poolDollars defaults to 0', () => {
+    const r = computeBudgetConstraints(
+      baseInput({
+        enterpriseBudget: entBudget(50),
+        universalUlb: universalUlb(25),
+        seats: [seat('a'), seat('b'), seat('c'), seat('d')],
+      }),
+    )
+    expect(r.checks.unassignedLeftover?.actual).toBe(100)
+    expect(r.checks.unassignedLeftover?.poolShare).toBe(0)
+    expect(r.checks.unassignedLeftover?.overBy).toBe(50)
+  })
+
+  it('subtracts only the CC bucket\'s seat share from per-CC checks', () => {
+    // 2 seats in ccA + 2 seats outside. Universal ULB $30 ⇒ ccA gross $60,
+    // leftover gross $60. Pool $40 ⇒ $10/seat ⇒ ccA share $20, leftover $20.
+    // CC budget $50 ⇒ post-pool $40 ≤ $50 ✓. Ent budget $30 ⇒ post-pool
+    // leftover $40 > $30 ⇒ over by $10.
+    const ccA = cc('cc1', 'ccA', [
+      { type: 'User', name: 'a' },
+      { type: 'User', name: 'b' },
+    ])
+    const r = computeBudgetConstraints(
+      baseInput({
+        enterpriseBudget: entBudget(30, /* exclude */ true),
+        universalUlb: universalUlb(30),
+        costCenters: [ccA],
+        costCenterIndex: buildIndex({
+          userToCC: new Map([
+            ['a', ccA],
+            ['b', ccA],
+          ]),
+        }),
+        ccBudgetsByName: new Map([['cca', ccBudget('ccb', 'ccA', 50)]]),
+        seats: [seat('a'), seat('b'), seat('c'), seat('d')],
+        poolDollars: 40,
+      }),
+    )
+    expect(r.checks.perCc[0]?.check.grossUlbs).toBe(60)
+    expect(r.checks.perCc[0]?.check.poolShare).toBe(20)
+    expect(r.checks.perCc[0]?.check.actual).toBe(40)
+    expect(r.checks.perCc[0]?.check.ok).toBe(true)
+    expect(r.checks.unassignedLeftover?.actual).toBe(40)
+    expect(r.checks.unassignedLeftover?.overBy).toBe(10)
+  })
+
+  it('factors pool share into maxSafeUniversalUlb', () => {
+    // 4 leftover seats, ent budget $50, pool $40 ⇒ $10/seat ⇒ leftover share $40.
+    // Inequality: 4U − 40 ≤ 50 ⇒ U ≤ 22.5.
+    const r = computeBudgetConstraints(
+      baseInput({
+        enterpriseBudget: entBudget(50),
+        universalUlb: universalUlb(25),
+        seats: [seat('a'), seat('b'), seat('c'), seat('d')],
+        poolDollars: 40,
+      }),
+    )
+    expect(r.maxSafeUniversalUlb).toBeCloseTo(22.5, 6)
+  })
+})

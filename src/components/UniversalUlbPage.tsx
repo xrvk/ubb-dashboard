@@ -17,6 +17,7 @@ import {
 import { describeError } from '@/lib/errors'
 import { formatCurrency, openExternal } from '@/lib/utils'
 import { previewConstraintsWithProposedUlb, computeBudgetConstraints, type ComputeBudgetConstraintsInput } from '@/lib/budgetConstraints'
+import { includedAiCredits, seatCostBreakdown } from '@/lib/pricing'
 import {
   loadAllCachedReports,
   aggregateMaxMonth,
@@ -199,6 +200,8 @@ export function UniversalUlbPage() {
   // EnvelopeCheckCard's preview helper.
   const constraintsInput: ComputeBudgetConstraintsInput = useMemo(() => {
     const index = buildCostCenterIndex(costCenters, costCenterBudgetsByName)
+    const breakdown = seatCostBreakdown(seats)
+    const pool = includedAiCredits(breakdown.business, breakdown.enterprise)
     return {
       enterpriseBudget,
       universalUlb,
@@ -207,6 +210,7 @@ export function UniversalUlbPage() {
       ccBudgetsByName: costCenterBudgetsByName,
       seats,
       userBudgets: budgets,
+      poolDollars: pool.totalDollars,
     }
   }, [enterpriseBudget, universalUlb, costCenters, costCenterBudgetsByName, seats, budgets])
 

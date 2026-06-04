@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { buildCostCenterIndex } from '@/lib/api'
 import { computeBudgetConstraints, type BudgetConstraintsResult } from '@/lib/budgetConstraints'
 import { useCredentials } from '@/hooks/use-credentials'
+import { includedAiCredits, seatCostBreakdown } from '@/lib/pricing'
 
 /**
  * Shared computation of the BudgetConstraintsResult from the credentials
@@ -20,6 +21,8 @@ export function useBudgetConstraints(): BudgetConstraintsResult {
 
   return useMemo(() => {
     const index = buildCostCenterIndex(costCenters, costCenterBudgetsByName)
+    const breakdown = seatCostBreakdown(seats)
+    const pool = includedAiCredits(breakdown.business, breakdown.enterprise)
     return computeBudgetConstraints({
       enterpriseBudget,
       universalUlb,
@@ -28,6 +31,7 @@ export function useBudgetConstraints(): BudgetConstraintsResult {
       ccBudgetsByName: costCenterBudgetsByName,
       seats,
       userBudgets: budgets,
+      poolDollars: pool.totalDollars,
     })
   }, [enterpriseBudget, universalUlb, costCenters, costCenterBudgetsByName, seats, budgets])
 }

@@ -29,24 +29,10 @@ export function generateDemoBudgets(count: number, seed = 42): UserBudget[] {
     return s / 0x7fffffff
   }
 
-  const tiers: Array<{ budget: number; weight: number }> = [
-    { budget: 10, weight: 0.15 },
-    { budget: 25, weight: 0.25 },
-    { budget: 50, weight: 0.3 },
-    { budget: 100, weight: 0.2 },
-    { budget: 200, weight: 0.08 },
-    { budget: 500, weight: 0.02 },
-  ]
-
-  const pickTier = () => {
-    const r = rand()
-    let acc = 0
-    for (const t of tiers) {
-      acc += t.weight
-      if (r <= acc) return t.budget
-    }
-    return tiers[tiers.length - 1].budget
-  }
+  // SCENARIO DEMO: every individual ULB is sized at a flat $60 so the
+  // story matches "~13 people have a $60 individual ULB" — the tiered
+  // distribution below is bypassed but left in place for reference.
+  const pickTier = () => 60
 
   const out: UserBudget[] = []
   for (let i = 0; i < count; i += 1) {
@@ -189,8 +175,12 @@ export function getEffectiveDemoAsof(): Date | null {
  * mirrors the CC layout in generateDemoCostCenters so seats line up cleanly
  * with the User and Org based CC resources.
  */
+// SCENARIO DEMO: total seats = 816 CB + 1 CE = 817, regardless of how many
+// individual ULBs (`count`) were requested. This decouples seat count from
+// budget count so the dashboard can show "13 individual ULBs out of 817".
 export function generateDemoSeats(count: number, ccCount?: number) {
-  const totalSeats = Math.ceil(count * 1.5)
+  void count
+  const totalSeats = 817
   // Match the split used by generateDemoCostCenters: platform-eng (User-based,
   // override-bearing), then data-platform / devx / security (Org-based).
   const peSize = Math.min(Math.round(totalSeats * 0.44), totalSeats)
@@ -261,43 +251,16 @@ export function generateDemoSeats(count: number, ccCount?: number) {
  * vacuous and doesn't surface as a third banner item.
  */
 export function generateDemoCostCenters(count: number, ccCount?: number): CostCenter[] {
-  const totalSeats = Math.ceil(count * 1.5)
-  const peSize = Math.min(Math.round(totalSeats * 0.44), totalSeats)
-
-  const platformEngUsers = Array.from({ length: peSize }, (_, i) => ({
-    type: 'User' as const,
-    name: `demo-user-${String(i + 1).padStart(4, '0')}`,
-  }))
-
-  const baseCcs: CostCenter[] = [
-    { id: 'demo-cc-pe', name: 'platform-eng', state: 'active', resources: platformEngUsers },
-    { id: 'demo-cc-dp', name: 'data-platform', state: 'active', resources: [{ type: 'Org', name: 'data-platform' }] },
-    { id: 'demo-cc-dx', name: 'devx', state: 'active', resources: [{ type: 'Org', name: 'devx' }] },
-    { id: 'demo-cc-sec', name: 'security', state: 'active', resources: [{ type: 'Org', name: 'security' }] },
-  ]
-  if (!ccCount || ccCount <= baseCcs.length) return baseCcs
-
-  // Generic `team-NNN` filler CCs to stress-test the CC list / structure
-  // diagram. They bind to Orgs that no demo seat is in, so they show 0
-  // seats and don't perturb the per_cc breach math on platform-eng.
-  const extras: CostCenter[] = []
-  for (let i = baseCcs.length; i < ccCount; i += 1) {
-    const idx = i - baseCcs.length + 1
-    const name = `team-${String(idx).padStart(3, '0')}`
-    extras.push({
-      id: `demo-cc-${name}`,
-      name,
-      state: 'active',
-      resources: [{ type: 'Org', name }],
-    })
-  }
-  return [...baseCcs, ...extras]
+  void count
+  void ccCount
+  // SCENARIO DEMO: no cost centers in this scenario.
+  return []
 }
 
 export function generateDemoEnterpriseBudget(opts?: { excludeCostCenterUsage?: boolean }): EnterpriseBudget {
   return {
     id: 'demo-ent',
-    budgetAmount: 9000,
+    budgetAmount: 1000,
     excludeCostCenterUsage: opts?.excludeCostCenterUsage ?? false,
     preventFurtherUsage: true,
     willAlert: true,
@@ -314,7 +277,7 @@ export function generateDemoUniversalUlb(budgets?: UserBudget[]): UniversalUlb {
   const consumed = Math.round(indivConsumed * 0.18 * 100) / 100
   return {
     id: 'demo-uulb',
-    budgetAmount: 50,
+    budgetAmount: 25,
     consumedAmount: consumed,
     preventFurtherUsage: true,
     willAlert: false,
@@ -382,10 +345,12 @@ export function generateDemoCostCenterBudgets(extraCcs?: CostCenter[]): Map<stri
       alertRecipients: alert ? ['platform-leads@demo.test'] : [],
     })
   }
-  add('platform-eng', 5000, true, true)
-  add('data-platform', 7000, true, false)
-  add('devx', 5000, true, false)
-  add('security', 3000, true, false)
+  // SCENARIO DEMO: CC budgets scaled to fit under the $1k enterprise cap
+  // (sum = $1000) so the structure diagram stays readable.
+  add('platform-eng', 400, true, true)
+  add('data-platform', 300, true, false)
+  add('devx', 200, true, false)
+  add('security', 100, true, false)
   // Stamp a varied, deterministic budget on every additional CC (e.g. when
   // ?cc=N>4) so the dashboard / planner / structure diagram have meaningful
   // signal to render — ~10% "over", ~15% "near", ~75% "healthy" rolled
@@ -486,9 +451,10 @@ export function generateDemoUsageSummary(
     ? Math.round(totalPoolDraw * 1.05 * 100) / 100
     : totalPoolDraw
   const now = new Date()
-  const seatCount = Math.max(budgets.length, 1)
-  const cbSeats = Math.round(seatCount * 0.7)
-  const ceSeats = seatCount - cbSeats
+  // SCENARIO DEMO: hardcode the license split to 816 Copilot Business +
+  // 1 Copilot Enterprise seat instead of deriving from the budget count.
+  const cbSeats = 816
+  const ceSeats = 1
   return {
     year: now.getFullYear(),
     month: now.getMonth() + 1,
