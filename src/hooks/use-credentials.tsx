@@ -35,6 +35,7 @@ import {
   readDemoCountFromUrl,
   readDemoExcludeCcFromUrl,
   readDemoPoolPctFromUrl,
+  readDemoSeatSplitFromUrl,
   scaleDemoConsumptionTo,
 } from '@/lib/demo'
 import { saveCachedReport } from '@/lib/reportCache'
@@ -232,7 +233,8 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
       const demoCount = readDemoCountFromUrl() ?? 0
       const demoBudgets = generateDemoBudgets(demoCount, Math.floor(Math.random() * 100_000))
       const demoCcCount = readDemoCcCountFromUrl() ?? undefined
-      const demoSeats = generateDemoSeats(demoCount, demoCcCount)
+      const seatSplit = readDemoSeatSplitFromUrl() ?? undefined
+      const demoSeats = generateDemoSeats(demoCount, demoCcCount, seatSplit)
       const universal = generateDemoUniversalUlb(demoBudgets)
       const poolPct = readDemoPoolPctFromUrl()
       if (poolPct !== null) {
@@ -251,6 +253,7 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
       setUsageSummary(
         generateDemoUsageSummary(demoBudgets, {
           poolExhausted: poolPct === null ? true : poolPct >= 100,
+          seatSplit,
         }),
       )
       for (const report of generateDemoCachedReports(credentials.ent, demoSeats)) {
@@ -377,7 +380,8 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
         setCredentials({ base: 'demo://', ent: `demo-${demoCount}`, token: 'demo' })
         const demoBudgets = generateDemoBudgets(demoCount)
         const demoCcCount = readDemoCcCountFromUrl() ?? undefined
-        const demoSeats = generateDemoSeats(demoCount, demoCcCount)
+        const seatSplit = readDemoSeatSplitFromUrl() ?? undefined
+        const demoSeats = generateDemoSeats(demoCount, demoCcCount, seatSplit)
         const universal = generateDemoUniversalUlb(demoBudgets)
         const poolPct = readDemoPoolPctFromUrl()
         if (poolPct !== null) {
@@ -396,6 +400,7 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
         setUsageSummary(
           generateDemoUsageSummary(demoBudgets, {
             poolExhausted: poolPct === null ? true : poolPct >= 100,
+            seatSplit,
           }),
         )
         for (const report of generateDemoCachedReports(`demo-${demoCount}`, demoSeats)) {
