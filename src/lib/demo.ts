@@ -148,6 +148,29 @@ export function readDemoExcludeCcFromUrl(): boolean {
 }
 
 /**
+ * Optional `?cb=N` / `?ce=M` overrides for the demo seat license split.
+ *
+ * When either param is present, the seat generator uses these exact counts
+ * (defaulting the missing one to 0) instead of the default 70/30 CB/CE
+ * derivation from `?demo=`. Useful for showcasing a pure-CE or pure-CB
+ * enterprise. Returns null when neither param is set.
+ */
+export function readDemoSeatSplitFromUrl(): { cb: number; ce: number } | null {
+  if (typeof window === 'undefined') return null
+  const params = new URLSearchParams(window.location.search)
+  const cbRaw = params.get('cb')
+  const ceRaw = params.get('ce')
+  if (cbRaw === null && ceRaw === null) return null
+  const parse = (v: string | null): number => {
+    if (v === null) return 0
+    const n = Number(v)
+    if (!Number.isFinite(n) || n < 0) return 0
+    return Math.floor(n)
+  }
+  return { cb: parse(cbRaw), ce: parse(ceRaw) }
+}
+
+/**
  * Demo "as of" date for projections. When set via `?asof=YYYY-MM-DD`,
  * projection helpers treat that date as today so the projected trail
  * is visible even when the real calendar date is the last day of the
@@ -189,8 +212,12 @@ export function getEffectiveDemoAsof(): Date | null {
  * mirrors the CC layout in generateDemoCostCenters so seats line up cleanly
  * with the User and Org based CC resources.
  */
-export function generateDemoSeats(count: number, ccCount?: number) {
-  const totalSeats = Math.ceil(count * 1.5)
+export function generateDemoSeats(
+  count: number,
+  ccCount?: number,
+  split?: { cb: number; ce: number },
+) {
+  const totalSeats = split ? split.cb + split.ce : Math.ceil(count * 1.5)
   // Match the split used by generateDemoCostCenters: platform-eng (User-based,
   // override-bearing), then data-platform / devx / security (Org-based).
   const peSize = Math.min(Math.round(totalSeats * 0.44), totalSeats)
@@ -198,6 +225,17 @@ export function generateDemoSeats(count: number, ccCount?: number) {
   const dxSize = Math.min(Math.round(totalSeats * 0.13), totalSeats - peSize - dpSize)
   // security gets the remainder so every seat lands somewhere
   const out: Array<{ login: string; orgLogin: string | null; lastActivityAt: string | null; planType: string | null }> = []
+  // Default 70/30 CB/CE split mirrors generateDemoUsageSummary's
+  // license-cost math (cbSeats = round(total * 0.7), ceSeats = total -
+  // cbSeats) so the Dashboard seat table and the License MTD figures stay
+  // consistent. When `split` is provided, those exact counts are used
+  // instead. CE seats are interleaved across orgs via a deterministic
+  // stride so every CC ends up with a realistic mix.
+  const cbSeats = split ? split.cb : Math.round(totalSeats * 0.7)
+  const ceSeats = split ? split.ce : totalSeats - cbSeats
+  const ceStride = ceSeats > 0 ? totalSeats / ceSeats : Infinity
+  let ceAssigned = 0
+  let cbAssigned = 0
   for (let i = 0; i < totalSeats; i += 1) {
     const idx = i + 1
     let orgLogin: string
@@ -205,11 +243,20 @@ export function generateDemoSeats(count: number, ccCount?: number) {
     else if (i < peSize + dpSize) orgLogin = 'data-platform'
     else if (i < peSize + dpSize + dxSize) orgLogin = 'devx'
     else orgLogin = 'security'
+    let isEnterprise =
+      ceAssigned < ceSeats && i >= Math.floor(ceAssigned * ceStride)
+    // Guard against running out of the other plan when an explicit split
+    // is in play (e.g. cb=0 forces every remaining seat to CE).
+    if (!isEnterprise && cbAssigned >= cbSeats && ceAssigned < ceSeats) {
+      isEnterprise = true
+    }
+    if (isEnterprise) ceAssigned += 1
+    else cbAssigned += 1
     out.push({
       login: `demo-user-${String(idx).padStart(4, '0')}`,
       orgLogin,
       lastActivityAt: null,
-      planType: 'business',
+      planType: isEnterprise ? 'enterprise' : 'business',
     })
   }
   // Filler seats for `team-NNN` CCs (when ?cc=N>4). Each filler CC needs at
@@ -470,7 +517,7 @@ export function generateDemoUsageByCostCenter(
 
 export function generateDemoUsageSummary(
   budgets: UserBudget[],
-  opts?: { poolExhausted?: boolean },
+  opts?: { poolExhausted?: boolean; seatSplit?: { cb: number; ce: number } },
 ): CopilotUsageSummary {
   const poolExhausted = opts?.poolExhausted ?? true
   const indivConsumed = budgets.reduce((s, b) => s + b.consumedAmount, 0)
@@ -487,8 +534,8 @@ export function generateDemoUsageSummary(
     : totalPoolDraw
   const now = new Date()
   const seatCount = Math.max(budgets.length, 1)
-  const cbSeats = Math.round(seatCount * 0.7)
-  const ceSeats = seatCount - cbSeats
+  const cbSeats = opts?.seatSplit ? opts.seatSplit.cb : Math.round(seatCount * 0.7)
+  const ceSeats = opts?.seatSplit ? opts.seatSplit.ce : seatCount - Math.round(seatCount * 0.7)
   return {
     year: now.getFullYear(),
     month: now.getMonth() + 1,
