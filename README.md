@@ -128,7 +128,7 @@ Demo mode generates believable user distributions (~70 % low / 15 % moderate / 7
 The Import panel needs two things:
 
 1. **Organization URL or slug** — e.g. `https://github.com/logans-lounge` or just `logans-lounge`.
-2. **Classic personal access token** with `manage_billing:copilot` (required for the budgets endpoint) plus `read:org` and `copilot` (for seats). `admin:org` alone is **not enough** — the org billing endpoints check for the dedicated billing scope, and a `write:org`-only token will get a 404 on `GET /orgs/{org}/settings/billing/budgets`.
+2. **Classic personal access token** with the **`admin:org`** scope (the full one, not just the `write:org` sub-scope). Confirmed empirically via the `x-accepted-oauth-scopes` header on `GET /orgs/{org}/settings/billing/budgets`: the endpoint accepts `admin:org` or `repo` and silently 404s on anything else (including `write:org`+`manage_billing:copilot` together — despite what the public docs imply).
 
 > Fine-grained tokens are **not** supported on the org billing API. This is a platform limitation, not an app limitation.
 
@@ -232,7 +232,7 @@ git fetch upstream
 - **No analytics, no telemetry, no third-party scripts.** Open Network → DevTools to verify.
 - **No remote logging.** Errors stay in your console.
 
-The token needs `manage_billing:copilot` (for the budgets endpoint) plus `read:org` and `copilot` (for seats) on a classic PAT.
+The token needs the **`admin:org`** scope on a classic PAT (the org billing endpoint declares `x-accepted-oauth-scopes: admin:org, repo`; `write:org` alone or `manage_billing:copilot` alone returns 404).
 
 For vulnerability reports, see [SECURITY.md](SECURITY.md).
 
