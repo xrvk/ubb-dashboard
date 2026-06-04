@@ -173,7 +173,10 @@ export function ConstraintsBanner() {
         }
         arr.push({
           kind: 'cc-over',
-          message: `Cost center "${c.costCenterName}" is over by ${formatCurrency(c.check.overBy)} — ${c.memberCount} member${c.memberCount === 1 ? '' : 's'} have effective ULBs totaling ${formatCurrency(c.check.actual)} against a ${formatCurrency(c.check.allowed)} budget.`,
+          message:
+            c.check.poolShare > 0
+              ? `Cost center "${c.costCenterName}" is over by ${formatCurrency(c.check.overBy)}. ${c.memberCount} member${c.memberCount === 1 ? '' : 's'} have effective ULBs totaling ${formatCurrency(c.check.grossUlbs)}; ${formatCurrency(c.check.poolShare)} comes out of this CC's share of the AI credit pool, leaving ${formatCurrency(c.check.actual)} of metered exposure against a ${formatCurrency(c.check.allowed)} budget.`
+              : `Cost center "${c.costCenterName}" is over by ${formatCurrency(c.check.overBy)} — ${c.memberCount} member${c.memberCount === 1 ? '' : 's'} have effective ULBs totaling ${formatCurrency(c.check.actual)} against a ${formatCurrency(c.check.allowed)} budget.`,
           actions,
           overBy: c.check.overBy,
           costCenterName: c.costCenterName,
@@ -244,7 +247,10 @@ export function ConstraintsBanner() {
       }
       arr.push({
         kind: 'leftover',
-        message: `Users outside a budgeted cost center have effective ULBs totaling ${formatCurrency(result.checks.unassignedLeftover.actual)}, exceeding the ${result.mode === 'umbrella' ? 'leftover enterprise allowance' : 'enterprise budget'} of ${formatCurrency(result.checks.unassignedLeftover.allowed)} by ${formatCurrency(result.checks.unassignedLeftover.overBy)}.`,
+        message:
+          result.checks.unassignedLeftover.poolShare > 0
+            ? `Users outside a budgeted cost center have effective ULBs totaling ${formatCurrency(result.checks.unassignedLeftover.grossUlbs)}. ${formatCurrency(result.checks.unassignedLeftover.poolShare)} comes out of their share of the AI credit pool, leaving ${formatCurrency(result.checks.unassignedLeftover.actual)} of metered exposure against the ${result.mode === 'umbrella' ? 'leftover enterprise allowance' : 'enterprise budget'} of ${formatCurrency(result.checks.unassignedLeftover.allowed)} — over by ${formatCurrency(result.checks.unassignedLeftover.overBy)}.`
+            : `Users outside a budgeted cost center have effective ULBs totaling ${formatCurrency(result.checks.unassignedLeftover.actual)}, exceeding the ${result.mode === 'umbrella' ? 'leftover enterprise allowance' : 'enterprise budget'} of ${formatCurrency(result.checks.unassignedLeftover.allowed)} by ${formatCurrency(result.checks.unassignedLeftover.overBy)}.`,
         actions,
       })
     }
