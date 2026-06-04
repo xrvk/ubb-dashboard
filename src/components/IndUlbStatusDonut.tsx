@@ -199,7 +199,7 @@ export function IndUlbStatusDonut({ budgets }: Props) {
                   type="button"
                   onClick={() => handleBandClick(band)}
                   className={cn(
-                    'group flex items-center justify-between gap-3 rounded-md border border-transparent px-2.5 py-1.5',
+                    'group flex w-fit items-center gap-6 rounded-md border border-transparent px-2.5 py-1.5',
                     'text-left transition-colors',
                     'hover:bg-neutral-50 dark:hover:bg-neutral-900 hover:border-neutral-200 dark:hover:border-neutral-800',
                     'focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500',
