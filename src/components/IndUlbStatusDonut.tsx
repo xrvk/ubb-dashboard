@@ -221,8 +221,10 @@ export function IndUlbStatusDonut({ budgets }: Props) {
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
                     <div className="text-right">
-                      <div className="text-sm font-semibold tabular-nums">{band.count.toLocaleString()}</div>
-                      <div className="text-[11px] text-neutral-500 tabular-nums">{pct}%</div>
+                      <div className="text-sm font-semibold tabular-nums">{pct}%</div>
+                      <div className="text-[11px] text-neutral-500 tabular-nums">
+                        {band.count.toLocaleString()} {band.count === 1 ? 'user' : 'users'}
+                      </div>
                     </div>
                     <ArrowRight
                       size={14}

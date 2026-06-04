@@ -83,9 +83,14 @@ describe('IndUlbStatusDonut', () => {
     const ok = screen.getByRole('button', { name: /Filter Individual ULBs to OK \(3 users\)/i })
     const near = screen.getByRole('button', { name: /Filter Individual ULBs to Near cap \(2 users\)/i })
     const at = screen.getByRole('button', { name: /Filter Individual ULBs to At cap \(3 users\)/i })
-    expect(within(ok).getByText('3')).toBeInTheDocument()
-    expect(within(near).getByText('2')).toBeInTheDocument()
-    expect(within(at).getByText('3')).toBeInTheDocument()
+    // Each legend row shows percent first (primary), then "<count> users" as
+    // the secondary line. Totals: 3/8 = 38%, 2/8 = 25%, 3/8 = 38%.
+    expect(within(ok).getByText('38%')).toBeInTheDocument()
+    expect(within(ok).getByText('3 users')).toBeInTheDocument()
+    expect(within(near).getByText('25%')).toBeInTheDocument()
+    expect(within(near).getByText('2 users')).toBeInTheDocument()
+    expect(within(at).getByText('38%')).toBeInTheDocument()
+    expect(within(at).getByText('3 users')).toBeInTheDocument()
   })
 
   it('clicking a band dispatches a navigate event with that band\'s bucketIds', () => {
