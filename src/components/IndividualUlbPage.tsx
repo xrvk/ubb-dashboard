@@ -437,9 +437,11 @@ export function IndividualUlbPage({
         <>
           <UtilizationHistogram
             budgets={budgets}
-            selectedBucketId={filters.bucketId}
+            selectedBucketId={
+              filters.bucketIds && filters.bucketIds.length === 1 ? filters.bucketIds[0] : null
+            }
             onSelectBucket={id =>
-              setFiltersAndScroll({ ...filters, bucketId: id, status: 'all' })
+              setFiltersAndScroll({ ...filters, bucketIds: id ? [id] : null, status: 'all' })
             }
           />
           <div ref={tableRef} className="space-y-3">

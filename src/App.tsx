@@ -20,6 +20,7 @@ import { cn, openExternal } from '@/lib/utils'
 import { describeError, isAborted } from '@/lib/errors'
 import { buildShareableEnterpriseUrl } from '@/lib/urlParams'
 import { EMPTY_FILTERS, type TableFilters } from '@/components/BudgetsTable'
+import { flashTarget } from '@/lib/flashTarget'
 import {
   NAV_TO_BUDGET_MODEL_EVENT,
   NAV_TO_INDIVIDUAL_EVENT,
@@ -163,24 +164,8 @@ export function App() {
       if (!detail) return
       setPlannerHint(detail)
       setTab('budget-model')
-      // Defer two frames so the planner tab has mounted before scrolling /
-      // flashing the target card.
-      const flashTarget = detail.target === 'cc-card' ? 'bp-cc-card' : 'bp-ent-card'
-      window.requestAnimationFrame(() => {
-        window.requestAnimationFrame(() => {
-          const el = document.getElementById(flashTarget)
-          if (!el) return
-          el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-          const cls = [
-            'ring-2',
-            'ring-amber-400',
-            'ring-offset-2',
-            'dark:ring-offset-neutral-950',
-          ]
-          el.classList.add(...cls)
-          window.setTimeout(() => el.classList.remove(...cls), 2000)
-        })
-      })
+      const flashId = detail.target === 'cc-card' ? 'bp-cc-card' : 'bp-ent-card'
+      flashTarget(flashId)
     }
     window.addEventListener(PLANNER_HIGHLIGHT_EVENT, handler)
     return () => window.removeEventListener(PLANNER_HIGHLIGHT_EVENT, handler)
@@ -189,26 +174,18 @@ export function App() {
   useEffect(() => {
     const handler = () => {
       setTab('universal')
-      // Wait for the tab content to render, then flash the cap card so the
-      // user sees where to act after clicking 'Lower universal ULB to $X'.
-      window.requestAnimationFrame(() => {
-        window.requestAnimationFrame(() => {
-          const el = document.getElementById('uulb-cap')
-          if (!el) return
-          el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-          const cls = [
-            'ring-2',
-            'ring-amber-400',
-            'ring-offset-2',
-            'dark:ring-offset-neutral-950',
-            'bg-amber-100',
-            'dark:bg-amber-900/40',
-          ]
-          el.classList.add(...cls)
-          window.setTimeout(() => {
-            el.classList.remove(...cls)
-          }, 2000)
-        })
+      // Flash the cap card so the user sees where to act after clicking
+      // 'Lower universal ULB to $X'. The brief amber background reads more
+      // like a "look here" highlight than a pure ring on this card.
+      flashTarget('uulb-cap', {
+        classes: [
+          'ring-2',
+          'ring-amber-400',
+          'ring-offset-2',
+          'dark:ring-offset-neutral-950',
+          'bg-amber-100',
+          'dark:bg-amber-900/40',
+        ],
       })
     }
     window.addEventListener(NAV_TO_UNIVERSAL_EVENT, handler)

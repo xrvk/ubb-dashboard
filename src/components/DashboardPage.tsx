@@ -32,12 +32,13 @@ import { CcStatusChips } from '@/components/ui/cc-status-chips'
 import { DEFAULT_CC_PAGE_SIZE } from '@/lib/ccPagination'
 import { ccHealthStatus, countByHealth, type CcHealth } from '@/lib/ccStatus'
 import {
-  NAV_TO_BUDGET_MODEL_EVENT,
-  NAV_TO_INDIVIDUAL_EVENT,
-  NAV_TO_UNIVERSAL_EVENT,
-} from '@/lib/navEvents'
+  navigateToBudgetModel,
+  navigateToIndividual,
+  navigateToUniversal,
+} from '@/lib/navigate'
 import { DebugBadge, type DebugInfo } from './DebugBadge'
 import { BudgetStructureDiagram } from '@/components/BudgetStructureDiagram'
+import { IndUlbStatusDonut } from '@/components/IndUlbStatusDonut'
 
 /**
  * Top-level Dashboard. Single-screen rollup of the enterprise's AI credit
@@ -343,6 +344,12 @@ export function DashboardPage() {
           pool={pool}
           usageByCostCenterId={usageByCostCenterId}
         />
+      </Section>
+
+      {/* § 4b — Individual ULB utilization rollup, clickable into the
+          Individual ULBs tab pre-filtered to the chosen band. */}
+      <Section title="Individual ULB utilization">
+        <IndUlbStatusDonut budgets={budgets} />
       </Section>
 
       {/* § 5 — Action items: blocked users, missing budgets, allocation
@@ -1423,7 +1430,7 @@ function CostCenterStatusCard({
           {pool.costCenters.length} Cost center{pool.costCenters.length === 1 ? '' : 's'} routing Copilot.{' '}
           <button
             type="button"
-            onClick={() => window.dispatchEvent(new Event(NAV_TO_BUDGET_MODEL_EVENT))}
+            onClick={() => navigateToBudgetModel()}
             className="underline hover:text-neutral-700 dark:hover:text-neutral-200"
           >
             How Cost centers affect Copilot billing →
@@ -1804,7 +1811,7 @@ function ActionItemsCard({
       hint: 'Already over individual ULB. Blocked only if ULB is set to prevent further usage.',
       ctaLabel: 'Review',
       onCta: () =>
-        window.dispatchEvent(new CustomEvent(NAV_TO_INDIVIDUAL_EVENT, { detail: {} })),
+        navigateToIndividual(),
     })
   }
   if (forecast.projectedOver > 0) {
@@ -1815,7 +1822,7 @@ function ActionItemsCard({
       hint: 'On track to exceed cap.',
       ctaLabel: 'Review',
       onCta: () =>
-        window.dispatchEvent(new CustomEvent(NAV_TO_INDIVIDUAL_EVENT, { detail: {} })),
+        navigateToIndividual(),
     })
   }
   if (entAmount === null) {
@@ -1825,7 +1832,7 @@ function ActionItemsCard({
       title: 'No enterprise budget set',
       hint: "No enterprise cap on metered charges.",
       ctaLabel: 'Set budget',
-      onCta: () => window.dispatchEvent(new CustomEvent(NAV_TO_BUDGET_MODEL_EVENT)),
+      onCta: () => navigateToBudgetModel(),
     })
   }
   if (pool.overAllocated && entAmount !== null) {
@@ -1836,7 +1843,7 @@ function ActionItemsCard({
       title: `Cost center commitments exceed enterprise budget by ${formatCurrency(overshoot)}`,
       hint: 'Cost center commitments exceed the enterprise cap.',
       ctaLabel: 'Open budgets',
-      onCta: () => window.dispatchEvent(new CustomEvent(NAV_TO_BUDGET_MODEL_EVENT)),
+      onCta: () => navigateToBudgetModel(),
     })
   }
   if (!universalUlb) {
@@ -1849,7 +1856,7 @@ function ActionItemsCard({
         title: `No universal ULB. ${fallbackSeats.toLocaleString()} seat${fallbackSeats === 1 ? '' : 's'} have no per-user cap`,
         hint: 'Pool drawdown is uncapped until the pool runs out.',
         ctaLabel: 'Set universal ULB',
-        onCta: () => window.dispatchEvent(new CustomEvent(NAV_TO_UNIVERSAL_EVENT)),
+        onCta: () => navigateToUniversal(),
       })
     }
   }
@@ -1877,7 +1884,7 @@ function ActionItemsCard({
       title: `${uncappedRiskyCcs.length} uncapped cost center${uncappedRiskyCcs.length === 1 ? '' : 's'} have seats without ULB fallback`,
       hint: 'No cost center budget and no user cap after pool exhaustion.',
       ctaLabel: 'Open budgets',
-      onCta: () => window.dispatchEvent(new CustomEvent(NAV_TO_BUDGET_MODEL_EVENT)),
+      onCta: () => navigateToBudgetModel(),
     })
   }
 

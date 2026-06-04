@@ -24,7 +24,13 @@ export const UNASSIGNED_CC = '__unassigned__'
 
 export interface TableFilters {
   status: 'all' | Status
-  bucketId: string | null
+  /**
+   * Active utilization bucket filter. Holds one or more UTIL_BUCKETS ids; a
+   * budget passes when its bucket id is in the list. We use an array (not a
+   * single id) so collapsed bands like "Near cap" (which spans 80-90 and
+   * 90-100) can be expressed without a second filter field.
+   */
+  bucketIds: string[] | null
   minBudget: number | null
   maxBudget: number | null
   query: string
@@ -44,7 +50,7 @@ export interface TableFilters {
 
 export const EMPTY_FILTERS: TableFilters = {
   status: 'all',
-  bucketId: null,
+  bucketIds: null,
   minBudget: null,
   maxBudget: null,
   query: '',
@@ -128,7 +134,7 @@ export function BudgetsTable({ budgets, filters, onFiltersChange, onEdit, onDele
   // Status chip click: status and bucket are mutually exclusive categorical
   // filters. Selecting a status chip clears any active bucket selection.
   const selectStatus = (status: TableFilters['status']) =>
-    onFiltersChange({ ...filters, status, bucketId: null })
+    onFiltersChange({ ...filters, status, bucketIds: null })
 
   const commitBudgetRange = () => {
     const parse = (s: string): number | null => {
@@ -158,7 +164,7 @@ export function BudgetsTable({ budgets, filters, onFiltersChange, onEdit, onDele
       if (filters.query && !b.user.toLowerCase().includes(filters.query.toLowerCase())) return false
       if (filters.minBudget !== null && b.budgetAmount < filters.minBudget) return false
       if (filters.maxBudget !== null && b.budgetAmount > filters.maxBudget) return false
-      if (filters.bucketId && bucketForBudget(b).id !== filters.bucketId) return false
+      if (filters.bucketIds && !filters.bucketIds.includes(bucketForBudget(b).id)) return false
       if (filters.costCenter) {
         const resolution = loginToCostCenter.get(b.user.toLowerCase()) ?? null
         if (filters.costCenter === UNASSIGNED_CC) {
@@ -377,13 +383,13 @@ export function BudgetsTable({ budgets, filters, onFiltersChange, onEdit, onDele
                 className="h-8 w-44 pl-8 text-sm"
               />
             </div>
-            {filters.bucketId ? (
+            {filters.bucketIds && filters.bucketIds.length > 0 ? (
               <button
-                onClick={() => setFilter({ bucketId: null })}
+                onClick={() => setFilter({ bucketIds: null })}
                 className="inline-flex items-center gap-1 h-8 px-2.5 rounded-md border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/50 text-xs text-amber-800 dark:text-amber-200"
                 title="Clear utilization bucket filter"
               >
-                Bucket
+                {filters.bucketIds.length === 1 ? 'Bucket' : `Buckets (${filters.bucketIds.length})`}
                 <X size={12} weight="bold" />
               </button>
             ) : null}
