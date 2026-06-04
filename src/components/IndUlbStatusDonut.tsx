@@ -190,7 +190,7 @@ export function IndUlbStatusDonut({ budgets }: Props) {
             </ResponsiveContainer>
           </div>
 
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-1 md:max-w-sm">
             {data.map(band => {
               const pct = total > 0 ? Math.round((band.count / total) * 100) : 0
               return (
@@ -199,25 +199,27 @@ export function IndUlbStatusDonut({ budgets }: Props) {
                   type="button"
                   onClick={() => handleBandClick(band)}
                   className={cn(
-                    'group grid w-full grid-cols-[auto_1fr_auto] items-center gap-3 rounded-md border border-transparent px-2.5 py-1.5',
+                    'group flex w-full items-center justify-between gap-4 rounded-md border border-transparent px-2.5 py-1.5',
                     'text-left transition-colors',
                     'hover:bg-neutral-50 dark:hover:bg-neutral-900 hover:border-neutral-200 dark:hover:border-neutral-800',
                     'focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500',
                   )}
                   aria-label={`Filter Individual ULBs to ${band.label} (${band.count} users)`}
                 >
-                  <span
-                    className="inline-block h-3 w-3 rounded-sm shrink-0"
-                    style={{ backgroundColor: band.color }}
-                    aria-hidden
-                  />
-                  <div className="min-w-0 text-center">
-                    <div className="text-sm font-medium leading-tight">{band.label}</div>
-                    <div className="text-[11px] text-neutral-500 leading-tight truncate">
-                      {band.description}
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <span
+                      className="inline-block h-3 w-3 rounded-sm shrink-0"
+                      style={{ backgroundColor: band.color }}
+                      aria-hidden
+                    />
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium leading-tight">{band.label}</div>
+                      <div className="text-[11px] text-neutral-500 leading-tight truncate">
+                        {band.description}
+                      </div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-1.5 shrink-0 justify-self-end">
+                  <div className="flex items-center gap-1.5 shrink-0">
                     <div className="text-right">
                       <div className="text-sm font-semibold tabular-nums">{pct}%</div>
                       <div className="text-[11px] text-neutral-500 tabular-nums">
