@@ -284,4 +284,20 @@ describe('budgetAutoFix', () => {
     })
     expect(proposeLowerUniversalUlb(broken)).toBeNull()
   })
+
+  it('returns null for lower-universal when individual ULBs exceed the cap even with universal-only seats present (clamped to 0)', () => {
+    // Mirrors the demo: individual ULBs alone already overshoot the org cap,
+    // so the engine clamps maxSafeUniversalUlb to 0. Setting universal to $0
+    // would not bring totals into compliance AND would strip the safety net
+    // from universal-only seats, so the banner must not offer it as a fix.
+    const broken = computeBudgetConstraints({
+      orgBudget: orgBudget(50),
+      universalUlb: universal(10),
+      seats: [seat('a'), seat('b'), seat('c')], // b, c draw from universal
+      userBudgets: [userBudget('a', 100)],
+    })
+    expect(broken.maxSafeUniversalUlb).toBe(0)
+    expect(broken.universalSeatCount).toBe(2)
+    expect(proposeLowerUniversalUlb(broken)).toBeNull()
+  })
 })

@@ -61,7 +61,7 @@ export function ConstraintsBanner() {
                   Raise org budget to {formatCurrency(mainCheck.actual)}
                   <ArrowRight size={12} weight="bold" />
                 </Button>
-                {Number.isFinite(maxSafeUniversalUlb) ? (
+                {Number.isFinite(maxSafeUniversalUlb) && maxSafeUniversalUlb > 0 ? (
                   <Button
                     size="sm"
                     variant="outline"
@@ -87,12 +87,18 @@ export function ConstraintsBanner() {
                   How this is calculated
                 </Button>
               </div>
-              {universalSeatCount > 0 && Number.isFinite(maxSafeUniversalUlb) ? (
+              {universalSeatCount > 0 && Number.isFinite(maxSafeUniversalUlb) && maxSafeUniversalUlb > 0 ? (
                 <p className="mt-2 text-xs opacity-75">
                   {universalSeatCount.toLocaleString()} seat
                   {universalSeatCount === 1 ? '' : 's'} draw from the universal
                   ULB. Lowering the universal cap is usually the lowest-impact
                   fix because it only affects users without an individual ULB.
+                </p>
+              ) : universalSeatCount > 0 && maxSafeUniversalUlb <= 0 ? (
+                <p className="mt-2 text-xs opacity-75">
+                  Individual ULBs alone already exceed the org budget, so
+                  lowering the universal ULB can't bring totals into line —
+                  raise the org budget or trim individual ULBs instead.
                 </p>
               ) : null}
             </div>
