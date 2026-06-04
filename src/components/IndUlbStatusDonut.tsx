@@ -6,7 +6,8 @@ import { Button } from '@/components/ui/button'
 import { ArrowRight, ChartPie } from '@phosphor-icons/react'
 import { bucketForBudget } from '@/components/UtilizationHistogram'
 import { navigateToIndividual } from '@/lib/navigate'
-import { cn } from '@/lib/utils'
+import { utilization } from '@/lib/status'
+import { cn, formatCurrencyWhole } from '@/lib/utils'
 import type { UserBudget } from '@/lib/api'
 
 /**
@@ -114,14 +115,32 @@ export function IndUlbStatusDonut({ budgets }: Props) {
   // band has count > 0 so we don't need a separate guard.
   const nearOrAt = data.filter(d => d.id !== 'ok').reduce((sum, d) => sum + d.count, 0)
 
+  // Top users at or near cap — the natural "what now?" follow-up to the
+  // band summary. We sort by utilization desc (Infinity-utilization users
+  // with no budget but spend rank first), then break ties by raw consumed
+  // amount so two 100%+ users with the same ratio show the bigger spender
+  // first. Cap at 5 to keep the panel scannable; the empty state appears
+  // when no users are at/near cap and is itself reassuring signal.
+  const topAtRisk = useMemo(() => {
+    const eligible = budgets.filter(b => bandForBudget(b).id !== 'ok')
+    return [...eligible]
+      .sort((a, b) => {
+        const ua = utilization(a)
+        const ub = utilization(b)
+        if (ua !== ub) return ub - ua
+        return b.consumedAmount - a.consumedAmount
+      })
+      .slice(0, 5)
+  }, [budgets])
+
   return (
     <Card>
       <CardHeader>
         <CardTitle>Individual ULB utilization</CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="grid gap-4 md:grid-cols-[200px_1fr] md:items-center">
-          <div className="relative" style={{ height: 180 }}>
+        <div className="grid gap-6 md:grid-cols-[200px_minmax(0,1fr)_minmax(0,1fr)] md:items-start">
+          <div className="relative md:self-center" style={{ height: 180 }}>
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
@@ -190,7 +209,7 @@ export function IndUlbStatusDonut({ budgets }: Props) {
             </ResponsiveContainer>
           </div>
 
-          <div className="flex flex-col gap-1 md:max-w-sm">
+          <div className="flex flex-col gap-1 md:self-center">
             {data.map(band => {
               const pct = total > 0 ? Math.round((band.count / total) * 100) : 0
               return (
@@ -236,6 +255,8 @@ export function IndUlbStatusDonut({ budgets }: Props) {
               )
             })}
           </div>
+
+          <TopAtRiskList users={topAtRisk} totalNearOrAt={nearOrAt} />
         </div>
 
         <p className="mt-3 text-[11px] text-neutral-500">
@@ -245,5 +266,111 @@ export function IndUlbStatusDonut({ budgets }: Props) {
         </p>
       </CardContent>
     </Card>
+  )
+}
+
+/**
+ * Top-N list of users at or near their individual ULB cap. Each row links
+ * to the Individual ULBs tab with a query pre-filled to that user so the
+ * full row (ULB amount, spend, cost center, edit / unblock actions) is one
+ * click away. We use a `query` filter rather than a single-record route
+ * because the table is already the canonical detail view and supports
+ * follow-on edits without leaving the page.
+ */
+function TopAtRiskList({
+  users,
+  totalNearOrAt,
+}: {
+  users: UserBudget[]
+  totalNearOrAt: number
+}) {
+  if (users.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-2 rounded-md border border-dashed border-neutral-200 dark:border-neutral-800 px-4 py-6 text-center md:self-stretch">
+        <div className="text-sm font-medium">No users near or at cap</div>
+        <div className="text-[11px] text-neutral-500 max-w-xs">
+          Everyone is comfortably under their individual ULB. Nothing to act
+          on right now.
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-2 min-w-0">
+      <div className="flex items-baseline justify-between gap-2">
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+          Top users to watch
+        </h3>
+        {totalNearOrAt > users.length ? (
+          <button
+            type="button"
+            onClick={() =>
+              navigateToIndividual({
+                filter: { bucketIds: ['b80-90', 'b90-100', 'b100'] },
+              })
+            }
+            className="text-[11px] text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100 underline underline-offset-2"
+          >
+            View all {totalNearOrAt.toLocaleString()}
+          </button>
+        ) : null}
+      </div>
+      <ul className="flex flex-col gap-0.5">
+        {users.map(b => {
+          const ratio = utilization(b)
+          const pctText = ratio === Infinity ? 'No ULB' : `${Math.round(ratio * 100)}%`
+          const band = bandForBudget(b)
+          return (
+            <li key={b.id}>
+              <button
+                type="button"
+                onClick={() =>
+                  // Query-by-login pre-fills the Individual ULBs search box,
+                  // narrowing the table to this exact user.
+                  navigateToIndividual({ filter: { query: b.user } })
+                }
+                className={cn(
+                  'group flex w-full items-center justify-between gap-3 rounded-md border border-transparent px-2 py-1',
+                  'text-left transition-colors',
+                  'hover:bg-neutral-50 dark:hover:bg-neutral-900 hover:border-neutral-200 dark:hover:border-neutral-800',
+                  'focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500',
+                )}
+                aria-label={`Open ${b.user} in Individual ULBs (at ${pctText} of ULB)`}
+                title={`${b.user} · ${formatCurrencyWhole(b.consumedAmount)} of ${b.budgetAmount > 0 ? formatCurrencyWhole(b.budgetAmount) : 'no ULB'}`}
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <span
+                    className="inline-block h-2 w-2 rounded-full shrink-0"
+                    style={{ backgroundColor: band.color }}
+                    aria-hidden
+                  />
+                  <span className="text-sm truncate">{b.user}</span>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0 text-right">
+                  <div>
+                    <div
+                      className="text-sm font-semibold tabular-nums"
+                      style={{ color: band.color }}
+                    >
+                      {pctText}
+                    </div>
+                    <div className="text-[10px] text-neutral-500 tabular-nums">
+                      {formatCurrencyWhole(b.consumedAmount)}
+                      {b.budgetAmount > 0 ? ` / ${formatCurrencyWhole(b.budgetAmount)}` : ''}
+                    </div>
+                  </div>
+                  <ArrowRight
+                    size={12}
+                    weight="bold"
+                    className="text-neutral-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                  />
+                </div>
+              </button>
+            </li>
+          )
+        })}
+      </ul>
+    </div>
   )
 }

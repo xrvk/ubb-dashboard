@@ -109,4 +109,44 @@ describe('IndUlbStatusDonut', () => {
     // Mutually exclusive with status: nav must not arrive with stale state.
     expect(events[0].filter.status).toBe('all')
   })
+
+  describe('top users to watch', () => {
+    it('shows the highest-utilization users from the near + at bands only', () => {
+      render(<IndUlbStatusDonut budgets={[...okUsers, ...nearUsers, ...atUsers]} />)
+      // Heading should appear, and OK users (e.g. ratio 0%, 40%, 70%) must
+      // not show up as top-watch candidates.
+      expect(screen.getByText(/Top users to watch/i)).toBeInTheDocument()
+      const userListLabels = screen.getAllByRole('button', { name: /Open .* in Individual ULBs/i })
+      // 3 at-cap + 2 near = 5 candidates, all fit within the cap of 5.
+      expect(userListLabels).toHaveLength(5)
+      // The Infinity-utilization "no ULB" user (consumed=50, budget=0) must
+      // sort to the top.
+      const noUlb = atUsers.find(u => u.budgetAmount === 0)!
+      expect(userListLabels[0].getAttribute('aria-label')).toContain(noUlb.user)
+    })
+
+    it('renders an empty-state message when no users are near or at cap', () => {
+      render(<IndUlbStatusDonut budgets={okUsers} />)
+      expect(screen.getByText(/No users near or at cap/i)).toBeInTheDocument()
+    })
+
+    it('clicking a top-user row deep-links with the user as the search query', () => {
+      const events: NavToIndividualDetail[] = []
+      window.addEventListener(NAV_TO_INDIVIDUAL_EVENT, e => {
+        events.push((e as CustomEvent<NavToIndividualDetail>).detail)
+      })
+
+      render(<IndUlbStatusDonut budgets={[...okUsers, ...nearUsers, ...atUsers]} />)
+      const noUlb = atUsers.find(u => u.budgetAmount === 0)!
+      fireEvent.click(
+        screen.getByRole('button', { name: new RegExp(`Open ${noUlb.user}`, 'i') }),
+      )
+
+      expect(events).toHaveLength(1)
+      expect(events[0].filter.query).toBe(noUlb.user)
+      // No band filter should be applied — the search query alone narrows
+      // the table to this user.
+      expect(events[0].filter.bucketIds).toBeNull()
+    })
+  })
 })
