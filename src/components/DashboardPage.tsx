@@ -125,7 +125,7 @@ export function DashboardPage() {
     const actualProjected =
       actualMtd !== null ? projectMonthlyBudget(actualMtd, 0, demoAsof).projectedMonthTotal : null
     return {
-      universal: { mtd: univMtd, projected: univProj, hasBudget: !!universalUlb },
+      universal: { mtd: univMtd, projected: univProj, hasBudget: !!universalUlb, cap: universalUlb?.budgetAmount ?? null },
       individual: { mtd: indMtd, projected: indProj, count: indCoverage.withInd },
       trackedMtd: univMtd + indMtd,
       trackedProjected: univProj + indProj,
@@ -330,21 +330,31 @@ export function DashboardPage() {
 
       {/* § 3 — Budget allocation: how the enterprise budget and CC budgets
           partition the org. Layout depends on whether CC usage is
-          excluded (independent pools) or rolled up into the ent cap. */}
-      <Section title="Budget allocation">
-        <BudgetAllocationCard
-          enterpriseBudget={enterpriseBudget}
-          pool={pool}
-        />
-      </Section>
+          excluded (independent pools) or rolled up into the ent cap.
+          Skipped entirely when neither pool is configured — ULBs are
+          surfaced in the Spend forecast / Individual ULB sections, so an
+          empty allocation card would just be noise. */}
+      {pool.enterpriseBudget !== null ||
+      pool.costCenters.some(cc => cc.budgetAmount !== null && cc.budgetAmount > 0) ? (
+        <Section title="Budget allocation">
+          <BudgetAllocationCard
+            enterpriseBudget={enterpriseBudget}
+            pool={pool}
+          />
+        </Section>
+      ) : null}
 
-      {/* § 4 — Cost centers today: per-CC budget, MTD, projected. */}
-      <Section title="Cost centers">
-        <CostCenterStatusCard
-          pool={pool}
-          usageByCostCenterId={usageByCostCenterId}
-        />
-      </Section>
+      {/* § 4 — Cost centers today: per-CC budget, MTD, projected.
+          Hidden entirely when no CC routes Copilot — the placeholder
+          would otherwise duplicate the Spend forecast story. */}
+      {pool.costCenters.length > 0 ? (
+        <Section title="Cost centers">
+          <CostCenterStatusCard
+            pool={pool}
+            usageByCostCenterId={usageByCostCenterId}
+          />
+        </Section>
+      ) : null}
 
       {/* § 4b — Individual ULB utilization rollup, clickable into the
           Individual ULBs tab pre-filtered to the chosen band. */}
@@ -420,7 +430,7 @@ const COLOR_INDIVIDUAL = '#10b981' // emerald-500
 const COLOR_CC_ROUTED = '#f59e0b' // amber-500
 
 interface TrackedForecast {
-  universal: { mtd: number; projected: number; hasBudget: boolean }
+  universal: { mtd: number; projected: number; hasBudget: boolean; cap: number | null }
   individual: { mtd: number; projected: number; count: number }
   /** Sum of tracked scopes only (universal + individual). */
   trackedMtd: number
@@ -463,7 +473,7 @@ function ForecastBreakdownCard({
             projected={tracked.universal.projected}
             sub={
               tracked.universal.hasBudget
-                ? `${pct(tracked.universal.projected, tracked.totalProjected)} of total`
+                ? `${pct(tracked.universal.projected, tracked.totalProjected)} of total${tracked.universal.cap !== null ? ` · cap ${formatCurrency(tracked.universal.cap)}/user` : ''}`
                 : 'No universal ULB'
             }
             debug={{
@@ -929,11 +939,13 @@ function BudgetAllocationCard({
   const ccBudgetTotal = segments.reduce((s, c) => s + c.budget, 0)
   const uncappedCount = pool.costCenters.length - segments.length
 
+  // Defensive fallback. Parent now hides the whole section when this
+  // condition holds (see DashboardPage § 3), so users should never see it.
   if (entBudget === null && segments.length === 0) {
     return (
       <Card>
         <CardContent className="text-sm text-neutral-500">
-          No enterprise budget or capped cost-center budgets to allocate.
+          Nothing to allocate.
         </CardContent>
       </Card>
     )
