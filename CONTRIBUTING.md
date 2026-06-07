@@ -30,6 +30,19 @@ npm run build
 
 CI runs the same three on every push.
 
+## Pre-commit hook (optional)
+
+Install a local hook that blocks staged changes containing strings you keep in
+an untracked patterns file inside your git dir (one extended regex per line):
+
+```bash
+./scripts/install-hooks.sh
+```
+
+The installer prints the patterns file location. It lives inside the git dir,
+so it is never pushed. Useful for tenant slugs, internal hostnames, and other
+names that shouldn't land in the public repo.
+
 ## Style notes
 
 - No new dependencies without a strong reason (the app is intentionally lean).
