@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# Local pre-commit hook: block staged changes from introducing strings listed
+# in $GIT_COMMON_DIR/forbidden-patterns (one extended-regex pattern per line,
+# # for comments). The patterns file lives inside the git dir so it is never
+# committed. If the file is missing or empty the hook is a no-op.
+#
+# Install with: ./scripts/install-hooks.sh
+set -euo pipefail
+
+repo_root=$(git rev-parse --show-toplevel)
+patterns_file="$(git rev-parse --git-common-dir)/forbidden-patterns"
+
+[ -s "$patterns_file" ] || exit 0
+
+patterns=()
+while IFS= read -r line; do
+  patterns+=("$line")
+done < <(grep -Ev '^[[:space:]]*(#|$)' "$patterns_file" || true)
+[ "${#patterns[@]}" -gt 0 ] || exit 0
+
+staged=$(git diff --cached --name-only --diff-filter=ACMR)
+[ -n "$staged" ] || exit 0
+
+fail=0
+while IFS= read -r file; do
+  [ -f "$file" ] || continue
+  for pat in "${patterns[@]}"; do
+    if git diff --cached -U0 -- "$file" | grep -E "^\+" | grep -Ev "^\+\+\+ " | grep -Eq "$pat"; then
+      echo "pre-commit: forbidden pattern matched in $file: $pat" >&2
+      fail=1
+    fi
+  done
+done <<< "$staged"
+
+if [ "$fail" -ne 0 ]; then
+  echo >&2
+  echo "Commit blocked. Remove the matched strings or, if intentional, bypass with --no-verify." >&2
+  exit 1
+fi
