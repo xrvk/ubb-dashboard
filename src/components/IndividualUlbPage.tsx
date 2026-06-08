@@ -22,6 +22,7 @@ import {
   createUserBudget as apiCreateUserBudget,
   deleteUserBudget as apiDeleteUserBudget,
   patchUserBudget as apiPatchUserBudget,
+  universalUlbUrl,
   type UserBudget,
 } from '@/lib/api'
 import { runBatch, type BatchOutcome, type BatchProgress } from '@/lib/batch'
@@ -75,6 +76,7 @@ export function IndividualUlbPage({
     loading,
     apiFetch,
     refresh,
+    universalUlb,
   } = useCredentials()
 
   type BulkUpdate = { id: string; user: string; newAmount: number }
@@ -409,7 +411,22 @@ export function IndividualUlbPage({
       ) : null}
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
         <p className="text-xs text-neutral-500 dark:text-neutral-400">
-          Live utilization for users with an individual ULB. Forecasts project end of month at the current burn rate.
+          This page only projects forecasts for users covered by individual ULBs.
+          {credentials && universalUlb ? (
+            <>
+              {' '}Users covered by the universal ULB aren't included here:{' '}
+              <a
+                href={universalUlbUrl(credentials.base, credentials.ent, universalUlb.id)}
+                target="_blank"
+                rel="noreferrer"
+                onClick={openExternal(universalUlbUrl(credentials.base, credentials.ent, universalUlb.id))}
+                className="underline underline-offset-2 hover:no-underline"
+              >
+                track their usage on GitHub
+              </a>
+              .
+            </>
+          ) : null}
         </p>
       </div>
       <ForecastHero

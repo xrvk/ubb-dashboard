@@ -953,6 +953,15 @@ export function budgetEditUrl(apiBase: string, ent: string, budgetId: string): s
   return `${apiBaseToWebBase(apiBase)}/enterprises/${ent}/billing/budgets/${budgetId}/edit`
 }
 
+/**
+ * GHEC universal ULB (multi_user_customer scope) detail page. Sends admins to
+ * the per-user usage table for the universal ULB, which is the only surface
+ * that exposes live spend for users who fall under it (no API equivalent).
+ */
+export function universalUlbUrl(apiBase: string, ent: string, ulbId: string): string {
+  return `${apiBaseToWebBase(apiBase)}/enterprises/${ent}/billing/multi_user_budget/${ulbId}`
+}
+
 /** GHEC cost-centers list — useful when a CC has no budget yet (no ID to deep-link to). */
 export function costCentersUrl(apiBase: string, ent: string): string {
   return `${apiBaseToWebBase(apiBase)}/enterprises/${ent}/billing/cost_centers`
