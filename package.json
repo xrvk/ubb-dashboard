@@ -18,6 +18,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "build:ci": "vite build",
+    "build:docker": "tsc -b && vite build --base=/",
     "typecheck": "tsc -b --pretty",
     "lint": "eslint .",
     "preview": "vite preview",
