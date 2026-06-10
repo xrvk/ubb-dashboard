@@ -8,7 +8,7 @@ COPY package.json package-lock.json ./
 RUN npm ci
 
 COPY . .
-RUN npm run build
+RUN npm run build:docker
 
 # ---------- Runtime stage ----------
 FROM nginx:1.31-alpine AS runtime
