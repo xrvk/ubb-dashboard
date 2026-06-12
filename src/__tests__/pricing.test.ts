@@ -10,10 +10,22 @@ import {
   isCreditPromoActive,
   seatCostBreakdown,
 } from '@/lib/pricing'
-import type { CopilotSeat } from '@/lib/api'
+import type { CopilotSeat, OrgPlanType } from '@/lib/api'
 
 function seat(planType: string | null, login = 'u'): CopilotSeat {
-  return { login, orgLogin: null, lastActivityAt: null, planType }
+  return { login, orgLogin: null, orgLogins: [], lastActivityAt: null, planType }
+}
+
+function orgSeat(login: string, orgs: string[]): CopilotSeat {
+  return {
+    login,
+    orgLogin: orgs[0] ?? null,
+    orgLogins: orgs,
+    lastActivityAt: null,
+    // planType deliberately set to a misleading value so we can prove the
+    // org-plan path is in use and ignoring it.
+    planType: 'business',
+  }
 }
 
 describe('isCreditPromoActive', () => {
@@ -157,5 +169,79 @@ describe('seatCostBreakdown', () => {
     expect(r.other).toBe(1)
     expect(r.total).toBe(6)
     expect(r.monthlyCost).toBe(3 * 19 + 2 * 39)
+  })
+})
+
+describe('seatCostBreakdown with per-org plan rollup', () => {
+  const plans = new Map<string, OrgPlanType>([
+    ['org-ce', 'enterprise'],
+    ['org-cb', 'business'],
+    ['org-unknown', 'unknown'],
+  ])
+
+  it('classifies seats by org plan, ignoring per-seat planType', () => {
+    const r = seatCostBreakdown(
+      [orgSeat('alice', ['org-ce']), orgSeat('bob', ['org-cb'])],
+      plans,
+    )
+    expect(r.enterprise).toBe(1)
+    expect(r.business).toBe(1)
+    expect(r.other).toBe(0)
+    expect(r.monthlyCost).toBe(19 + 39)
+  })
+
+  it('picks CE when a user is in both a CE and a CB org', () => {
+    const r = seatCostBreakdown(
+      [orgSeat('alice', ['org-cb', 'org-ce'])],
+      plans,
+    )
+    expect(r.enterprise).toBe(1)
+    expect(r.business).toBe(0)
+  })
+
+  it('defaults enterprise-team-only seats (no orgs) to CB', () => {
+    const r = seatCostBreakdown([orgSeat('alice', [])], plans)
+    expect(r.business).toBe(1)
+    expect(r.enterprise).toBe(0)
+    expect(r.other).toBe(0)
+  })
+
+  it('defaults seats whose orgs are all unknown to CB', () => {
+    const r = seatCostBreakdown([orgSeat('alice', ['org-unknown'])], plans)
+    expect(r.business).toBe(1)
+    expect(r.enterprise).toBe(0)
+  })
+
+  it('defaults seats whose orgs are not in the map to CB', () => {
+    const r = seatCostBreakdown([orgSeat('alice', ['mystery-org'])], plans)
+    expect(r.business).toBe(1)
+    expect(r.enterprise).toBe(0)
+  })
+
+  it('matches org plan lookups case-insensitively', () => {
+    const r = seatCostBreakdown([orgSeat('alice', ['ORG-CE'])], plans)
+    expect(r.enterprise).toBe(1)
+  })
+
+  it('never lands a seat in "other" when org plans are provided', () => {
+    // Real customer parity: every seat is billed as either CB or CE.
+    const r = seatCostBreakdown(
+      [
+        orgSeat('a', ['org-ce']),
+        orgSeat('b', ['org-cb']),
+        orgSeat('c', []),
+        orgSeat('d', ['org-unknown']),
+      ],
+      plans,
+    )
+    expect(r.other).toBe(0)
+    expect(r.total).toBe(4)
+  })
+
+  it('falls back to legacy planType path when orgPlans not supplied', () => {
+    const r = seatCostBreakdown([orgSeat('a', ['org-ce'])])
+    // planType is 'business' on the fixture; without orgPlans we trust it.
+    expect(r.business).toBe(1)
+    expect(r.enterprise).toBe(0)
   })
 })

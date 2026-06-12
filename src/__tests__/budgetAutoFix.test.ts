@@ -24,6 +24,7 @@ import type {
 const seat = (login: string, orgLogin: string | null = 'org1'): CopilotSeat => ({
   login,
   orgLogin,
+  orgLogins: orgLogin ? [orgLogin] : [],
   lastActivityAt: null,
   planType: null,
 })

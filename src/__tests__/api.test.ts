@@ -15,6 +15,7 @@ import {
   createApiFetch,
   fetchAllCopilotSeats,
   fetchCostCenters,
+  fetchOrgCopilotPlans,
   fetchUserBudgets,
   getLastKnownRateLimit,
   isPrimaryRateLimitExhausted,
@@ -204,6 +205,76 @@ describe('fetchAllCopilotSeats pagination', () => {
     }))
     const result = await fetchAllCopilotSeats(fetchMock)
     expect(result.map(s => s.login).sort()).toEqual(['alice', 'bob'])
+  })
+
+  it('captures every org a user appears in (orgLogins) for tier rollup', async () => {
+    const fetchMock: ApiFetch = vi.fn(async () => ({
+      total_seats: 4,
+      seats: [
+        { assignee: { login: 'alice' }, organization: { login: 'org-cb' } },
+        { assignee: { login: 'alice' }, organization: { login: 'org-ce' } },
+        // duplicate (login, org) → no duplicate orgLogins entry
+        { assignee: { login: 'alice' }, organization: { login: 'org-cb' } },
+        // enterprise-team-only seat: no organization
+        { assignee: { login: 'bob' }, organization: undefined },
+      ],
+    }))
+    const result = await fetchAllCopilotSeats(fetchMock)
+    const alice = result.find(s => s.login === 'alice')!
+    const bob = result.find(s => s.login === 'bob')!
+    expect(alice.orgLogins.sort()).toEqual(['org-cb', 'org-ce'])
+    expect(alice.orgLogin).toBe('org-cb') // first observed
+    expect(bob.orgLogins).toEqual([])
+    expect(bob.orgLogin).toBeNull()
+  })
+})
+
+describe('fetchOrgCopilotPlans', () => {
+  it('maps each org to its plan_type (lowercased keys)', async () => {
+    const fetchMock: ApiFetch = vi.fn(async (path: string) => {
+      if (path.includes('/orgs/org-ce/')) return { plan_type: 'enterprise' }
+      if (path.includes('/orgs/org-cb/')) return { plan_type: 'business' }
+      throw new Error(`unexpected ${path}`)
+    })
+    const plans = await fetchOrgCopilotPlans(fetchMock, ['Org-CE', 'org-cb'])
+    expect(plans.get('org-ce')).toBe('enterprise')
+    expect(plans.get('org-cb')).toBe('business')
+  })
+
+  it('dedupes input orgs case-insensitively', async () => {
+    let calls = 0
+    const fetchMock: ApiFetch = vi.fn(async () => {
+      calls += 1
+      return { plan_type: 'business' }
+    })
+    await fetchOrgCopilotPlans(fetchMock, ['acme', 'Acme', 'ACME'])
+    expect(calls).toBe(1)
+  })
+
+  it('buckets failures (404, network) as unknown without rejecting the batch', async () => {
+    const fetchMock: ApiFetch = vi.fn(async (path: string) => {
+      if (path.includes('/orgs/good/')) return { plan_type: 'enterprise' }
+      throw new Error('boom')
+    })
+    const plans = await fetchOrgCopilotPlans(fetchMock, ['good', 'broken'])
+    expect(plans.get('good')).toBe('enterprise')
+    expect(plans.get('broken')).toBe('unknown')
+  })
+
+  it('treats unrecognized plan_type strings as unknown', async () => {
+    const fetchMock: ApiFetch = vi.fn(async () => ({ plan_type: 'free' }))
+    const plans = await fetchOrgCopilotPlans(fetchMock, ['some-org'])
+    expect(plans.get('some-org')).toBe('unknown')
+  })
+
+  it('hits /orgs/{org}/copilot/billing via the path: prefix', async () => {
+    const seen: string[] = []
+    const fetchMock: ApiFetch = vi.fn(async (path: string) => {
+      seen.push(path)
+      return { plan_type: 'business' }
+    })
+    await fetchOrgCopilotPlans(fetchMock, ['my-org'])
+    expect(seen).toContain('path:/orgs/my-org/copilot/billing')
   })
 })
 

@@ -14,6 +14,7 @@ import {
   isRetryable,
   retryAfterSecondsFromError,
 } from '@/lib/errors'
+import { mapWithConcurrency } from '@/lib/concurrency'
 
 const API_VERSION = '2026-03-10'
 
@@ -88,7 +89,9 @@ export type ApiFetch = (path: string, init?: RequestInit) => Promise<unknown>
  * Build a path under the enterprise. Paths starting with `/copilot` (or any
  * non-`settings/billing` enterprise endpoint) should pass `enterpriseScoped: true`
  * via the init.headers (we read it from a custom header below). For ergonomics,
- * a path can also start with `enterprise:` to skip the billing prefix.
+ * a path can also start with `enterprise:` to skip the billing prefix, or
+ * with `path:` to bypass the enterprise scope entirely (e.g. for `/orgs/...`
+ * endpoints used by the per-org Copilot plan rollup).
  */
 /**
  * Validate that a base URL points at a real GitHub host before we send a
@@ -186,10 +189,17 @@ export function createApiFetch(creds: Credentials): ApiFetch {
   const safeToken = String(creds.token)
   return async (path: string, init?: RequestInit) => {
     const useEnterpriseRoot = path.startsWith('enterprise:')
-    const cleanPath = useEnterpriseRoot ? path.slice('enterprise:'.length) : path
-    const url = useEnterpriseRoot
-      ? `${safeBase}/enterprises/${safeEnt}${cleanPath}`
-      : `${safeBase}/enterprises/${safeEnt}/settings/billing${cleanPath}`
+    const useAbsolutePath = path.startsWith('path:')
+    const cleanPath = useEnterpriseRoot
+      ? path.slice('enterprise:'.length)
+      : useAbsolutePath
+        ? path.slice('path:'.length)
+        : path
+    const url = useAbsolutePath
+      ? `${safeBase}${cleanPath}`
+      : useEnterpriseRoot
+        ? `${safeBase}/enterprises/${safeEnt}${cleanPath}`
+        : `${safeBase}/enterprises/${safeEnt}/settings/billing${cleanPath}`
     const method = (init?.method ?? 'GET').toUpperCase()
     const isIdempotent = method === 'GET' || method === 'HEAD'
 
@@ -981,7 +991,22 @@ export function enterpriseSeatsUrl(apiBase: string, ent: string): string {
 
 export interface CopilotSeat {
   login: string
+  /**
+   * First org observed to grant this user a seat. Kept for back-compat with
+   * downstream code that wants a single org for display / cost-center
+   * resolution. `null` for enterprise-team-granted seats with no org.
+   */
   orgLogin: string | null
+  /**
+   * Every distinct org that appears in this user's seat assignments. A user
+   * who shows up in `/copilot/billing/seats` under multiple orgs (CB org +
+   * CE org is the common case) lands here once with all their orgs. Empty
+   * when every assignment is enterprise-team-only.
+   *
+   * Used by `seatCostBreakdown` together with a per-org plan-type map to
+   * correctly classify the user's billed tier (CE wins over CB).
+   */
+  orgLogins: string[]
   lastActivityAt: string | null
   planType: string | null
 }
@@ -1231,19 +1256,73 @@ export async function fetchAllCopilotSeats(apiFetch: ApiFetch): Promise<CopilotS
     }
   }
 
-  // Dedupe by login (the API can return the same user across multiple orgs)
-  const seen = new Set<string>()
-  const out: CopilotSeat[] = []
+  // Dedupe by login but capture every distinct org that granted this user a
+  // seat. `seatCostBreakdown` needs the full org set to pick the user's
+  // highest billed tier (CE wins over CB) via per-org plan rollup.
+  const byLogin = new Map<string, CopilotSeat>()
   for (const s of all) {
     const login = s.assignee?.login
-    if (!login || seen.has(login)) continue
-    seen.add(login)
-    out.push({
-      login,
-      orgLogin: s.organization?.login ?? null,
-      lastActivityAt: s.last_activity_at ?? null,
-      planType: s.plan_type ?? null,
-    })
+    if (!login) continue
+    const orgLogin = s.organization?.login ?? null
+    const existing = byLogin.get(login)
+    if (!existing) {
+      byLogin.set(login, {
+        login,
+        orgLogin,
+        orgLogins: orgLogin ? [orgLogin] : [],
+        lastActivityAt: s.last_activity_at ?? null,
+        planType: s.plan_type ?? null,
+      })
+    } else if (orgLogin && !existing.orgLogins.includes(orgLogin)) {
+      existing.orgLogins.push(orgLogin)
+    }
   }
+  return Array.from(byLogin.values())
+}
+
+// --- Per-org Copilot plan-type rollup ---
+
+/**
+ * The Copilot plan a single org is subscribed to. Matches the GitHub API's
+ * `plan_type` enum on `GET /orgs/{org}/copilot/billing`.
+ */
+export type OrgPlanType = 'business' | 'enterprise' | 'unknown'
+
+const ORG_PLAN_CONCURRENCY = 8
+
+/**
+ * Fetch the Copilot plan_type for each unique org. This is the source of
+ * truth for "which tier is this seat billed at": the per-seat `plan_type`
+ * on the enterprise seats endpoint can disagree with the actual contract
+ * tier in mixed enterprises, but the per-org billing endpoint reflects the
+ * org's real subscription.
+ *
+ * Failures (404, forbidden, network) bucket the org as `'unknown'` so the
+ * caller can decide how to treat it — `seatCostBreakdown` falls back to CB
+ * for unknown orgs since CE seats only come from CE-plan orgs and
+ * enterprise teams default to CB.
+ *
+ * Concurrency-bounded to stay under GitHub's secondary rate limit on
+ * enterprises with many orgs.
+ */
+export async function fetchOrgCopilotPlans(
+  apiFetch: ApiFetch,
+  orgs: readonly string[],
+): Promise<Map<string, OrgPlanType>> {
+  const unique = Array.from(new Set(orgs.map(o => o.toLowerCase()).filter(Boolean)))
+  const out = new Map<string, OrgPlanType>()
+  await mapWithConcurrency(unique, ORG_PLAN_CONCURRENCY, async org => {
+    try {
+      const data = (await apiFetch(
+        `path:/orgs/${encodeURIComponent(org)}/copilot/billing`,
+      )) as { plan_type?: string } | null
+      const raw = (data?.plan_type ?? '').toLowerCase()
+      if (raw.includes('enterprise')) out.set(org, 'enterprise')
+      else if (raw.includes('business')) out.set(org, 'business')
+      else out.set(org, 'unknown')
+    } catch {
+      out.set(org, 'unknown')
+    }
+  })
   return out
 }

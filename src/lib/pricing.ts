@@ -85,7 +85,7 @@ export function includedAiCredits(
   }
 }
 
-import type { CopilotSeat } from './api'
+import type { CopilotSeat, OrgPlanType } from './api'
 
 export interface SeatCostBreakdown {
   business: number
@@ -99,22 +99,51 @@ export interface SeatCostBreakdown {
 
 /**
  * Group seats by plan type and compute the monthly license cost at list
- * pricing. `planType` strings are matched permissively because the API
- * has used variants like `business`, `copilot_business`, `enterprise`,
- * `copilot_enterprise` over time.
+ * pricing.
+ *
+ * When `orgPlans` is provided, classification uses the per-org Copilot plan
+ * (the same data source the GHEC admin UI's CB/CE counts derive from): a
+ * user is CE if any org they appear in is on the enterprise plan, otherwise
+ * CB. Orgs with `'unknown'` plan and enterprise-team-only seats (no orgs)
+ * default to CB since CE seats come only from CE-plan orgs and enterprise
+ * teams hold CB licenses. This is the accurate path and what callers should
+ * use whenever per-org plans are available.
+ *
+ * When `orgPlans` is omitted (e.g. the per-org rollup failed to load),
+ * falls back to matching the per-seat `planType` string permissively
+ * (`'enterprise'` ⊂ → CE, `'business'` ⊂ → CB). This is the legacy path;
+ * it under-counts CE in mixed enterprises because the per-seat field
+ * reflects the granting org's plan as reported on the seat object, which
+ * disagrees with the actual billed tier in some configurations.
  */
-export function seatCostBreakdown(seats: CopilotSeat[]): SeatCostBreakdown {
+export function seatCostBreakdown(
+  seats: CopilotSeat[],
+  orgPlans?: ReadonlyMap<string, OrgPlanType>,
+): SeatCostBreakdown {
   let business = 0
   let enterprise = 0
   let other = 0
   for (const s of seats) {
-    const plan = (s.planType ?? '').toLowerCase()
-    if (plan.includes('enterprise')) {
-      enterprise += 1
-    } else if (plan.includes('business')) {
-      business += 1
+    if (orgPlans) {
+      let hasEnterprise = false
+      const orgs = s.orgLogins.length > 0
+        ? s.orgLogins
+        : s.orgLogin
+          ? [s.orgLogin]
+          : []
+      for (const org of orgs) {
+        if (orgPlans.get(org.toLowerCase()) === 'enterprise') {
+          hasEnterprise = true
+          break
+        }
+      }
+      if (hasEnterprise) enterprise += 1
+      else business += 1
     } else {
-      other += 1
+      const plan = (s.planType ?? '').toLowerCase()
+      if (plan.includes('enterprise')) enterprise += 1
+      else if (plan.includes('business')) business += 1
+      else other += 1
     }
   }
   return {
