@@ -224,7 +224,7 @@ export function generateDemoSeats(
   const dpSize = Math.min(Math.round(totalSeats * 0.36), totalSeats - peSize)
   const dxSize = Math.min(Math.round(totalSeats * 0.13), totalSeats - peSize - dpSize)
   // security gets the remainder so every seat lands somewhere
-  const out: Array<{ login: string; orgLogin: string | null; lastActivityAt: string | null; planType: string | null }> = []
+  const out: Array<{ login: string; orgLogin: string | null; orgLogins: string[]; lastActivityAt: string | null; planType: string | null }> = []
   // Default 70/30 CB/CE split mirrors generateDemoUsageSummary's
   // license-cost math (cbSeats = round(total * 0.7), ceSeats = total -
   // cbSeats) so the Dashboard seat table and the License MTD figures stay
@@ -255,6 +255,7 @@ export function generateDemoSeats(
     out.push({
       login: `demo-user-${String(idx).padStart(4, '0')}`,
       orgLogin,
+      orgLogins: [orgLogin],
       lastActivityAt: null,
       planType: isEnterprise ? 'enterprise' : 'business',
     })
@@ -279,6 +280,7 @@ export function generateDemoSeats(
         out.push({
           login: `${orgName}-user-${s + 1}`,
           orgLogin: orgName,
+          orgLogins: [orgName],
           lastActivityAt: null,
           planType: 'business',
         })

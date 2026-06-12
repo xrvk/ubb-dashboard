@@ -60,6 +60,7 @@ export function DashboardPage() {
     loginToCostCenter,
     usageSummary,
     usageByCostCenterId,
+    orgPlans,
   } = useCredentials()
 
   const pool = useMemo(
@@ -77,7 +78,10 @@ export function DashboardPage() {
 
   const demoAsof = useMemo(() => getEffectiveDemoAsof() ?? undefined, [])
   const forecast = useMemo(() => forecastSummary(budgets, demoAsof), [budgets, demoAsof])
-  const seatCost = useMemo(() => seatCostBreakdown(seats), [seats])
+  // `seatCostBreakdown` reads `orgPlans` when populated and falls back to
+  // the legacy per-seat `planType` matcher when the map is empty (demo mode
+  // or a failed rollup).
+  const seatCost = useMemo(() => seatCostBreakdown(seats, orgPlans), [seats, orgPlans])
 
   /** How many seats are covered by an individual ULB (have a user-scope budget). */
   const indCoverage = useMemo(() => {

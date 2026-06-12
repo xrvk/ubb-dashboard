@@ -11,7 +11,7 @@
 
 | Quantity | Source | Notes |
 |---|---|---|
-| CB / CE seat counts | `GET /enterprises/{ent}/copilot/billing/seats` (paginated) → `seatCostBreakdown(seats)` | Permissive plan-type match: any seat whose `plan_type` contains `"enterprise"` is CE; contains `"business"` is CB; otherwise `other` (excluded from the pool). |
+| CB / CE seat counts | `GET /enterprises/{ent}/copilot/billing/seats` (paginated) + `GET /orgs/{org}/copilot/billing` per unique org → `seatCostBreakdown(seats, orgPlans)` | Each seat's billed tier is the plan of the org that granted it. A user appearing in both a CB and a CE org bills as CE. Enterprise-team-only seats (no org) default to CB. The per-seat `plan_type` field is **not** used for billing tier; it reflects the granting org's plan as reported on the seat and disagrees with the contract in mixed enterprises. If the per-org rollup fails, `seatCostBreakdown` falls back to the legacy per-seat `plan_type` matcher. |
 | Per-seat AICs/mo | `pricing.ts` constants | **Not** returned by any API. Hard-coded from the public docs. |
 | Pool size (credits) | `business × perBusiness + enterprise × perEnterprise` | `includedAiCredits()` in `src/lib/pricing.ts`. |
 | Pool size ($) | `totalCredits × 0.01` | 1 AIC = $0.01 USD. |

@@ -15,6 +15,7 @@ import {
   createApiFetch,
   fetchAllCopilotSeats,
   fetchCostCenters,
+  fetchOrgCopilotPlans,
   fetchUserBudgets,
   getLastKnownRateLimit,
   isPrimaryRateLimitExhausted,
@@ -205,6 +206,103 @@ describe('fetchAllCopilotSeats pagination', () => {
     const result = await fetchAllCopilotSeats(fetchMock)
     expect(result.map(s => s.login).sort()).toEqual(['alice', 'bob'])
   })
+
+  it('captures every org a user appears in (orgLogins) for tier rollup', async () => {
+    const fetchMock: ApiFetch = vi.fn(async () => ({
+      total_seats: 4,
+      seats: [
+        { assignee: { login: 'alice' }, organization: { login: 'org-cb' } },
+        { assignee: { login: 'alice' }, organization: { login: 'org-ce' } },
+        // duplicate (login, org) → no duplicate orgLogins entry
+        { assignee: { login: 'alice' }, organization: { login: 'org-cb' } },
+        // enterprise-team-only seat: no organization
+        { assignee: { login: 'bob' }, organization: undefined },
+      ],
+    }))
+    const result = await fetchAllCopilotSeats(fetchMock)
+    const alice = result.find(s => s.login === 'alice')!
+    const bob = result.find(s => s.login === 'bob')!
+    expect(alice.orgLogins.sort()).toEqual(['org-cb', 'org-ce'])
+    expect(alice.orgLogin).toBe('org-cb') // first observed
+    expect(bob.orgLogins).toEqual([])
+    expect(bob.orgLogin).toBeNull()
+  })
+
+  it('upgrades orgLogin from null when a later observation has an org', async () => {
+    // A user whose first observation is an enterprise-team seat (no org)
+    // still gets `orgLogin` populated from a later org-scoped seat, so the
+    // CC org-inherited resolution can see them.
+    const fetchMock: ApiFetch = vi.fn(async () => ({
+      total_seats: 2,
+      seats: [
+        { assignee: { login: 'carol' }, organization: undefined },
+        { assignee: { login: 'carol' }, organization: { login: 'org-x' } },
+      ],
+    }))
+    const result = await fetchAllCopilotSeats(fetchMock)
+    const carol = result.find(s => s.login === 'carol')!
+    expect(carol.orgLogin).toBe('org-x')
+    expect(carol.orgLogins).toEqual(['org-x'])
+  })
+})
+
+describe('fetchOrgCopilotPlans', () => {
+  it('maps each org to its plan_type (lowercased keys)', async () => {
+    const fetchMock: ApiFetch = vi.fn(async (path: string) => {
+      if (path.includes('/orgs/org-ce/')) return { plan_type: 'enterprise' }
+      if (path.includes('/orgs/org-cb/')) return { plan_type: 'business' }
+      throw new Error(`unexpected ${path}`)
+    })
+    const plans = await fetchOrgCopilotPlans(fetchMock, ['Org-CE', 'org-cb'])
+    expect(plans.get('org-ce')).toBe('enterprise')
+    expect(plans.get('org-cb')).toBe('business')
+  })
+
+  it('dedupes input orgs case-insensitively', async () => {
+    let calls = 0
+    const fetchMock: ApiFetch = vi.fn(async () => {
+      calls += 1
+      return { plan_type: 'business' }
+    })
+    await fetchOrgCopilotPlans(fetchMock, ['acme', 'Acme', 'ACME'])
+    expect(calls).toBe(1)
+  })
+
+  it('throws when any per-org fetch fails, so callers fall back to legacy', async () => {
+    // Silently bucketing failures as `unknown` would downgrade those orgs'
+    // CE seats to CB without the partial-load warning firing. Surface the
+    // failure instead and let `loadWithWarning` handle it.
+    const fetchMock: ApiFetch = vi.fn(async (path: string) => {
+      if (path.includes('/orgs/good/')) return { plan_type: 'enterprise' }
+      throw new Error('boom')
+    })
+    await expect(fetchOrgCopilotPlans(fetchMock, ['good', 'broken'])).rejects.toThrow(
+      /Failed to fetch Copilot plan for 1 of 2 org\(s\): broken/,
+    )
+  })
+
+  it('returns an empty map for an empty input without hitting the API', async () => {
+    const fetchMock: ApiFetch = vi.fn(async () => ({ plan_type: 'business' }))
+    const plans = await fetchOrgCopilotPlans(fetchMock, [])
+    expect(plans.size).toBe(0)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('treats unrecognized plan_type strings as unknown', async () => {
+    const fetchMock: ApiFetch = vi.fn(async () => ({ plan_type: 'free' }))
+    const plans = await fetchOrgCopilotPlans(fetchMock, ['some-org'])
+    expect(plans.get('some-org')).toBe('unknown')
+  })
+
+  it('hits /orgs/{org}/copilot/billing via the path: prefix', async () => {
+    const seen: string[] = []
+    const fetchMock: ApiFetch = vi.fn(async (path: string) => {
+      seen.push(path)
+      return { plan_type: 'business' }
+    })
+    await fetchOrgCopilotPlans(fetchMock, ['my-org'])
+    expect(seen).toContain('path:/orgs/my-org/copilot/billing')
+  })
 })
 
 function fakeCC(id: string, name: string, resources: Array<{ type: string; name: string }> = [], state = 'active'): CostCenter {
@@ -348,6 +446,34 @@ function mockFetchResponse(spec: MockResponseSpec): Response {
     text: async () => spec.body ?? '',
   } as unknown as Response
 }
+
+describe('createApiFetch path prefixes', () => {
+  // The `enterprise:` and `path:` prefixes are how callers bypass the
+  // default `/enterprises/{ent}/settings/billing` scope to hit other
+  // enterprise endpoints (e.g. /copilot/billing/seats) or wholly
+  // different scopes (e.g. /orgs/{org}/copilot/billing).
+  let fetchSpy: ReturnType<typeof vi.spyOn>
+  const fetcher = createApiFetch({ base: 'https://api.github.com', ent: 'acme', token: 't' })
+  beforeEach(() => {
+    fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(mockFetchResponse({ status: 200, body: '{}' }))
+  })
+  afterEach(() => fetchSpy.mockRestore())
+
+  it('default prefix is /enterprises/{ent}/settings/billing', async () => {
+    await fetcher('/budgets')
+    expect(fetchSpy).toHaveBeenCalledWith('https://api.github.com/enterprises/acme/settings/billing/budgets', expect.anything())
+  })
+
+  it('"enterprise:" prefix drops the /settings/billing path segment', async () => {
+    await fetcher('enterprise:/copilot/billing/seats')
+    expect(fetchSpy).toHaveBeenCalledWith('https://api.github.com/enterprises/acme/copilot/billing/seats', expect.anything())
+  })
+
+  it('"path:" prefix targets an absolute path off the API root', async () => {
+    await fetcher('path:/orgs/my-org/copilot/billing')
+    expect(fetchSpy).toHaveBeenCalledWith('https://api.github.com/orgs/my-org/copilot/billing', expect.anything())
+  })
+})
 
 describe('createApiFetch typed-error mapping', () => {
   let fetchSpy: ReturnType<typeof vi.spyOn>

@@ -47,6 +47,14 @@ around. Don't "fix" them without checking the upstream behavior first.
 - **Plan-type matching is permissive.** Match `"enterprise"` ⊂
   `plan_type` for CE, `"business"` ⊂ `plan_type` for CB. Don't do
   exact-equals — upstream has introduced suffixed variants before.
+- **Per-seat `plan_type` is not the billed tier.** The `plan_type` on
+  `enterprise:/copilot/billing/seats` reflects the granting org's plan
+  as reported on the seat object, which under-counts CE in mixed
+  enterprises. The accurate source is per-org: fetch
+  `GET /orgs/{org}/copilot/billing` (`plan_type`) for every org seen
+  in seats and roll up via `fetchOrgCopilotPlans` →
+  `seatCostBreakdown(seats, orgPlans)`. A user in both a CB and a CE
+  org bills as CE.
 - **Gross vs net** — `usage/summary` returns both `grossAmount` and
   `netAmount`. The pool drains on gross; billing is on net. Mixing
   these is the single most common source of wrong-looking tiles.

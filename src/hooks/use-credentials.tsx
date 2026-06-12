@@ -8,6 +8,7 @@ import {
   fetchAllCopilotSeats,
   fetchCopilotUsageSummary,
   fetchCostCenters,
+  fetchOrgCopilotPlans,
   parseEnterpriseUrl,
   resolveCostCenter,
   type ApiFetch,
@@ -18,6 +19,7 @@ import {
   type CostCenterResolution,
   type Credentials,
   type EnterpriseBudget,
+  type OrgPlanType,
   type UniversalUlb,
   type UserBudget,
 } from '@/lib/api'
@@ -42,7 +44,7 @@ import { saveCachedReport } from '@/lib/reportCache'
 import { includedAiCredits, seatCostBreakdown } from '@/lib/pricing'
 import { describeError, isAborted } from '@/lib/errors'
 
-export type PartialLoadFeature = 'cost-centers' | 'seats' | 'usage-summary'
+export type PartialLoadFeature = 'cost-centers' | 'seats' | 'usage-summary' | 'org-plans'
 
 export interface PartialLoadWarning {
   feature: PartialLoadFeature
@@ -58,6 +60,7 @@ const FEATURE_LABEL: Record<PartialLoadFeature, string> = {
   'cost-centers': 'Cost center attribution',
   seats: 'Copilot seats',
   'usage-summary': 'Billing usage summary',
+  'org-plans': 'Per-org Copilot plan rollup',
 }
 
 /** Run a secondary fetch; on failure return [fallback, warning]. */
@@ -81,6 +84,39 @@ async function loadWithWarning<T>(
       },
     ]
   }
+}
+
+/**
+ * Load seats, then the per-org Copilot `plan_type` rollup for every org
+ * those seats reference. Chained so the rollup only fires once we know
+ * which orgs to query, but the combined Promise still fans out alongside
+ * the other initial loads in `Promise.all`.
+ *
+ * Both stages are best-effort: a seats failure returns `[[], warning]` and
+ * skips the rollup; a rollup failure returns `[Map(), warning]` so the
+ * dashboard can fall back to legacy per-seat `planType` classification.
+ */
+async function loadSeatsAndOrgPlans(fetcher: ApiFetch): Promise<{
+  seatResult: [CopilotSeat[], PartialLoadWarning | null]
+  orgPlanResult: [Map<string, OrgPlanType>, PartialLoadWarning | null]
+}> {
+  const seatResult = await loadWithWarning<CopilotSeat[]>('seats', [], () =>
+    fetchAllCopilotSeats(fetcher),
+  )
+  const seats = seatResult[0]
+  const orgs = new Set<string>()
+  for (const s of seats) {
+    for (const o of s.orgLogins) orgs.add(o.toLowerCase())
+  }
+  if (orgs.size === 0) {
+    return { seatResult, orgPlanResult: [new Map(), null] }
+  }
+  const orgPlanResult = await loadWithWarning<Map<string, OrgPlanType>>(
+    'org-plans',
+    new Map<string, OrgPlanType>(),
+    () => fetchOrgCopilotPlans(fetcher, Array.from(orgs)),
+  )
+  return { seatResult, orgPlanResult }
 }
 
 interface CredentialsContextValue {
@@ -132,6 +168,18 @@ interface CredentialsContextValue {
    */
   usageByCostCenterId: ReadonlyMap<string, CopilotUsageSummary>
   /**
+   * Per-org Copilot `plan_type`, keyed by lowercased org login. Sourced
+   * from `GET /orgs/{org}/copilot/billing`, which is the same data the
+   * GHEC admin UI uses for its CB/CE counts. `seatCostBreakdown` consumes
+   * this to classify seats by their billed tier (CE wins over CB when a
+   * user appears in both kinds of orgs). Empty when the rollup hasn't
+   * loaded yet, in demo mode, or when the rollup failed (any per-org
+   * failure rejects the whole fetch and the partial-load warning fires).
+   * `seatCostBreakdown` treats an empty map as "not provided" and falls
+   * back to the legacy per-seat `planType` classifier.
+   */
+  orgPlans: ReadonlyMap<string, OrgPlanType>
+  /**
    * Lowercased-login → resolved CC (or null if unassigned).
    * Built from seats × cost-center index per the cost-center allocation docs:
    * user-direct membership > org-inherited > null. Budget rows look up their
@@ -177,6 +225,7 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
   const [usageByCostCenterId, setUsageByCostCenterId] = useState<ReadonlyMap<string, CopilotUsageSummary>>(
     new Map(),
   )
+  const [orgPlans, setOrgPlans] = useState<ReadonlyMap<string, OrgPlanType>>(new Map())
   const [loading, setLoading] = useState(false)
   const [loadProgress, setLoadProgress] = useState<{ loaded: number; total: number | undefined } | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -267,26 +316,28 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
     setError(null)
     setPartialLoadWarnings([])
     try {
-      const [allBudgets, seatResult, ccResult, summaryResult] = await Promise.all([
+      const [allBudgets, seatsAndPlans, ccResult, summaryResult] = await Promise.all([
         fetchAllAiCreditsBudgets(apiFetch, (loaded, total) =>
           setLoadProgress({ loaded, total }),
         ),
-        loadWithWarning<CopilotSeat[]>('seats', [], () => fetchAllCopilotSeats(apiFetch)),
+        loadSeatsAndOrgPlans(apiFetch),
         loadWithWarning<CostCenter[]>('cost-centers', [], () => fetchCostCenters(apiFetch)),
         loadWithWarning<CopilotUsageSummary | null>('usage-summary', null, () =>
           fetchCopilotUsageSummary(apiFetch),
         ),
       ])
+      const { seatResult, orgPlanResult } = seatsAndPlans
       setBudgets(allBudgets.userBudgets)
       setTotalBudgetCount(allBudgets.totalBudgetCount)
       setSeats(seatResult[0])
+      setOrgPlans(orgPlanResult[0])
       setCostCenters(ccResult[0])
       setUniversalUlb(allBudgets.universal)
       setEnterpriseBudget(allBudgets.enterprise)
       setCostCenterBudgetsByName(allBudgets.costCenterBudgetsByName)
       setUsageSummary(summaryResult[0])
       applyWarnings(
-        [seatResult[1], ccResult[1], summaryResult[1]].filter(
+        [seatResult[1], orgPlanResult[1], ccResult[1], summaryResult[1]].filter(
           (w): w is PartialLoadWarning => w !== null,
         ),
       )
@@ -315,27 +366,29 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
     setPartialLoadWarnings([])
     try {
       const fetcher = createApiFetch(creds)
-      const [allBudgets, seatResult, ccResult, summaryResult] = await Promise.all([
+      const [allBudgets, seatsAndPlans, ccResult, summaryResult] = await Promise.all([
         fetchAllAiCreditsBudgets(fetcher, (loaded, total) =>
           setLoadProgress({ loaded, total }),
         ),
-        loadWithWarning<CopilotSeat[]>('seats', [], () => fetchAllCopilotSeats(fetcher)),
+        loadSeatsAndOrgPlans(fetcher),
         loadWithWarning<CostCenter[]>('cost-centers', [], () => fetchCostCenters(fetcher)),
         loadWithWarning<CopilotUsageSummary | null>('usage-summary', null, () =>
           fetchCopilotUsageSummary(fetcher),
         ),
       ])
+      const { seatResult, orgPlanResult } = seatsAndPlans
       setCredentials(creds)
       setBudgets(allBudgets.userBudgets)
       setTotalBudgetCount(allBudgets.totalBudgetCount)
       setSeats(seatResult[0])
+      setOrgPlans(orgPlanResult[0])
       setCostCenters(ccResult[0])
       setUniversalUlb(allBudgets.universal)
       setEnterpriseBudget(allBudgets.enterprise)
       setCostCenterBudgetsByName(allBudgets.costCenterBudgetsByName)
       setUsageSummary(summaryResult[0])
       applyWarnings(
-        [seatResult[1], ccResult[1], summaryResult[1]].filter(
+        [seatResult[1], orgPlanResult[1], ccResult[1], summaryResult[1]].filter(
           (w): w is PartialLoadWarning => w !== null,
         ),
       )
@@ -352,6 +405,7 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
     setBudgets([])
     setTotalBudgetCount(0)
     setSeats([])
+    setOrgPlans(new Map())
     setCostCenters([])
     setUniversalUlb(null)
     setEnterpriseBudget(null)
@@ -513,6 +567,7 @@ export function CredentialsProvider({ children }: { children: ReactNode }) {
     setCostCenterBudgetsByName,
     usageSummary,
     usageByCostCenterId,
+    orgPlans,
     loading,
     loadProgress,
     error,

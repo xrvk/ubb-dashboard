@@ -31,7 +31,13 @@ function ccBudgetMap(...budgets: CostCenterBudget[]): Map<string, CostCenterBudg
 }
 
 function seat(login: string, orgLogin: string | null = null): CopilotSeat {
-  return { login, orgLogin, lastActivityAt: null, planType: 'business' }
+  return {
+    login,
+    orgLogin,
+    orgLogins: orgLogin ? [orgLogin] : [],
+    lastActivityAt: null,
+    planType: 'business',
+  }
 }
 
 function entBudget(amount: number, exclude = false): EnterpriseBudget {

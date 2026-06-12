@@ -19,6 +19,7 @@ import { NAV_TO_BUDGET_MODEL_EVENT } from '../lib/navEvents'
 const seat = (login: string, orgLogin: string | null = 'org1'): CopilotSeat => ({
   login,
   orgLogin,
+  orgLogins: orgLogin ? [orgLogin] : [],
   lastActivityAt: null,
   planType: null,
 })
