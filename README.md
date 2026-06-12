@@ -23,6 +23,9 @@ _Runs entirely in your browser. Your enterprise URL and PAT stay in tab memory �
 >
 > Spend forecasts and the "Unblock for the month" projection are best-effort recommendations based on the daily spend rate observed so far this billing cycle. **Past usage patterns may not predict future usage.** GitHub may change pricing, credit allocations, or billing mechanics at any time. Always verify recommendations against [GitHub's official documentation](https://docs.github.com/en/copilot/managing-copilot/managing-github-copilot-in-your-organization/managing-the-spending-policy-for-github-copilot-in-your-organization) and your own billing data before applying changes.
 
+> [!NOTE]
+> **No GitHub Enterprise?** This dashboard targets the **enterprise** billing API and needs an enterprise slug + `manage_billing:enterprise` PAT scope. If you're on a standalone GitHub organization (no enterprise above it), use the org variant instead: **[xrvk/ubb-dashboard-org](https://github.com/xrvk/ubb-dashboard-org)**.
+
 ---
 
 ## 📸 Screenshots
@@ -207,100 +210,7 @@ The fastest way to try the app is the **hosted version** — no install required
 
 > 🌐 **[xrvk.github.io/ubb-dashboard](https://xrvk.github.io/ubb-dashboard/)**
 
-To run it locally instead:
-
-```bash
-git clone https://github.com/xrvk/ubb-dashboard.git
-cd ubb-dashboard
-npm install
-npm run dev   # http://localhost:5003
-```
-
-### Optional: auto-connect for dev
-
-Create `.env.local` to pre-fill the import form and skip the connect screen:
-
-```bash
-VITE_DEV_ENTERPRISE_URL=https://your-host/enterprises/your-slug
-VITE_DEV_PAT=ghp_xxxxxxxxxxxxxxxxx
-```
-
-This file is gitignored and never persisted anywhere else.
-
-#### Multiple profiles (dev only)
-
-If you regularly bounce between enterprises (e.g. a staging GHE.com tenant + a production GHEC enterprise), drop one file per profile alongside `.env.local`:
-
-```bash
-# .env.acme-staging.local
-VITE_DEV_ENTERPRISE_URL=https://your-host.example.com/enterprises/your-slug
-VITE_DEV_PAT=ghp_xxxxxxxxxxxxxxxxx
-
-# .env.acme.local
-VITE_DEV_ENTERPRISE_URL=https://github.com/enterprises/acme
-VITE_DEV_PAT=ghp_yyyyyyyyyyyyyyyyy
-```
-
-Any file matching `.env.<slug>.local` with both vars set will appear under **Switch profile** in the connection menu pill at the top of the app. The `<slug>` becomes the profile name. Selecting one disconnects the current session and reconnects against the new enterprise.
-
-This is wired up by a small Vite dev-server middleware ([`vite.config.ts`](./vite.config.ts) exposes `/__dev_profiles`), so the mechanism **only exists in `npm run dev`** — production builds never read these files and never expose this endpoint. All `.env*.local` files are gitignored.
-
-We deliberately don't ship an in-app "Add enterprise" UI for the deployed dashboard. PATs live in memory only on the deployed app; persisting them to `localStorage` would expand the XSS blast radius without a strong product justification. If you self-host and want multiple enterprises, this `.env` pattern is the supported workflow.
-
-### Run with Docker
-
-A multi-stage `Dockerfile` builds the static bundle and serves it with nginx. A dev variant runs the Vite dev server with HMR.
-
-**Pull the published image** (built on every push to `main` by [`.github/workflows/docker.yml`](.github/workflows/docker.yml)):
-
-```bash
-docker run --rm -p 5003:80 ghcr.io/xrvk/ubb-dashboard:latest
-# → http://localhost:5003
-```
-
-Tags published to GHCR:
-
-| Tag | Meaning |
-|---|---|
-| `latest` | Tip of `main` |
-| `sha-<short>` | A specific commit |
-| `vX.Y.Z` | Released git tag |
-| `main` | Same as `latest` |
-
-**Build locally with compose:**
-
-```bash
-docker compose up --build              # → http://localhost:5003
-```
-
-**Dev (Vite + HMR, source mounted):**
-
-```bash
-docker compose --profile dev up --build dev
-```
-
-`.env.local` is picked up automatically by the dev profile if present.
-
-#### Am I running the latest image?
-
-Each image bakes its git SHA into `/version.json` and into the OCI `org.opencontainers.image.revision` label.
-
-```bash
-# What your running container is serving:
-curl -s http://localhost:5003/version.json
-# → {"sha":"8ff1a47...","ref":"main","builtAt":"2026-05-29T05:00:00Z"}
-
-# What's currently on `:latest` in GHCR:
-docker pull ghcr.io/xrvk/ubb-dashboard:latest
-docker inspect ghcr.io/xrvk/ubb-dashboard:latest \
-  --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}'
-```
-
-If the two SHAs match, you're on the latest image. Otherwise:
-
-```bash
-docker compose pull && docker compose up -d
-```
+Prefer to run it yourself? See **[`docs/self-hosting.md`](./docs/self-hosting.md)** for Docker, local clone, env profiles, and the API endpoints the app calls.
 
 ### Try without an enterprise
 
@@ -324,6 +234,8 @@ The Import panel needs two things:
 2. **Classic personal access token** with the `manage_billing:enterprise` scope.
 
 > Fine-grained tokens are **not** supported on the enterprise billing API. This is a platform limitation, not an app limitation.
+>
+> Don't have a GitHub Enterprise? Use the org-scoped variant: **[xrvk/ubb-dashboard-org](https://github.com/xrvk/ubb-dashboard-org)**.
 
 On connect, the app fetches every budget and every Copilot seat in your enterprise (both are paginated up to the platform's ~10,000 budget cap and seat count). It does this once on connect and again per Refresh.
 
@@ -345,22 +257,7 @@ https://xrvk.github.io/ubb-dashboard/?ent=acme-corp
 https://xrvk.github.io/ubb-dashboard/?ent=https://acme.ghe.com/enterprises/acme-corp
 ```
 
-See [`docs/url-parameters.md`](./docs/url-parameters.md) for the full list of supported parameters (most are for development and testing).
-
-### Endpoints used
-
-All requests go to `{api-base}/enterprises/{ent}/...`:
-
-| Method | Path | Purpose |
-|---|---|---|
-| `GET` | `/settings/billing/budgets?per_page=100&page=N` | List every budget (enterprise, cost-center, universal, individual) |
-| `GET` | `/copilot/billing/seats?per_page=100&page=N` | Power the Add UBB autocomplete |
-| `GET` | `/settings/billing/cost-centers` | Cost-center attribution + budgets tab |
-| `PATCH` | `/settings/billing/budgets/{id}` | Update any budget (always with `prevent_further_usage: true` for user-scope) |
-| `POST` | `/settings/billing/budgets` | Create a new user-scope budget |
-| `DELETE` | `/settings/billing/budgets/{id}` | Remove a user-scope budget |
-
-Header `X-GitHub-Api-Version: 2026-03-10` is set automatically.
+See [`docs/url-parameters.md`](./docs/url-parameters.md) for the full list of supported parameters (most are for development and testing), and [`docs/self-hosting.md`](./docs/self-hosting.md#api-endpoints) for the underlying API endpoints the app calls.
 
 ---
 
@@ -416,19 +313,7 @@ src/
     └── utils.ts                    # cn(), formatCurrency, formatPercent
 ```
 
-### Scripts
-
-| Script | Description |
-|---|---|
-| `npm run dev` | Vite dev server on port 5003 |
-| `npm run build` | Type-check + production build |
-| `npm run typecheck` | `tsc -b` only (fast TS feedback without bundling) |
-| `npm run lint` | ESLint (strict, must pass with 0 errors) |
-| `npm test` | Vitest, one shot (~1s for full suite) |
-| `npm run test:watch` | Vitest watch mode |
-| `npm run test:changed` | Only re-run tests for files changed since `main` |
-| `npm run test:related <file>…` | Only run tests covering the given source files |
-| `npm run verify` | typecheck + lint + test in parallel — local pre-PR check |
+See [`docs/self-hosting.md#npm-scripts`](./docs/self-hosting.md#npm-scripts) for the full list of `npm` scripts (dev, build, typecheck, lint, test, verify).
 
 ---
 
