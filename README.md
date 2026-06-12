@@ -214,13 +214,13 @@ Prefer to run it yourself? See **[`docs/self-hosting.md`](./docs/self-hosting.md
 
 ### Try without an enterprise
 
-The app ships with a synthetic-data mode for trying the UI at scale:
+The app ships with a synthetic-data mode for trying the UI at scale. Append `?demo=N` to any deployment (hosted, Docker, or local dev):
 
 | URL | What it does |
 |---|---|
-| http://localhost:5003/?demo=50 | Small, realistic enterprise |
-| http://localhost:5003/?demo=900 | Mid-size: paginated table, full histogram |
-| http://localhost:5003/?demo=9800 | Stress test: rate-limit pre-flight, progress UI |
+| [xrvk.github.io/ubb-dashboard/?demo=50](https://xrvk.github.io/ubb-dashboard/?demo=50) | Small, realistic enterprise |
+| [xrvk.github.io/ubb-dashboard/?demo=900](https://xrvk.github.io/ubb-dashboard/?demo=900) | Mid-size: paginated table, full histogram |
+| [xrvk.github.io/ubb-dashboard/?demo=9800](https://xrvk.github.io/ubb-dashboard/?demo=9800) | Stress test: rate-limit pre-flight, progress UI |
 
 Demo mode generates believable user distributions (~70% low / 15% moderate / 7% getting close / 5% about to block / 3% over) and stubs all writes with toast notifications so you can click around without consequence.
 
