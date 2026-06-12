@@ -123,16 +123,15 @@ export function seatCostBreakdown(
   let business = 0
   let enterprise = 0
   let other = 0
+  // An empty `orgPlans` map means the rollup never loaded (demo mode, or
+  // every call failed). Treat that the same as omitted so callers don't
+  // need a sentinel check at every call site.
+  const useOrgPlans = orgPlans !== undefined && orgPlans.size > 0
   for (const s of seats) {
-    if (orgPlans) {
+    if (useOrgPlans) {
       let hasEnterprise = false
-      const orgs = s.orgLogins.length > 0
-        ? s.orgLogins
-        : s.orgLogin
-          ? [s.orgLogin]
-          : []
-      for (const org of orgs) {
-        if (orgPlans.get(org.toLowerCase()) === 'enterprise') {
+      for (const org of s.orgLogins) {
+        if (orgPlans!.get(org.toLowerCase()) === 'enterprise') {
           hasEnterprise = true
           break
         }

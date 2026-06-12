@@ -992,9 +992,10 @@ export function enterpriseSeatsUrl(apiBase: string, ent: string): string {
 export interface CopilotSeat {
   login: string
   /**
-   * First org observed to grant this user a seat. Kept for back-compat with
-   * downstream code that wants a single org for display / cost-center
-   * resolution. `null` for enterprise-team-granted seats with no org.
+   * First non-null org observed to grant this user a seat. Kept for
+   * back-compat with downstream code that wants a single org for display
+   * or cost-center resolution. `null` only when every seat for this user
+   * is enterprise-team-granted with no org.
    */
   orgLogin: string | null
   /**
@@ -1259,6 +1260,11 @@ export async function fetchAllCopilotSeats(apiFetch: ApiFetch): Promise<CopilotS
   // Dedupe by login but capture every distinct org that granted this user a
   // seat. `seatCostBreakdown` needs the full org set to pick the user's
   // highest billed tier (CE wins over CB) via per-org plan rollup.
+  // `orgLogin` is kept on the seat for back-compat callers (it's used as
+  // the org-inherited cost-center fallback in `resolveCostCenter`); we
+  // promote it from `null` to the first non-null org we see so a user
+  // whose first observation was an enterprise-team seat still resolves to
+  // a CC via the org they later appear in.
   const byLogin = new Map<string, CopilotSeat>()
   for (const s of all) {
     const login = s.assignee?.login
@@ -1273,8 +1279,14 @@ export async function fetchAllCopilotSeats(apiFetch: ApiFetch): Promise<CopilotS
         lastActivityAt: s.last_activity_at ?? null,
         planType: s.plan_type ?? null,
       })
-    } else if (orgLogin && !existing.orgLogins.includes(orgLogin)) {
+      continue
+    }
+    if (!orgLogin) continue
+    if (!existing.orgLogins.includes(orgLogin)) {
       existing.orgLogins.push(orgLogin)
+    }
+    if (existing.orgLogin === null) {
+      existing.orgLogin = orgLogin
     }
   }
   return Array.from(byLogin.values())
@@ -1297,10 +1309,16 @@ const ORG_PLAN_CONCURRENCY = 8
  * tier in mixed enterprises, but the per-org billing endpoint reflects the
  * org's real subscription.
  *
- * Failures (404, forbidden, network) bucket the org as `'unknown'` so the
- * caller can decide how to treat it — `seatCostBreakdown` falls back to CB
- * for unknown orgs since CE seats only come from CE-plan orgs and
- * enterprise teams default to CB.
+ * Responses without a recognized plan are recorded as `'unknown'`, which
+ * `seatCostBreakdown` treats as CB (CE seats only come from CE-plan orgs;
+ * enterprise teams default to CB).
+ *
+ * Per-org HTTP/network failures are aggregated and rethrown as a single
+ * error once the fan-out completes, so the caller (`loadWithWarning`)
+ * surfaces the partial-load warning and the dashboard falls back to the
+ * legacy per-seat `planType` classifier. Silently bucketing failures as
+ * `'unknown'` would mask outage/auth conditions and downgrade affected
+ * orgs' CE seats to CB without the user noticing.
  *
  * Concurrency-bounded to stay under GitHub's secondary rate limit on
  * enterprises with many orgs.
@@ -1311,6 +1329,7 @@ export async function fetchOrgCopilotPlans(
 ): Promise<Map<string, OrgPlanType>> {
   const unique = Array.from(new Set(orgs.map(o => o.toLowerCase()).filter(Boolean)))
   const out = new Map<string, OrgPlanType>()
+  const failures: { org: string; error: unknown }[] = []
   await mapWithConcurrency(unique, ORG_PLAN_CONCURRENCY, async org => {
     try {
       const data = (await apiFetch(
@@ -1320,9 +1339,18 @@ export async function fetchOrgCopilotPlans(
       if (raw.includes('enterprise')) out.set(org, 'enterprise')
       else if (raw.includes('business')) out.set(org, 'business')
       else out.set(org, 'unknown')
-    } catch {
-      out.set(org, 'unknown')
+    } catch (error) {
+      failures.push({ org, error })
     }
   })
+  if (failures.length > 0) {
+    const sample = failures.slice(0, 3).map(f => f.org).join(', ')
+    const more = failures.length > 3 ? ` (+${failures.length - 3} more)` : ''
+    const cause = failures[0].error
+    throw new Error(
+      `Failed to fetch Copilot plan for ${failures.length} of ${unique.length} org(s): ${sample}${more}`,
+      { cause: cause instanceof Error ? cause : undefined },
+    )
+  }
   return out
 }

@@ -227,6 +227,23 @@ describe('fetchAllCopilotSeats pagination', () => {
     expect(bob.orgLogins).toEqual([])
     expect(bob.orgLogin).toBeNull()
   })
+
+  it('upgrades orgLogin from null when a later observation has an org', async () => {
+    // A user whose first observation is an enterprise-team seat (no org)
+    // still gets `orgLogin` populated from a later org-scoped seat, so the
+    // CC org-inherited resolution can see them.
+    const fetchMock: ApiFetch = vi.fn(async () => ({
+      total_seats: 2,
+      seats: [
+        { assignee: { login: 'carol' }, organization: undefined },
+        { assignee: { login: 'carol' }, organization: { login: 'org-x' } },
+      ],
+    }))
+    const result = await fetchAllCopilotSeats(fetchMock)
+    const carol = result.find(s => s.login === 'carol')!
+    expect(carol.orgLogin).toBe('org-x')
+    expect(carol.orgLogins).toEqual(['org-x'])
+  })
 })
 
 describe('fetchOrgCopilotPlans', () => {
@@ -251,14 +268,24 @@ describe('fetchOrgCopilotPlans', () => {
     expect(calls).toBe(1)
   })
 
-  it('buckets failures (404, network) as unknown without rejecting the batch', async () => {
+  it('throws when any per-org fetch fails, so callers fall back to legacy', async () => {
+    // Silently bucketing failures as `unknown` would downgrade those orgs'
+    // CE seats to CB without the partial-load warning firing. Surface the
+    // failure instead and let `loadWithWarning` handle it.
     const fetchMock: ApiFetch = vi.fn(async (path: string) => {
       if (path.includes('/orgs/good/')) return { plan_type: 'enterprise' }
       throw new Error('boom')
     })
-    const plans = await fetchOrgCopilotPlans(fetchMock, ['good', 'broken'])
-    expect(plans.get('good')).toBe('enterprise')
-    expect(plans.get('broken')).toBe('unknown')
+    await expect(fetchOrgCopilotPlans(fetchMock, ['good', 'broken'])).rejects.toThrow(
+      /Failed to fetch Copilot plan for 1 of 2 org\(s\): broken/,
+    )
+  })
+
+  it('returns an empty map for an empty input without hitting the API', async () => {
+    const fetchMock: ApiFetch = vi.fn(async () => ({ plan_type: 'business' }))
+    const plans = await fetchOrgCopilotPlans(fetchMock, [])
+    expect(plans.size).toBe(0)
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 
   it('treats unrecognized plan_type strings as unknown', async () => {
@@ -419,6 +446,34 @@ function mockFetchResponse(spec: MockResponseSpec): Response {
     text: async () => spec.body ?? '',
   } as unknown as Response
 }
+
+describe('createApiFetch path prefixes', () => {
+  // The `enterprise:` and `path:` prefixes are how callers bypass the
+  // default `/enterprises/{ent}/settings/billing` scope to hit other
+  // enterprise endpoints (e.g. /copilot/billing/seats) or wholly
+  // different scopes (e.g. /orgs/{org}/copilot/billing).
+  let fetchSpy: ReturnType<typeof vi.spyOn>
+  const fetcher = createApiFetch({ base: 'https://api.github.com', ent: 'acme', token: 't' })
+  beforeEach(() => {
+    fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(mockFetchResponse({ status: 200, body: '{}' }))
+  })
+  afterEach(() => fetchSpy.mockRestore())
+
+  it('default prefix is /enterprises/{ent}/settings/billing', async () => {
+    await fetcher('/budgets')
+    expect(fetchSpy).toHaveBeenCalledWith('https://api.github.com/enterprises/acme/settings/billing/budgets', expect.anything())
+  })
+
+  it('"enterprise:" prefix drops the /settings/billing path segment', async () => {
+    await fetcher('enterprise:/copilot/billing/seats')
+    expect(fetchSpy).toHaveBeenCalledWith('https://api.github.com/enterprises/acme/copilot/billing/seats', expect.anything())
+  })
+
+  it('"path:" prefix targets an absolute path off the API root', async () => {
+    await fetcher('path:/orgs/my-org/copilot/billing')
+    expect(fetchSpy).toHaveBeenCalledWith('https://api.github.com/orgs/my-org/copilot/billing', expect.anything())
+  })
+})
 
 describe('createApiFetch typed-error mapping', () => {
   let fetchSpy: ReturnType<typeof vi.spyOn>

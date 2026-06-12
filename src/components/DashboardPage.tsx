@@ -78,13 +78,10 @@ export function DashboardPage() {
 
   const demoAsof = useMemo(() => getEffectiveDemoAsof() ?? undefined, [])
   const forecast = useMemo(() => forecastSummary(budgets, demoAsof), [budgets, demoAsof])
-  // Pass `orgPlans` when the per-org rollup loaded; an empty map means demo
-  // mode or a failed rollup, in which case we fall back to per-seat
-  // `planType` classification (legacy path).
-  const seatCost = useMemo(
-    () => seatCostBreakdown(seats, orgPlans.size > 0 ? orgPlans : undefined),
-    [seats, orgPlans],
-  )
+  // `seatCostBreakdown` reads `orgPlans` when populated and falls back to
+  // the legacy per-seat `planType` matcher when the map is empty (demo mode
+  // or a failed rollup).
+  const seatCost = useMemo(() => seatCostBreakdown(seats, orgPlans), [seats, orgPlans])
 
   /** How many seats are covered by an individual ULB (have a user-scope budget). */
   const indCoverage = useMemo(() => {

@@ -244,4 +244,12 @@ describe('seatCostBreakdown with per-org plan rollup', () => {
     expect(r.business).toBe(1)
     expect(r.enterprise).toBe(0)
   })
+
+  it('treats an empty orgPlans map as "not supplied" (legacy path)', () => {
+    // Guards against demo / pre-load state wiping out CE classification
+    // when the rollup never ran.
+    const r = seatCostBreakdown([orgSeat('a', ['org-ce'])], new Map())
+    expect(r.business).toBe(1)
+    expect(r.enterprise).toBe(0)
+  })
 })

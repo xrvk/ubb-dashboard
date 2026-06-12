@@ -173,9 +173,10 @@ interface CredentialsContextValue {
    * GHEC admin UI uses for its CB/CE counts. `seatCostBreakdown` consumes
    * this to classify seats by their billed tier (CE wins over CB when a
    * user appears in both kinds of orgs). Empty when the rollup hasn't
-   * loaded yet, in demo mode, or when every org returned `unknown` — in
-   * those cases callers should pass `undefined` to fall back to the
-   * legacy per-seat `planType` classifier.
+   * loaded yet, in demo mode, or when the rollup failed (any per-org
+   * failure rejects the whole fetch and the partial-load warning fires).
+   * `seatCostBreakdown` treats an empty map as "not provided" and falls
+   * back to the legacy per-seat `planType` classifier.
    */
   orgPlans: ReadonlyMap<string, OrgPlanType>
   /**
