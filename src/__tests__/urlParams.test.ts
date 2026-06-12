@@ -17,18 +17,78 @@ describe('readEnterpriseUrlFromUrl', () => {
     expect(readEnterpriseUrlFromUrl()).toBe('https://github.com/enterprises/acme')
   })
 
-  it('passes through a full github.com enterprise URL unchanged', () => {
+  it('normalizes a scheme-less GHE.com enterprise URL', () => {
+    setSearch('?ent=acme.ghe.com/enterprises/acme-corp')
+    expect(readEnterpriseUrlFromUrl()).toBe('https://acme.ghe.com/enterprises/acme-corp')
+  })
+
+  it('lowercases the host in a scheme-less enterprise URL', () => {
+    setSearch('?ent=ACME.GHE.COM/enterprises/acme-corp')
+    expect(readEnterpriseUrlFromUrl()).toBe('https://acme.ghe.com/enterprises/acme-corp')
+  })
+
+  it('accepts a scheme-less github.com enterprise URL', () => {
+    setSearch('?ent=github.com/enterprises/octo')
+    expect(readEnterpriseUrlFromUrl()).toBe('https://github.com/enterprises/octo')
+  })
+
+  it('tolerates trailing path segments on a scheme-less URL', () => {
+    setSearch('?ent=acme.ghe.com/enterprises/acme-corp/settings')
+    expect(readEnterpriseUrlFromUrl()).toBe('https://acme.ghe.com/enterprises/acme-corp')
+  })
+
+  it('rejects a scheme-less URL on an untrusted host', () => {
+    setSearch('?ent=example.com/enterprises/foo')
+    expect(readEnterpriseUrlFromUrl()).toBeNull()
+  })
+
+  it('rejects a value that has slashes but no /enterprises/ segment', () => {
+    setSearch('?ent=acme.ghe.com/acme-corp')
+    expect(readEnterpriseUrlFromUrl()).toBeNull()
+  })
+
+  it('still accepts a legacy full github.com enterprise URL', () => {
     setSearch('?ent=https%3A%2F%2Fgithub.com%2Fenterprises%2Focto')
     expect(readEnterpriseUrlFromUrl()).toBe('https://github.com/enterprises/octo')
   })
 
-  it('passes through a full GHE.com enterprise URL unchanged', () => {
+  it('still accepts a legacy full GHE.com enterprise URL', () => {
     setSearch('?ent=https%3A%2F%2Facme.ghe.com%2Fenterprises%2Facme')
     expect(readEnterpriseUrlFromUrl()).toBe('https://acme.ghe.com/enterprises/acme')
   })
 
-  it('rejects a URL on an untrusted host', () => {
+  it('rejects a legacy URL on an untrusted host', () => {
     setSearch('?ent=https%3A%2F%2Fexample.com%2Ffoo')
+    expect(readEnterpriseUrlFromUrl()).toBeNull()
+  })
+
+  it('rejects a legacy URL on an untrusted host that has the right path shape', () => {
+    setSearch('?ent=https%3A%2F%2Fexample.com%2Fenterprises%2Facme')
+    expect(readEnterpriseUrlFromUrl()).toBeNull()
+  })
+
+  it('accepts a legacy URL with extra path segments after the slug', () => {
+    setSearch('?ent=https%3A%2F%2Fgithub.com%2Fenterprises%2Focto%2Fsettings%2Fbilling')
+    expect(readEnterpriseUrlFromUrl()).toBe('https://github.com/enterprises/octo')
+  })
+
+  it('accepts a legacy URL with a query string or fragment', () => {
+    setSearch('?ent=https%3A%2F%2Fgithub.com%2Fenterprises%2Focto%3Ftab%3Dx%23frag')
+    expect(readEnterpriseUrlFromUrl()).toBe('https://github.com/enterprises/octo')
+  })
+
+  it('accepts an uppercase HTTPS scheme on legacy URLs', () => {
+    setSearch('?ent=HTTPS%3A%2F%2Fgithub.com%2Fenterprises%2Focto')
+    expect(readEnterpriseUrlFromUrl()).toBe('https://github.com/enterprises/octo')
+  })
+
+  it('rejects a scheme-less URL with an empty slug', () => {
+    setSearch('?ent=acme.ghe.com/enterprises/')
+    expect(readEnterpriseUrlFromUrl()).toBeNull()
+  })
+
+  it('rejects a scheme-less URL with an empty host', () => {
+    setSearch('?ent=/enterprises/acme')
     expect(readEnterpriseUrlFromUrl()).toBeNull()
   })
 
@@ -64,15 +124,29 @@ describe('buildShareableEnterpriseUrl', () => {
     )
   })
 
-  it('uses the full-URL form for GHE.com tenants', () => {
+  it('uses the scheme-less enterprise URL form for GHE.com tenants', () => {
     const creds: Credentials = { base: 'https://api.acme.ghe.com', ent: 'acme-corp', token: 't' }
     expect(buildShareableEnterpriseUrl(creds, origin, pathname)).toBe(
-      'https://xrvk.github.io/ubb-dashboard/?ent=https%3A%2F%2Facme.ghe.com%2Fenterprises%2Facme-corp',
+      'https://xrvk.github.io/ubb-dashboard/?ent=acme.ghe.com/enterprises/acme-corp',
     )
   })
 
   it('returns null for demo credentials', () => {
     const creds: Credentials = { base: 'demo://', ent: 'demo-150', token: 'demo' }
+    expect(buildShareableEnterpriseUrl(creds, origin, pathname)).toBeNull()
+  })
+
+  it('returns null when the connected host is outside the allowlist', () => {
+    const creds: Credentials = { base: 'https://api.example.com', ent: 'acme', token: 't' }
+    expect(buildShareableEnterpriseUrl(creds, origin, pathname)).toBeNull()
+  })
+
+  it('returns null when the enterprise slug contains unsafe characters', () => {
+    const creds: Credentials = {
+      base: 'https://api.acme.ghe.com',
+      ent: 'acme corp/x',
+      token: 't',
+    }
     expect(buildShareableEnterpriseUrl(creds, origin, pathname)).toBeNull()
   })
 })

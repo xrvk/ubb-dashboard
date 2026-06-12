@@ -251,10 +251,10 @@ Manual construction works too:
 https://xrvk.github.io/ubb-dashboard/?ent=acme-corp
 ```
 
-**GHE.com (data residency tenants):** use the full URL form so the link routes to the right host.
+**GHE.com (data residency tenants):** drop the `https://` from your enterprise URL.
 
 ```
-https://xrvk.github.io/ubb-dashboard/?ent=https://acme.ghe.com/enterprises/acme-corp
+https://xrvk.github.io/ubb-dashboard/?ent=acme.ghe.com/enterprises/acme-corp
 ```
 
 See [`docs/url-parameters.md`](./docs/url-parameters.md) for the full list of supported parameters (most are for development and testing), and [`docs/self-hosting.md`](./docs/self-hosting.md#api-endpoints) for the underlying API endpoints the app calls.
