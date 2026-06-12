@@ -2,7 +2,7 @@
 
 **Monitor and manage GitHub Copilot AI-credit budgets across your enterprise — from the pool down to a single user.**
 
-_A single browser tab to see your enterprise budget, size a universal UBB from real usage, manage individual UBBs at scale, and unblock thousands of users in one click. No backend._
+_A single browser tab to see your enterprise budget, size a universal ULB from real usage, manage individual ULBs at scale, and unblock thousands of users in one click. No backend._
 
 [![License](https://img.shields.io/badge/license-MIT-22c55e?style=for-the-badge)](LICENSE)
 [![React](https://img.shields.io/badge/react-19-61DAFB?style=for-the-badge&logo=react&logoColor=white)](https://react.dev)
@@ -19,7 +19,7 @@ _Runs entirely in your browser. Your enterprise URL and PAT stay in tab memory �
 ---
 
 > [!IMPORTANT]
-> **Disclaimer:** This tool is an independent, personal project built by a GitHub Solutions Engineer to help customers and the broader community manage GitHub Copilot user-level budgets (UBBs). It is **not** an official GitHub product, does not represent GitHub's views, and is not endorsed or supported by GitHub.
+> **Disclaimer:** This tool is an independent, personal project built by a GitHub Solutions Engineer to help customers and the broader community manage GitHub Copilot user-level budgets (ULBs). It is **not** an official GitHub product, does not represent GitHub's views, and is not endorsed or supported by GitHub.
 >
 > Spend forecasts and the "Unblock for the month" projection are best-effort recommendations based on the daily spend rate observed so far this billing cycle. **Past usage patterns may not predict future usage.** GitHub may change pricing, credit allocations, or billing mechanics at any time. Always verify recommendations against [GitHub's official documentation](https://docs.github.com/en/copilot/managing-copilot/managing-github-copilot-in-your-organization/managing-the-spending-policy-for-github-copilot-in-your-organization) and your own billing data before applying changes.
 
@@ -35,24 +35,24 @@ _Runs entirely in your browser. Your enterprise URL and PAT stay in tab memory �
 | [![Dashboard](docs/dashboard-overview.png)](docs/dashboard-overview.png) | [![Enterprise Budgets](docs/enterprise-budgets.png)](docs/enterprise-budgets.png) |
 | Pool drawdown, licenses, and end-of-month spend forecast | Hierarchy view with hard-cap validation across enterprise + cost centers |
 
-| Universal UBB | Individual UBBs |
+| Universal ULB | Individual ULBs |
 |:-:|:-:|
-| [![Universal UBB](docs/universal-ubb.png)](docs/universal-ubb.png) | [![Individual UBBs](docs/individual-ubbs.png)](docs/individual-ubbs.png) |
+| [![Universal ULB](docs/universal-ubb.png)](docs/universal-ubb.png) | [![Individual ULBs](docs/individual-ubbs.png)](docs/individual-ubbs.png) |
 | Size your universal cap from real CSV usage using a Top 5/10/15% cutoff | Utilization histogram, status badges, and bulk-unblock at scale |
 
 ---
 
 ## 🎯 Why this exists
 
-GitHub Copilot's usage-based billing gives enterprise admins **four layered controls**: the prepaid AI-credit pool from your seats, an enterprise spending limit, optional cost-center budgets, and per-user budgets (a single **universal UBB** plus per-user **individual UBBs**). Each layer is configurable in the native UI, but operating them together at scale is hard:
+GitHub Copilot's usage-based billing gives enterprise admins **four layered controls**: the prepaid AI-credit pool from your seats, an enterprise spending limit, optional cost-center budgets, and per-user budgets (a single **universal ULB** plus per-user **individual ULBs**). Each layer is configurable in the native UI, but operating them together at scale is hard:
 
 - The native UI shows one budget at a time. There is no single view of the pool, the enterprise envelope, the cost centers, and every per-user cap.
 - There is no built-in spend forecast — you can see consumed-to-date but not projected end-of-month.
-- There is no recommended size for the universal UBB. You guess, or you write a script to pull billing CSVs and compute the distribution yourself.
-- There is no "who's over?" view for individual UBBs, and no bulk way to raise caps when a sprint pushes hundreds of users over their per-user limit.
+- There is no recommended size for the universal ULB. You guess, or you write a script to pull billing CSVs and compute the distribution yourself.
+- There is no "who's over?" view for individual ULBs, and no bulk way to raise caps when a sprint pushes hundreds of users over their per-user limit.
 - The API works, but you have to write the script, handle pagination, handle 429s, snapshot before/after for rollback, and survive a single failure.
 
-This app puts the whole budget hierarchy on one screen, **forecasts** spend, **sizes** the universal cap from your real usage, and **bulk-edits** individual UBBs with rate-limit-aware batching so you can safely apply 5,000+ updates from your browser.
+This app puts the whole budget hierarchy on one screen, **forecasts** spend, **sizes** the universal cap from your real usage, and **bulk-edits** individual ULBs with rate-limit-aware batching so you can safely apply 5,000+ updates from your browser.
 
 ---
 
@@ -60,7 +60,7 @@ This app puts the whole budget hierarchy on one screen, **forecasts** spend, **s
 
 | 📊 See | 🧮 Plan | 🚀 Apply at scale |
 |:--|:--|:--|
-| Pool drawdown vs. license contribution | Universal-UBB sizing from CSV usage | Multi-select with cross-page "select all matching" |
+| Pool drawdown vs. license contribution | Universal-ULB sizing from CSV usage | Multi-select with cross-page "select all matching" |
 | End-of-month spend forecast | Top 5 / 10 / 15 / Custom cutoff presets | "Unblock N users for the month" bulk dialog |
 | Forecast breakdown by Universal / Individual / Other | Enterprise + cost-center budget hierarchy | Projection math with per-row override |
 | Utilization histogram with 5 buckets | Hard-cap validation across the hierarchy | Live progress bar, ETA, and cancel |
@@ -79,7 +79,7 @@ Top-of-funnel view of where your Copilot money is going **right now**:
 - **AI Credit Pool & Licenses** — total AI credits per month, pool value at $0.01/credit, license-by-license breakdown of seats, $/seat, AICs/seat, and pool contribution. Promotional credit windows are surfaced inline.
 - **Pool drawdown** — animated bar showing how much of the pool has been consumed, with metered overflow above the pool callout.
 - **Spend forecast** — four-card row covering enterprise budget cap, spent month-to-date, projected end-of-month, and pool remaining.
-- **Forecast breakdown** — splits projected spend into Universal UBB, Individual UBBs, and Other/Unattributed so you can see where overflow is coming from.
+- **Forecast breakdown** — splits projected spend into Universal ULB, Individual ULBs, and Other/Unattributed so you can see where overflow is coming from.
 
 </details>
 
@@ -88,7 +88,7 @@ Top-of-funnel view of where your Copilot money is going **right now**:
 
 ![Enterprise Budgets](docs/enterprise-budgets.png)
 
-A single editor for every budget layer that lives **above** individual UBBs:
+A single editor for every budget layer that lives **above** individual ULBs:
 
 - **Budget structure diagram** at the top — visualizes the enterprise envelope and cost-center budgets, with the cost-center exclusion toggle surfaced inline.
 - **Enterprise budget** — the top-level envelope, with hard-cap enforcement and minimum value derived from the layers below it.
@@ -100,32 +100,32 @@ Edits are pushed via PATCH against the GitHub billing API. Drift on **Exclude co
 </details>
 
 <details>
-<summary><b>Universal UBB</b> — size your universal cap from real usage</summary>
+<summary><b>Universal ULB</b> — size your universal cap from real usage</summary>
 
-![Universal UBB](docs/universal-ubb.png)
+![Universal ULB](docs/universal-ubb.png)
 
-Pick the right universal UBB without guessing. Upload one or more months of detailed billing usage CSVs (exported from GitHub) and the app:
+Pick the right universal ULB without guessing. Upload one or more months of detailed billing usage CSVs (exported from GitHub) and the app:
 
 1. **Sizes each user off their biggest single month** across everything you loaded.
 2. **Plots the consumption curve** — sorted users on the X axis, AI-credit spend on the Y axis.
-3. **Recommends a split** between regular users (covered by the universal UBB) and outliers (who need an individual UBB) using Top 5%, Top 10%, Top 15%, or Custom cutoffs.
-4. **Lets you drag** the vertical cutoff line and the horizontal UBB line directly on the chart to fine-tune the recommendation.
+3. **Recommends a split** between regular users (covered by the universal ULB) and outliers (who need an individual ULB) using Top 5%, Top 10%, Top 15%, or Custom cutoffs.
+4. **Lets you drag** the vertical cutoff line and the horizontal ULB line directly on the chart to fine-tune the recommendation.
 
-A coverage card shows how many seats are **not** on an individual UBB and therefore fall under the universal cap. Edits to the cap apply with one click.
+A coverage card shows how many seats are **not** on an individual ULB and therefore fall under the universal cap. Edits to the cap apply with one click.
 
 </details>
 
 <details>
-<summary><b>Individual UBBs</b> — live utilization and bulk-unblock at scale</summary>
+<summary><b>Individual ULBs</b> — live utilization and bulk-unblock at scale</summary>
 
-![Individual UBBs](docs/individual-ubbs.png)
+![Individual ULBs](docs/individual-ubbs.png)
 
-Per-user UBB management at enterprise scale:
+Per-user ULB management at enterprise scale:
 
 - **Spend cards** — spend-to-date with day-of-cycle progress, projected end-of-month with headroom vs. total, and an at-risk count with already-over breakdown.
 - **Utilization histogram** — 5 buckets (0–50% / 50–80% / 80–90% / 90–100% / 100%+) that click-filter the table below.
 - **Searchable, sortable, paginated table** with status badges, cost-center column, budget min/max range filter, and over/near/ok quick filters.
-- **Add UBB** with searchable Copilot-seat autocomplete. Existing-UBB users are disabled in the picker.
+- **Add ULB** with searchable Copilot-seat autocomplete. Existing-ULB users are disabled in the picker.
 - **Single-row edit / delete** dialogs, always enforcing `prevent_further_usage: true`.
 - **Bulk unblock** dialog — see below.
 
@@ -281,7 +281,7 @@ src/
 │   ├── BudgetStructureDiagram.tsx  # Hierarchy visualization
 │   ├── ConstraintsBanner.tsx       # Overcommit warning
 │   ├── UniversalUbbPage.tsx        # CSV upload + consumption curve
-│   ├── ConsumptionCurve.tsx        # Draggable cutoff & UBB lines
+│   ├── ConsumptionCurve.tsx        # Draggable cutoff & ULB lines
 │   ├── EditUniversalUbbDialog.tsx
 │   ├── IndividualUbbPage.tsx       # Per-user table + histogram
 │   ├── IndividualUbbTaskBanner.tsx

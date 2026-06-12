@@ -1,6 +1,6 @@
 ## Value
 
-<!-- What does this change do for end users (admins managing individual UBBs)?
+<!-- What does this change do for end users (admins managing individual ULBs)?
      Describe the improvement they'll notice.
      If there is no direct user impact, describe the value for contributors or
      reviewers: better correctness, faster CI, clearer docs, etc. -->
