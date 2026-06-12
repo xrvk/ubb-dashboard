@@ -104,7 +104,7 @@ All requests go to `{api-base}/enterprises/{ent}/...`:
 | Method | Path | Purpose |
 |---|---|---|
 | `GET` | `/settings/billing/budgets?per_page=100&page=N` | List every budget (enterprise, cost-center, universal, individual) |
-| `GET` | `/copilot/billing/seats?per_page=100&page=N` | Power the Add UBB autocomplete |
+| `GET` | `/copilot/billing/seats?per_page=100&page=N` | Power the Add ULB autocomplete |
 | `GET` | `/settings/billing/cost-centers` | Cost-center attribution + budgets tab |
 | `PATCH` | `/settings/billing/budgets/{id}` | Update any budget (always with `prevent_further_usage: true` for user-scope) |
 | `POST` | `/settings/billing/budgets` | Create a new user-scope budget |

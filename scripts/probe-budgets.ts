@@ -211,11 +211,11 @@ async function main() {
     samples: pickSample(ccBudgets, 5),
   })
 
-  // --- Universal UBB ---
+  // --- Universal ULB ---
   const universal = budgets.filter(
     b => b.budget_scope === 'multi_user_customer' && b.budget_product_sku === 'ai_credits',
   )
-  summary('Universal UBB (multi_user_customer / ai_credits)', universal)
+  summary('Universal ULB (multi_user_customer / ai_credits)', universal)
 
   // --- User-scope ai_credits budgets ---
   const userBudgets = budgets.filter(
