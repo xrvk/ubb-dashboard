@@ -64,6 +64,11 @@ describe('fetchUserBudgets pagination', () => {
 
     // 10k total / 100 per page = 100 calls
     expect(fetchMock).toHaveBeenCalledTimes(TOTAL / PAGE_SIZE)
+    // Every request must ask for per_page=100; if the runtime ever drops back
+    // to a smaller request size this assertion catches it.
+    for (const call of (fetchMock as ReturnType<typeof vi.fn>).mock.calls) {
+      expect(String(call[0])).toMatch(/[?&]per_page=100\b/)
+    }
     // 9 of every 10 are user-scope
     expect(result.userBudgets).toHaveLength(TOTAL * 0.9)
     // Total budget count reflects the API's total_count (all scopes/types)
@@ -108,20 +113,26 @@ describe('fetchUserBudgets pagination', () => {
   })
 
   it('still loads every budget when the server returns smaller pages', async () => {
-    const TOTAL = 100
+    const TOTAL = 95
     const PAGE_SIZE = 10
     const fetchMock: ApiFetch = vi.fn(async path => {
       const m = String(path).match(/[?&]page=(\d+)/)
       const page = m ? Number(m[1]) : 1
       const start = (page - 1) * PAGE_SIZE
+      const remaining = Math.max(0, TOTAL - start)
+      const count = Math.min(PAGE_SIZE, remaining)
       return {
         total_count: TOTAL,
-        budgets: Array.from({ length: PAGE_SIZE }, (_, i) => fakeBudget(start + i, 'user')),
+        budgets: Array.from({ length: count }, (_, i) => fakeBudget(start + i, 'user')),
       }
     })
 
     const result = await fetchUserBudgets(fetchMock)
-    expect(fetchMock).toHaveBeenCalledTimes(TOTAL / PAGE_SIZE)
+    // 95 / 10 -> 10 pages, last one short.
+    expect(fetchMock).toHaveBeenCalledTimes(Math.ceil(TOTAL / PAGE_SIZE))
+    for (const call of (fetchMock as ReturnType<typeof vi.fn>).mock.calls) {
+      expect(String(call[0])).toMatch(/[?&]per_page=100\b/)
+    }
     expect(result.userBudgets).toHaveLength(TOTAL)
     expect(result.totalBudgetCount).toBe(TOTAL)
   })
