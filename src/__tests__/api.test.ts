@@ -41,9 +41,9 @@ function fakeBudget(i: number, scope: 'user' | 'enterprise' = 'user'): RawBudget
 }
 
 describe('fetchUserBudgets pagination', () => {
-  it('pages through the full list when the API returns 10 per page (10k budgets)', async () => {
+  it('pages through the full list when the API returns 100 per page (10k budgets)', async () => {
     const TOTAL = 10_000
-    const PAGE_SIZE = 10 // server-side cap
+    const PAGE_SIZE = 100 // current server behavior
     // 9 of every 10 are user-scope, 1 is enterprise (just to vary)
     const all: RawBudget[] = []
     for (let i = 0; i < TOTAL; i += 1) {
@@ -62,7 +62,7 @@ describe('fetchUserBudgets pagination', () => {
     const progress: Array<[number, number | undefined]> = []
     const result = await fetchUserBudgets(fetchMock, (loaded, total) => progress.push([loaded, total]))
 
-    // 10k total / 10 per page = 1000 calls
+    // 10k total / 100 per page = 100 calls
     expect(fetchMock).toHaveBeenCalledTimes(TOTAL / PAGE_SIZE)
     // 9 of every 10 are user-scope
     expect(result.userBudgets).toHaveLength(TOTAL * 0.9)
@@ -105,6 +105,25 @@ describe('fetchUserBudgets pagination', () => {
     expect(result.userBudgets.map(b => b.id)).toEqual(
       Array.from({ length: TOTAL }, (_, i) => `b${i}`),
     )
+  })
+
+  it('still loads every budget when the server returns smaller pages', async () => {
+    const TOTAL = 100
+    const PAGE_SIZE = 10
+    const fetchMock: ApiFetch = vi.fn(async path => {
+      const m = String(path).match(/[?&]page=(\d+)/)
+      const page = m ? Number(m[1]) : 1
+      const start = (page - 1) * PAGE_SIZE
+      return {
+        total_count: TOTAL,
+        budgets: Array.from({ length: PAGE_SIZE }, (_, i) => fakeBudget(start + i, 'user')),
+      }
+    })
+
+    const result = await fetchUserBudgets(fetchMock)
+    expect(fetchMock).toHaveBeenCalledTimes(TOTAL / PAGE_SIZE)
+    expect(result.userBudgets).toHaveLength(TOTAL)
+    expect(result.totalBudgetCount).toBe(TOTAL)
   })
 
   it('rejects when a later parallel page fails', async () => {

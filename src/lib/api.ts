@@ -428,10 +428,10 @@ async function fetchPagesInParallel<T>(
  * missing (defensive — the budgets endpoint always returns it today, but
  * a server change shouldn't quietly truncate our results).
  *
- * Note: the enterprise billing budgets endpoint historically ignored
- * `per_page` and returned ~10 items per page; recent versions honor it.
+ * Note: the enterprise billing budgets endpoint now honors `per_page`
+ * (up to 100/page). We still keep adaptive handling for host variance.
  * Either path handles both — parallel just uses the page-1 length as the
- * effective page size, so a 10/page response just means we issue more
+ * effective page size, so a smaller-page response just means we issue more
  * (still-parallel) requests. Capped at 1500 pages to support enterprises
  * at the platform cap (~10k budgets).
  */
