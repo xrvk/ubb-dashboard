@@ -35,16 +35,16 @@ just because GitHub's docs say it should be.
 
 | Endpoint | Honors `per_page=100`? | Page-1 total field | Typical page count |
 |---|---|---|---|
-| `/budgets` | ❌ — server returns 10 / page regardless | `total_count` | `ceil(total_count / 10)` (e.g. 35 budgets → 4 pages) |
+| `/budgets` | ✅ (up to 100 / page) | `total_count` | `ceil(total_count / 100)` (e.g. 235 budgets → 3 pages) |
 | `/copilot/billing/seats` | ✅ | `total_seats` | `ceil(total_seats / 100)` (e.g. 1,320 seats → 14 pages) |
 | `/cost-centers` | n/a | n/a — returns all in one shot | 1 |
 | `/usage/summary` | n/a | n/a — one document | 1 |
 
 The paginators in `api.ts` (`paginateAllBudgets`,
 `fetchAllCopilotSeats`) use page-1's length as the *effective* page
-size, so they behave correctly whether or not the server honors
-`per_page`. If a future endpoint changes its per-page default, the
-paginator adapts without code changes.
+size, so they behave correctly even if a host returns a smaller
+page size than requested. If a future endpoint changes its per-page
+default, the paginator adapts without code changes.
 
 ### Parallelization strategy
 
