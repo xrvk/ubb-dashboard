@@ -4,19 +4,28 @@ updates:
     directory: /
     schedule:
       interval: weekly
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 3
     groups:
-      dev-dependencies:
-        dependency-type: development
-      production-dependencies:
-        dependency-type: production
+      npm-dependencies:
+        patterns:
+          - "*"
 
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    open-pull-requests-limit: 3
+    groups:
+      github-actions-dependencies:
+        patterns:
+          - "*"
 
   - package-ecosystem: docker
     directory: /
     schedule:
       interval: weekly
+    open-pull-requests-limit: 3
+    groups:
+      docker-dependencies:
+        patterns:
+          - "*"
