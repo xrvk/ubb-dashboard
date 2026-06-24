@@ -298,17 +298,59 @@ describe('fetchOrgCopilotPlans', () => {
     expect(calls).toBe(1)
   })
 
-  it('throws when any per-org fetch fails, so callers fall back to legacy', async () => {
-    // Silently bucketing failures as `unknown` would downgrade those orgs'
-    // CE seats to CB without the partial-load warning firing. Surface the
-    // failure instead and let `loadWithWarning` handle it.
+  it('throws when any per-org fetch fails for non-404 reasons', async () => {
+    // Non-404 failures (network, 5xx, real 403 without SSO header) cannot be
+    // disambiguated and remain user-visible so the partial-load banner fires.
     const fetchMock: ApiFetch = vi.fn(async (path: string) => {
-      if (path.includes('/orgs/good/')) return { plan_type: 'enterprise' }
-      throw new Error('boom')
+      if (path.includes('/orgs/good/copilot/billing')) return { plan_type: 'enterprise' }
+      throw new ServerError(503, '{}')
     })
     await expect(fetchOrgCopilotPlans(fetchMock, ['good', 'broken'])).rejects.toThrow(
       /Failed to fetch Copilot plan for 1 of 2 org\(s\): broken/,
     )
+  })
+
+  it('treats genuine 404s (probe succeeds) as unknown without throwing', async () => {
+    // Enterprise-administered Copilot: the per-org subscription record does
+    // not exist, so the endpoint legitimately 404s for every org. The probe
+    // against `/orgs/{org}` succeeds, confirming the 404 is benign.
+    const fetchMock: ApiFetch = vi.fn(async (path: string) => {
+      if (path.includes('/copilot/billing')) throw new NotFoundError('{}')
+      // Bare `path:/orgs/{org}` probe: returns org metadata.
+      return { login: 'ent-managed-org' }
+    })
+    const plans = await fetchOrgCopilotPlans(fetchMock, ['ent-managed-org'])
+    expect(plans.get('ent-managed-org')).toBe('unknown')
+  })
+
+  it('throws OrgSsoUnauthorizedError when the probe reveals masked SSO 403s', async () => {
+    // SAML-enforced enterprise where the PAT lacks per-org SSO authorization.
+    // GitHub returns 404 on copilot/billing (existence-masked) but 403 with
+    // `x-github-sso: required; url=…` on the bare `/orgs/{org}` probe.
+    const ssoUrl = 'https://example.ghe.com/enterprises/x/sso?authorization_request=abc'
+    const fetchMock: ApiFetch = vi.fn(async (path: string) => {
+      if (path.includes('/copilot/billing')) throw new NotFoundError('{}')
+      throw new ScopeError(
+        '{"message":"Resource protected by organization SAML enforcement..."}',
+        { 'x-github-sso': `required; url=${ssoUrl}` },
+      )
+    })
+    await expect(fetchOrgCopilotPlans(fetchMock, ['locked-org', 'also-locked'])).rejects.toMatchObject({
+      name: 'OrgSsoUnauthorizedError',
+      orgs: ['locked-org', 'also-locked'],
+      authorizeUrl: ssoUrl,
+    })
+  })
+
+  it('treats a probe 404 (org genuinely invisible) as benign unknown', async () => {
+    // If the probe also 404s without an SSO header, we cannot distinguish
+    // "genuinely missing" from anything else; treat as benign rather than
+    // surfacing a banner the user cannot act on.
+    const fetchMock: ApiFetch = vi.fn(async () => {
+      throw new NotFoundError('{}')
+    })
+    const plans = await fetchOrgCopilotPlans(fetchMock, ['ghost-org'])
+    expect(plans.get('ghost-org')).toBe('unknown')
   })
 
   it('returns an empty map for an empty input without hitting the API', async () => {

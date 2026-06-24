@@ -52,6 +52,18 @@ export function PartialLoadBanner({ warnings, onDismiss }: Props) {
                     {w.suggestedAction}
                   </div>
                 ) : null}
+                {w.actionUrl ? (
+                  <div className="text-xs mt-1">
+                    <a
+                      href={w.actionUrl}
+                      target="_blank"
+                      rel="noreferrer noopener"
+                      className="underline font-medium text-amber-900 dark:text-amber-100 hover:text-amber-700 dark:hover:text-amber-200"
+                    >
+                      {w.actionLabel ?? 'Open link'} ↗
+                    </a>
+                  </div>
+                ) : null}
               </div>
               <Button
                 size="icon"

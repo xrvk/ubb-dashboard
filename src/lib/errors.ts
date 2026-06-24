@@ -140,6 +140,42 @@ export class AbortedError extends ApiError {
   }
 }
 
+/**
+ * Aggregated failure from `fetchOrgCopilotPlans` when one or more orgs returned
+ * masked-404s that a probe identified as missing SAML SSO authorization. Lists
+ * the affected orgs and an authorize URL extracted from the `x-github-sso`
+ * header so the UI can deep-link the user to the per-org consent screen rather
+ * than show a generic "Failed to fetch" message.
+ */
+export class OrgSsoUnauthorizedError extends ApiError {
+  readonly orgs: readonly string[]
+  readonly authorizeUrl: string | null
+  constructor(orgs: readonly string[], authorizeUrl: string | null) {
+    const list = orgs.slice(0, 3).join(', ')
+    const more = orgs.length > 3 ? ` (+${orgs.length - 3} more)` : ''
+    super(403, '', {
+      kind: 'scope',
+      headers: authorizeUrl ? { 'x-github-sso': `required; url=${authorizeUrl}` } : {},
+      message: `PAT not authorized via SAML SSO for ${orgs.length} org(s): ${list}${more}`,
+    })
+    this.name = 'OrgSsoUnauthorizedError'
+    this.orgs = Object.freeze([...orgs])
+    this.authorizeUrl = authorizeUrl
+  }
+}
+
+/**
+ * Parse the `x-github-sso` response header. GitHub uses either
+ * `required; url=…` or `partial-results; url=…` formats; we want the URL in
+ * both. Returns `null` if no URL is found.
+ */
+export function ssoUrlFromHeaders(headers: Record<string, string>): string | null {
+  const raw = headers['x-github-sso']
+  if (!raw) return null
+  const match = /url=([^;\s]+)/i.exec(raw)
+  return match ? match[1] : null
+}
+
 // --- Construction helpers ---
 
 function defaultMessage(status: number, body: string): string {
@@ -237,6 +273,10 @@ export interface ErrorDescription {
   recoverable: boolean
   /** Suggested next action, if any. */
   suggestedAction?: string
+  /** Optional URL the user can follow to fix the issue (e.g. SSO authorize page). */
+  actionUrl?: string
+  /** Optional label for the action link. Defaults to a generic verb when omitted. */
+  actionLabel?: string
 }
 
 const BODY_MAX = 200
@@ -257,6 +297,18 @@ export function describeError(err: unknown, source = 'app'): ErrorDescription {
 
   if (err instanceof AbortedError) {
     return { title: 'Cancelled', body: 'Operation was cancelled.', recoverable: true }
+  }
+  if (err instanceof OrgSsoUnauthorizedError) {
+    const list = err.orgs.slice(0, 3).join(', ')
+    const more = err.orgs.length > 3 ? ` (+${err.orgs.length - 3} more)` : ''
+    return {
+      title: 'SSO authorization required',
+      body: `Your PAT is not authorized via SAML SSO for ${err.orgs.length} org(s): ${list}${more}. Authorize the token for each org to load this data.`,
+      recoverable: false,
+      suggestedAction: 'Authorize PAT for these organizations',
+      actionUrl: err.authorizeUrl ?? 'https://github.com/settings/tokens',
+      actionLabel: err.authorizeUrl ? 'Authorize SSO' : 'Open PAT settings',
+    }
   }
   if (err instanceof NetworkError) {
     return {
