@@ -9,10 +9,14 @@ import {
   ApiError,
   AbortedError,
   NetworkError,
+  NotFoundError,
+  OrgSsoUnauthorizedError,
+  ScopeError,
   apiErrorFromResponse,
   isAborted,
   isRetryable,
   retryAfterSecondsFromError,
+  ssoUrlFromHeaders,
 } from '@/lib/errors'
 import { mapWithConcurrency } from '@/lib/concurrency'
 
@@ -138,6 +142,11 @@ const CAPTURED_HEADERS = [
   'x-ratelimit-used',
   'x-ratelimit-resource',
   'x-github-request-id',
+  // Surfaces SAML SSO authorization challenges. GitHub returns this on 403s
+  // when a classic PAT is not authorized for the org's enterprise SSO; we
+  // need it on the error to disambiguate masked-404s in
+  // `fetchOrgCopilotPlans` and to deep-link the user to the authorize page.
+  'x-github-sso',
 ] as const
 
 function captureHeaders(res: Response): Record<string, string> {
@@ -1312,19 +1321,26 @@ const ORG_PLAN_CONCURRENCY = 8
  * tier in mixed enterprises, but the per-org billing endpoint reflects the
  * org's real subscription.
  *
- * Responses without a recognized plan are recorded as `'unknown'`, which
- * `seatCostBreakdown` treats as CB (CE seats only come from CE-plan orgs;
- * enterprise teams default to CB).
- *
- * Per-org HTTP/network failures are aggregated and rethrown as a single
- * error once the fan-out completes, so the caller (`loadWithWarning`)
- * surfaces the partial-load warning and the dashboard falls back to the
- * legacy per-seat `planType` classifier. Silently bucketing failures as
- * `'unknown'` would mask outage/auth conditions and downgrade affected
- * orgs' CE seats to CB without the user noticing.
+ * Per-org outcomes:
+ *   200             → org's `plan_type` recorded
+ *   404 (genuine)   → recorded as `'unknown'`; means the enterprise holds the
+ *                     subscription (no per-org record exists). `seatCostBreakdown`
+ *                     falls back to per-seat `plan_type` for these.
+ *   404 (masked-403) → SAML SSO authorization missing for that org. GitHub
+ *                     hides existence on Copilot endpoints when the PAT is
+ *                     not SSO-authorized, returning 404 with no SSO header.
+ *                     We disambiguate by probing `GET /orgs/{org}`, which
+ *                     responds 403 with `x-github-sso: required; url=…` in
+ *                     that case. The probe's URL is surfaced via
+ *                     `OrgSsoUnauthorizedError` so the UI can deep-link the
+ *                     user to the per-org authorize page.
+ *   other failures  → aggregated and rethrown as a generic Error so the
+ *                     caller's partial-load warning fires.
  *
  * Concurrency-bounded to stay under GitHub's secondary rate limit on
- * enterprises with many orgs.
+ * enterprises with many orgs. The disambiguation probe runs only for 404s
+ * and reuses the same concurrency window, so total request count is at most
+ * 2× the org count in the worst (all-404) case.
  */
 export async function fetchOrgCopilotPlans(
   apiFetch: ApiFetch,
@@ -1332,7 +1348,8 @@ export async function fetchOrgCopilotPlans(
 ): Promise<Map<string, OrgPlanType>> {
   const unique = Array.from(new Set(orgs.map(o => o.toLowerCase()).filter(Boolean)))
   const out = new Map<string, OrgPlanType>()
-  const failures: { org: string; error: unknown }[] = []
+  const fourOhFours: string[] = []
+  const otherFailures: { org: string; error: unknown }[] = []
   await mapWithConcurrency(unique, ORG_PLAN_CONCURRENCY, async org => {
     try {
       const data = (await apiFetch(
@@ -1343,15 +1360,58 @@ export async function fetchOrgCopilotPlans(
       else if (raw.includes('business')) out.set(org, 'business')
       else out.set(org, 'unknown')
     } catch (error) {
-      failures.push({ org, error })
+      if (error instanceof NotFoundError) {
+        fourOhFours.push(org)
+      } else {
+        otherFailures.push({ org, error })
+      }
     }
   })
-  if (failures.length > 0) {
-    const sample = failures.slice(0, 3).map(f => f.org).join(', ')
-    const more = failures.length > 3 ? ` (+${failures.length - 3} more)` : ''
-    const cause = failures[0].error
+
+  // Disambiguate the 404s: probe `/orgs/{org}` to tell apart "no per-org
+  // subscription" (the benign case — record as 'unknown') from "PAT not
+  // SSO-authorized" (the actionable case — collect for the SSO error).
+  const ssoUnauthorized: string[] = []
+  let ssoAuthorizeUrl: string | null = null
+  if (fourOhFours.length > 0) {
+    await mapWithConcurrency(fourOhFours, ORG_PLAN_CONCURRENCY, async org => {
+      try {
+        await apiFetch(`path:/orgs/${encodeURIComponent(org)}`)
+        // Probe succeeded → the original 404 was genuine: no per-org
+        // subscription exists. Fall back to per-seat plan_type.
+        out.set(org, 'unknown')
+      } catch (error) {
+        if (error instanceof ScopeError) {
+          const url = ssoUrlFromHeaders(error.headers)
+          if (url) {
+            ssoUnauthorized.push(org)
+            if (ssoAuthorizeUrl == null) ssoAuthorizeUrl = url
+            return
+          }
+        }
+        if (error instanceof NotFoundError) {
+          // Org genuinely not visible. Treat as benign 'unknown' rather than
+          // pretending we know better than the API.
+          out.set(org, 'unknown')
+          return
+        }
+        otherFailures.push({ org, error })
+      }
+    })
+  }
+
+  if (ssoUnauthorized.length > 0) {
+    // Prefer the actionable SSO error. Any concurrent "other" failures are
+    // surfaced via the captured error log; the SSO banner is what the user
+    // needs to see.
+    throw new OrgSsoUnauthorizedError(ssoUnauthorized, ssoAuthorizeUrl)
+  }
+  if (otherFailures.length > 0) {
+    const sample = otherFailures.slice(0, 3).map(f => f.org).join(', ')
+    const more = otherFailures.length > 3 ? ` (+${otherFailures.length - 3} more)` : ''
+    const cause = otherFailures[0].error
     throw new Error(
-      `Failed to fetch Copilot plan for ${failures.length} of ${unique.length} org(s): ${sample}${more}`,
+      `Failed to fetch Copilot plan for ${otherFailures.length} of ${unique.length} org(s): ${sample}${more}`,
       { cause: cause instanceof Error ? cause : undefined },
     )
   }

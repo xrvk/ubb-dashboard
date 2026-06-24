@@ -54,6 +54,10 @@ export interface PartialLoadWarning {
   reason: string
   /** Optional suggested action (e.g. "Add manage_billing:enterprise scope"). */
   suggestedAction?: string
+  /** Optional URL the user can follow (e.g. SAML SSO authorize page). */
+  actionUrl?: string
+  /** Optional label for the action link. */
+  actionLabel?: string
 }
 
 const FEATURE_LABEL: Record<PartialLoadFeature, string> = {
@@ -81,6 +85,8 @@ async function loadWithWarning<T>(
         label: FEATURE_LABEL[feature],
         reason: desc.body,
         suggestedAction: desc.suggestedAction,
+        actionUrl: desc.actionUrl,
+        actionLabel: desc.actionLabel,
       },
     ]
   }
