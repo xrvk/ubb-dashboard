@@ -11,7 +11,7 @@ COPY . .
 RUN npm run build:docker
 
 # ---------- Runtime stage ----------
-FROM nginx:1.31.2-alpine AS runtime
+FROM nginx:1.31.3-alpine AS runtime
 
 ARG GIT_SHA=unknown
 ARG GIT_REF=unknown
