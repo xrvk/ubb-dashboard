@@ -9,6 +9,12 @@ updates:
       npm-dependencies:
         patterns:
           - "*"
+    ignore:
+      # typescript-eslint pins its TypeScript peer range to `<6.1.0`, so a
+      # TypeScript 7 bump breaks `npm ci` with ERESOLVE. Drop this entry once
+      # typescript-eslint supports TypeScript 7.
+      - dependency-name: typescript
+        versions: [">=7.0.0"]
 
   - package-ecosystem: github-actions
     directory: /
