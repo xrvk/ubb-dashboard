@@ -366,6 +366,12 @@ export function DashboardPage() {
         <IndUlbStatusDonut budgets={budgets} />
       </Section>
 
+      {/* § 4b — Individual ULB utilization rollup, clickable into the
+          Individual ULBs tab pre-filtered to the chosen band. */}
+      <Section title="Individual ULB utilization">
+        <IndUlbStatusDonut budgets={budgets} />
+      </Section>
+
       {/* § 5 — Action items: blocked users, missing budgets, allocation
           risk. */}
       <Section title="Action items">
