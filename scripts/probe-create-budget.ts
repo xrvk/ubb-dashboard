@@ -8,8 +8,8 @@
  *
  * Usage:
  *   npx tsx scripts/probe-create-budget.ts <env-suffix>
- *     env-suffix is the bit between `.env.` and `.local`, e.g. `octodemo`.
- *     Default: octodemo.
+ *     env-suffix is the bit between `.env.` and `.local`, e.g. `example`.
+ *     Default: example.
  *
  * Side effects: creates and deletes one user-scope $1 budget on the target
  * enterprise. Also captures one intentional 400 with the old `target_entity`
@@ -169,7 +169,7 @@ function legacyBodyForUserBudget(username: string, amount: number) {
 }
 
 async function main() {
-  const suffix = process.argv[2] ?? 'octodemo'
+  const suffix = process.argv[2] ?? 'example'
   const env = loadEnv(suffix)
   const { base, ent } = parseEntUrl(env.enterpriseUrl)
   console.error(`probing ${ent} via ${base}`)
