@@ -194,6 +194,23 @@ export function App() {
   return (
     <div className="min-h-screen">
       <Toaster richColors position="bottom-right" />
+      <div
+        role="status"
+        className="border-b border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-200"
+      >
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-2 text-sm text-center">
+          This project is deprecated and will be archived on December 7, 2026.{' '}
+          <a
+            href="https://github.com/xrvk/ubb-dashboard/blob/main/README.md"
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={openExternal('https://github.com/xrvk/ubb-dashboard/blob/main/README.md')}
+            className="font-medium underline underline-offset-2 hover:opacity-80"
+          >
+            Read the deprecation notice
+          </a>
+        </div>
+      </div>
       <header className="border-b border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center gap-3">
           <div className="flex items-center gap-2.5">

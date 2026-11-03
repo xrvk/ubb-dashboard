@@ -1,3 +1,8 @@
+> [!WARNING]
+> This project is deprecated and no longer maintained. The hosted app and container image will stop being updated, and this repository will be archived on December 7, 2026.
+>
+> If you rely on it, please comment on the [pinned deprecation issue](https://github.com/xrvk/ubb-dashboard/issues) before then. The project is MIT licensed, so you are welcome to fork it. The [org variant](https://github.com/xrvk/ubb-dashboard-org) is deprecated too. For managing Copilot budgets, see [GitHub's official documentation](https://docs.github.com/en/copilot/concepts/billing-and-usage/organizations-and-enterprises/budgets).
+
 # UBB Dashboard
 
 **Monitor and manage GitHub Copilot AI-credit budgets across your enterprise â€” from the pool down to a single user.**
@@ -21,7 +26,7 @@ _Runs entirely in your browser. Your enterprise URL and PAT stay in tab memory â
 > [!IMPORTANT]
 > **Disclaimer:** This tool is an independent, personal project built by a GitHub Solutions Engineer to help customers and the broader community manage GitHub Copilot user-level budgets (ULBs). It is **not** an official GitHub product, does not represent GitHub's views, and is not endorsed or supported by GitHub.
 >
-> Spend forecasts and the "Unblock for the month" projection are best-effort recommendations based on the daily spend rate observed so far this billing cycle. **Past usage patterns may not predict future usage.** GitHub may change pricing, credit allocations, or billing mechanics at any time. Always verify recommendations against [GitHub's official documentation](https://docs.github.com/en/copilot/managing-copilot/managing-github-copilot-in-your-organization/managing-the-spending-policy-for-github-copilot-in-your-organization) and your own billing data before applying changes.
+> Spend forecasts and the "Unblock for the month" projection are best-effort recommendations based on the daily spend rate observed so far this billing cycle. **Past usage patterns may not predict future usage.** GitHub may change pricing, credit allocations, or billing mechanics at any time. Always verify recommendations against [GitHub's official documentation](https://docs.github.com/en/copilot/concepts/billing-and-usage/organizations-and-enterprises/budgets) and your own billing data before applying changes.
 
 > [!NOTE]
 > **No GitHub Enterprise?** This dashboard targets the **enterprise** billing API and needs an enterprise slug + `manage_billing:enterprise` PAT scope. If you're on a standalone GitHub organization (no enterprise above it), use the org variant instead: **[xrvk/ubb-dashboard-org](https://github.com/xrvk/ubb-dashboard-org)**.
